@@ -1,0 +1,20 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# Claude
+.claude
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local

@@ -1,0 +1,131 @@
+.card {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  border: 1px solid #f1f5f9;
+  margin-bottom: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  position: relative;
+}
+.card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  border-color: #e2e8f0;
+}
+
+.badge {
+  position: absolute;
+  top: -1px;
+  right: 16px;
+  padding: 3px 10px 5px;
+  border-radius: 0 0 6px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.04em;
+}
+.gold { background: linear-gradient(135deg, #f59e0b, #eab308); }
+.silver { background: linear-gradient(135deg, #94a3b8, #64748b); }
+.bronze { background: linear-gradient(135deg, #d97706, #b45309); }
+
+.main { padding: 16px 18px; }
+
+.topRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-right: 60px;
+  margin-bottom: 10px;
+}
+.name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+.code {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+/* Dual NAV row */
+.dualNav {
+  display: flex;
+  gap: 12px;
+}
+
+.navBox {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.navBoxLabel {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.navBoxValue {
+  font-size: 18px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.navBoxDate {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.navBoxChange {
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+/* Live estimate box distinct style */
+.estimateBox {
+  background: #f0fdf4;
+  border: 1px solid #dcfce7;
+}
+.estimateBoxDown {
+  background: #fef2f2;
+  border: 1px solid #fee2e2;
+}
+
+.estLiveTag {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.estLiveTagUp {
+  background: #16a34a;
+  color: #fff;
+}
+.estLiveTagDown {
+  background: #dc2626;
+  color: #fff;
+}
+
+.up { color: #16a34a; }
+.down { color: #dc2626; }
+
+.skeleton {
+  animation: pulse 1.5s ease-in-out infinite;
+  background: #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

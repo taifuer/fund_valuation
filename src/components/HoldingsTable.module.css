@@ -1,0 +1,48 @@
+.container {
+  border-top: 1px solid #f1f5f9;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th, .table td {
+  padding: 8px 18px;
+  font-size: 12px;
+}
+
+.table th {
+  color: #94a3b8;
+  font-weight: 500;
+  background: #fafafa;
+  text-align: left;
+}
+
+.table td {
+  color: #334155;
+  border-bottom: 1px solid #f8fafc;
+}
+
+.table tr:hover td { background: #fafbfc; }
+
+.stockName { color: #94a3b8; margin-left: 5px; font-size: 11px; }
+
+.right { text-align: right; }
+
+.up { color: #16a34a; }
+.down { color: #dc2626; }
+
+.footer {
+  padding: 10px 18px;
+  font-size: 12px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.footerStrong {
+  font-weight: 700;
+  font-size: 13px;
+}
