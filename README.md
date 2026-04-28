@@ -67,7 +67,7 @@ fund_estimate/
 ```bash
 # 1. 克隆项目
 git clone <repo-url>
-cd fund_estimate
+cd fund_valuation
 
 # 2. 安装依赖
 npm install
