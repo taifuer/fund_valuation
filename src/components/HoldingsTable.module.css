@@ -30,7 +30,30 @@
 
 .right { text-align: right; }
 
-.timeCol { color: #94a3b8; font-size: 10px; }
+.stateTag {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 0 5px;
+  border-radius: 3px;
+  line-height: 16px;
+  display: inline-block;
+}
+
+.stateLive {
+  color: #16a34a;
+  background: #dcfce7;
+  animation: livePulse 1.8s ease-in-out infinite;
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.stateClosed {
+  color: #94a3b8;
+  background: #f1f5f9;
+}
 
 .up { color: #16a34a; }
 .down { color: #dc2626; }

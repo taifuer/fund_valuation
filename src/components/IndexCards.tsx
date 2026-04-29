@@ -1,18 +1,11 @@
 import type { QuoteData, IndexConfig } from '../types';
 import { INDICES } from '../constants';
+import { getMarketState } from '../marketHours';
 import styles from './IndexCards.module.css';
 
 interface Props {
   quotes: Map<string, QuoteData>;
   loading: boolean;
-}
-
-// Format YYYY-MM-DD → MM/DD
-function formatDate(yyyymmdd: string): string {
-  if (!yyyymmdd) return '';
-  const m = yyyymmdd.match(/^\d{4}-(\d{2})-(\d{2})$/);
-  if (m) return `${m[1]}/${m[2]}`;
-  return yyyymmdd; // fallback: return as-is
 }
 
 function Card({ idx, data, loading }: { idx: IndexConfig; data?: QuoteData; loading: boolean }) {
@@ -26,15 +19,17 @@ function Card({ idx, data, loading }: { idx: IndexConfig; data?: QuoteData; load
     );
   }
   const up = data.change >= 0;
-  const dateStr = formatDate(data.time);
+  const state = getMarketState(idx.sinaSymbol);
   return (
     <div className={styles.card}>
+      <span className={`${styles.state} ${state === 'live' ? styles.stateLive : styles.stateClosed}`}>
+        {state === 'live' ? 'LIVE' : '已收盘'}
+      </span>
       <div className={styles.label}>{idx.name}</div>
       <div className={styles.price}>{data.price.toLocaleString()}</div>
       <div className={`${styles.change} ${up ? styles.up : styles.down}`}>
         {up ? '+' : ''}{data.changePercent.toFixed(2)}%
       </div>
-      {dateStr && <div className={styles.time}>{dateStr}</div>}
     </div>
   );
 }

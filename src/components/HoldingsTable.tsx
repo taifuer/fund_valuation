@@ -1,18 +1,11 @@
 import type { Holding, QuoteData } from '../types';
+import { getMarketState } from '../marketHours';
 import styles from './HoldingsTable.module.css';
 
 interface Props {
   holdings: Holding[];
   quotes: QuoteData[];
   computedChange: number;
-}
-
-// Format YYYY-MM-DD → MM/DD
-function formatDate(yyyymmdd: string): string {
-  if (!yyyymmdd) return '';
-  const m = yyyymmdd.match(/^\d{4}-(\d{2})-(\d{2})$/);
-  if (m) return `${m[1]}/${m[2]}`;
-  return yyyymmdd;
 }
 
 export default function HoldingsTable({ holdings, quotes, computedChange }: Props) {
@@ -28,7 +21,7 @@ export default function HoldingsTable({ holdings, quotes, computedChange }: Prop
             <th className={styles.right}>现价</th>
             <th className={styles.right}>涨跌幅</th>
             <th className={styles.right}>贡献</th>
-            <th className={styles.right}>交易日</th>
+            <th className={styles.right}>状态</th>
           </tr>
         </thead>
         <tbody>
@@ -36,7 +29,7 @@ export default function HoldingsTable({ holdings, quotes, computedChange }: Prop
             const q = quoteMap.get(h.sinaSymbol);
             const up = (q?.changePercent ?? 0) >= 0;
             const contrib = q ? q.changePercent * h.weight : 0;
-            const dateStr = q ? formatDate(q.time) : '';
+            const state = getMarketState(h.sinaSymbol);
             return (
               <tr key={h.symbol}>
                 <td>
@@ -51,8 +44,10 @@ export default function HoldingsTable({ holdings, quotes, computedChange }: Prop
                 <td className={`${styles.right} ${contrib >= 0 ? styles.up : styles.down}`}>
                   {q ? `${contrib >= 0 ? '+' : ''}${contrib.toFixed(2)}%` : '-'}
                 </td>
-                <td className={`${styles.right} ${styles.timeCol}`}>
-                  {dateStr || '-'}
+                <td className={styles.right}>
+                  <span className={`${styles.stateTag} ${state === 'live' ? styles.stateLive : styles.stateClosed}`}>
+                    {state === 'live' ? 'LIVE' : '已收盘'}
+                  </span>
                 </td>
               </tr>
             );

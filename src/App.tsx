@@ -24,8 +24,7 @@ export default function App() {
       <IndexCards quotes={quotes} loading={loading} />
       <div className={styles.fundSection}>
         <h2 className={styles.sectionTitle}>
-          QDII 主动基金
-          <span className={styles.count}>{FUNDS.length}只 · 按实时估算涨跌排序</span>
+          QDII 主动基金<span className={styles.count}> · {FUNDS.length}只 · 按实时估算涨跌排序</span>
         </h2>
         {sortedEstimates.map((est) => {
           const fund = FUNDS.find((f) => f.code === est.fundCode)!;
