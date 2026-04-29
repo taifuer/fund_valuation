@@ -6,6 +6,7 @@ dist
 
 # Claude
 .claude
+CLAUDE.md
 
 # IDE
 .vscode

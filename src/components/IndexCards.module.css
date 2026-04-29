@@ -5,20 +5,20 @@
 }
 
 .sectionTitle {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   color: #64748b;
-  margin: 20px 0 8px;
+  margin: 14px 0 6px;
   padding-left: 4px;
 }
 
 .sectionTitle:first-child {
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .grid {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .grid4 { grid-template-columns: repeat(4, 1fr); }
@@ -32,30 +32,36 @@
 
 .card {
   background: #fff;
-  border-radius: 10px;
-  padding: 12px 14px;
+  border-radius: 8px;
+  padding: 8px 10px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.04);
   text-align: center;
   border: 1px solid #f1f5f9;
 }
 
 .label {
-  font-size: 12px;
+  font-size: 11px;
   color: #94a3b8;
   margin-bottom: 2px;
 }
 
 .price {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   color: #0f172a;
-  line-height: 1.3;
+  line-height: 1.2;
 }
 
 .change {
-  font-size: 12px;
+  font-size: 11px;
   margin-top: 1px;
   font-weight: 500;
+}
+
+.time {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-top: 1px;
 }
 
 .up { color: #16a34a; }

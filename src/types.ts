@@ -5,6 +5,7 @@ export interface QuoteData {
   previousClose: number;
   change: number;
   changePercent: number;
+  time: string; // 行情更新时间
 }
 
 export interface Holding {

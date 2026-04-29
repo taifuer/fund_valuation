@@ -1,9 +1,9 @@
 .card {
   background: #fff;
-  border-radius: 10px;
+  border-radius: 8px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
   border: 1px solid #f1f5f9;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   overflow: hidden;
   cursor: pointer;
   transition: box-shadow 0.15s, border-color 0.15s;
@@ -17,10 +17,10 @@
 .badge {
   position: absolute;
   top: -1px;
-  right: 16px;
-  padding: 3px 10px 5px;
-  border-radius: 0 0 6px 6px;
-  font-size: 10px;
+  right: 12px;
+  padding: 2px 8px 4px;
+  border-radius: 0 0 5px 5px;
+  font-size: 9px;
   font-weight: 700;
   color: #fff;
   letter-spacing: 0.04em;
@@ -29,62 +29,62 @@
 .silver { background: linear-gradient(135deg, #94a3b8, #64748b); }
 .bronze { background: linear-gradient(135deg, #d97706, #b45309); }
 
-.main { padding: 16px 18px; }
+.main { padding: 10px 14px; }
 
 .topRow {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   padding-right: 60px;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 .name {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: #0f172a;
 }
 .code {
-  font-size: 11px;
+  font-size: 10px;
   color: #94a3b8;
   font-weight: 400;
-  margin-left: 6px;
+  margin-left: 4px;
 }
 
 /* Dual NAV row */
 .dualNav {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 
 .navBox {
   flex: 1;
-  padding: 10px 14px;
-  border-radius: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
   background: #f8fafc;
 }
 
 .navBoxLabel {
-  font-size: 11px;
+  font-size: 10px;
   color: #94a3b8;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .navBoxValue {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: #334155;
 }
 
 .navBoxDate {
-  font-size: 11px;
+  font-size: 10px;
   color: #94a3b8;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .navBoxChange {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 /* Live estimate box distinct style */

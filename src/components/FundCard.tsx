@@ -17,6 +17,14 @@ const RANK_BADGE: Record<number, { label: string; cls: string }> = {
   3: { label: 'TOP 3', cls: 'bronze' },
 };
 
+// Format YYYY-MM-DD → MM/DD
+function formatDate(yyyymmdd: string): string {
+  if (!yyyymmdd) return '';
+  const m = yyyymmdd.match(/^\d{4}-(\d{2})-(\d{2})$/);
+  if (m) return `${m[1]}/${m[2]}`;
+  return yyyymmdd;
+}
+
 export default function FundCard({ fund, estimate, rank, loading }: Props) {
   const [expanded, setExpanded] = useState(false);
   const badge = RANK_BADGE[rank];
@@ -57,7 +65,7 @@ export default function FundCard({ fund, estimate, rank, loading }: Props) {
             <div className={styles.navBoxLabel}>T-1 已出净值</div>
             <div className={styles.navBoxValue}>{officialNAV.nav.toFixed(4)}</div>
             <div className={styles.navBoxDate}>
-              {officialNAV.navDate}
+              {formatDate(officialNAV.navDate)}
               {officialNAV.officialChange !== 0 && (
                 <span className={`${styles.navBoxChange} ${officialNAV.officialChange >= 0 ? styles.up : styles.down}`}>
                   {' '}{officialNAV.officialChange >= 0 ? '+' : ''}{officialNAV.officialChange.toFixed(2)}%

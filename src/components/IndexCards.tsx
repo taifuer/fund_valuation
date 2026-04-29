@@ -7,6 +7,14 @@ interface Props {
   loading: boolean;
 }
 
+// Format YYYY-MM-DD → MM/DD
+function formatDate(yyyymmdd: string): string {
+  if (!yyyymmdd) return '';
+  const m = yyyymmdd.match(/^\d{4}-(\d{2})-(\d{2})$/);
+  if (m) return `${m[1]}/${m[2]}`;
+  return yyyymmdd; // fallback: return as-is
+}
+
 function Card({ idx, data, loading }: { idx: IndexConfig; data?: QuoteData; loading: boolean }) {
   if (loading || !data) {
     return (
@@ -18,6 +26,7 @@ function Card({ idx, data, loading }: { idx: IndexConfig; data?: QuoteData; load
     );
   }
   const up = data.change >= 0;
+  const dateStr = formatDate(data.time);
   return (
     <div className={styles.card}>
       <div className={styles.label}>{idx.name}</div>
@@ -25,6 +34,7 @@ function Card({ idx, data, loading }: { idx: IndexConfig; data?: QuoteData; load
       <div className={`${styles.change} ${up ? styles.up : styles.down}`}>
         {up ? '+' : ''}{data.changePercent.toFixed(2)}%
       </div>
+      {dateStr && <div className={styles.time}>{dateStr}</div>}
     </div>
   );
 }

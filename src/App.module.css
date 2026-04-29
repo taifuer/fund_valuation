@@ -17,20 +17,20 @@
 }
 
 .fundSection {
-  padding: 8px 16px 40px;
+  padding: 4px 16px 32px;
   max-width: 760px;
   margin: 0 auto;
 }
 
 .sectionTitle {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   color: #64748b;
-  margin: 24px 0 10px;
+  margin: 16px 0 6px;
 }
 
 .count {
   font-weight: 400;
-  font-size: 13px;
+  font-size: 12px;
   color: #94a3b8;
 }

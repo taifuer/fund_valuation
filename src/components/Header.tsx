@@ -27,7 +27,7 @@ export default function Header() {
       <div className={styles.brand}>
         <Logo />
         <div>
-          <h1 className={styles.title}>全球基金估值</h1>
+          <h1 className={styles.title}>全球基金估值看板</h1>
           <div className={styles.subtitle}>QDII Active Funds · Real-Time NAV</div>
         </div>
       </div>

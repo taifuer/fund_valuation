@@ -11,6 +11,39 @@ function marketType(raw: string): Market {
   return 'cn_stock';
 }
 
+// Current Beijing date as YYYY-MM-DD (for markets where Sina omits the date field)
+function beijingDate(): string {
+  const now = new Date();
+  const bj = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  return bj.toISOString().slice(0, 10);
+}
+
+// Reject dates that differ from Beijing date by more than this many days (stale Sina data)
+function isStale(dateStr: string, maxDiffDays = 2): boolean {
+  if (!dateStr) return true;
+  const d = new Date(dateStr + 'T00:00:00+08:00');
+  const bj = new Date(beijingDate() + 'T00:00:00+08:00');
+  const diff = Math.abs(d.getTime() - bj.getTime()) / (1000 * 60 * 60 * 24);
+  return diff > maxDiffDays;
+}
+
+// Determine the US trading date from Sina's Beijing-time datetime.
+// US market opens 9:30 AM ET = 21:30 Beijing (EDT). Before open, the last
+// completed session was the previous calendar day.
+function usTradingDate(beijingDatetime: string): string {
+  const parts = beijingDatetime.split(' ');
+  if (!parts[0] || !parts[1]) return beijingDate();
+  const datePart = parts[0];
+  const [hour, minute] = parts[1].split(':').map(Number);
+  // 21:30 Beijing = 9:30 AM ET market open (EDT; 22:30 during EST — 1h window tolerable)
+  if (hour < 21 || (hour === 21 && minute < 30)) {
+    const d = new Date(datePart + 'T12:00:00+08:00');
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }
+  return datePart;
+}
+
 function parseSinaVar(line: string): { symbol: string; data: QuoteData } | null {
   const match = line.match(/^var hq_str_(\w+)="(.+)";?\s*$/);
   if (!match) return null;
@@ -23,6 +56,7 @@ function parseSinaVar(line: string): { symbol: string; data: QuoteData } | null 
   let price: number;
   let previousClose: number;
   let changePct: number;
+  let date = '';
 
   switch (mkt) {
     case 'us':
@@ -30,19 +64,38 @@ function parseSinaVar(line: string): { symbol: string; data: QuoteData } | null 
       price = parseFloat(fields[1]) || 0;
       previousClose = parseFloat(fields[26]) || price;
       changePct = parseFloat(fields[2]) || 0;
+      // fields[3] = "2026-04-29 09:41:59" Beijing time → derive US trading date
+      date = usTradingDate(fields[3] || '');
       break;
     case 'cn_index':
+      if (fields.length < 4) return null;
+      price = parseFloat(fields[1]) || 0;
+      previousClose = price - (parseFloat(fields[2]) || 0);
+      changePct = parseFloat(fields[3]) || 0;
+      date = beijingDate();
+      break;
     case 'intl_index':
       if (fields.length < 4) return null;
       price = parseFloat(fields[1]) || 0;
       previousClose = price - (parseFloat(fields[2]) || 0);
       changePct = parseFloat(fields[3]) || 0;
+      // b_KOSPI: fields[6]="2026-04-29"; b_TWSE: fields[5]="2025-09-26"; int_nikkei: no date
+      for (let i = fields.length - 1; i >= 4; i--) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(fields[i])) {
+          date = fields[i];
+          break;
+        }
+      }
+      if (!date || isStale(date)) date = beijingDate();
       break;
     case 'hk':
-      if (fields.length < 10) return null;
+      if (fields.length < 19) return null;
       price = parseFloat(fields[6]) || 0;
       previousClose = parseFloat(fields[3]) || price;
       changePct = parseFloat(fields[8]) || 0;
+      // fields[17] = "2026/04/29"
+      date = (fields[17] || '').replace(/\//g, '-');
+      if (isStale(date)) date = beijingDate();
       break;
     case 'cn_stock':
     default:
@@ -50,6 +103,13 @@ function parseSinaVar(line: string): { symbol: string; data: QuoteData } | null 
       price = parseFloat(fields[3]) || 0;
       previousClose = parseFloat(fields[2]) || price;
       changePct = previousClose ? ((price - previousClose) / previousClose) * 100 : 0;
+      for (let i = fields.length - 1; i >= Math.max(20, fields.length - 10); i--) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(fields[i])) {
+          date = fields[i];
+          break;
+        }
+      }
+      if (!date || isStale(date)) date = beijingDate();
       break;
   }
 
@@ -64,6 +124,7 @@ function parseSinaVar(line: string): { symbol: string; data: QuoteData } | null 
       previousClose: Number(previousClose.toFixed(2)),
       change: Number(change.toFixed(2)),
       changePercent: Number(changePct.toFixed(2)),
+      time: date,
     },
   };
 }
