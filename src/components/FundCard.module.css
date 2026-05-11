@@ -114,6 +114,20 @@
   background: #dc2626;
   color: #fff;
 }
+.estLiveTagPartial {
+  background: #f59e0b;
+  color: #fff;
+}
+.estLiveTagClosed {
+  background: #94a3b8;
+  color: #fff;
+}
+
+.coverage {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 1px;
+}
 
 .up { color: #16a34a; }
 .down { color: #dc2626; }

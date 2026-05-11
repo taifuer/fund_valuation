@@ -20,10 +20,20 @@ function Card({ idx, data, loading }: { idx: IndexConfig; data?: QuoteData; load
   }
   const up = data.change >= 0;
   const state = getMarketState(idx.sinaSymbol);
+  const fresh = Date.now() - data.fetchedAt < 90_000;
+  const displayState = state === 'live' && fresh ? 'live' : state === 'live' ? 'stale' : 'closed';
   return (
     <div className={styles.card}>
-      <span className={`${styles.state} ${state === 'live' ? styles.stateLive : styles.stateClosed}`}>
-        {state === 'live' ? 'LIVE' : '已收盘'}
+      <span
+        className={`${styles.state} ${
+          displayState === 'live'
+            ? styles.stateLive
+            : displayState === 'stale'
+              ? styles.stateStale
+              : styles.stateClosed
+        }`}
+      >
+        {displayState === 'live' ? 'LIVE' : displayState === 'stale' ? '延迟' : '已收盘'}
       </span>
       <div className={styles.label}>{idx.name}</div>
       <div className={styles.price}>{data.price.toLocaleString()}</div>

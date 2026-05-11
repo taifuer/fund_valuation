@@ -1,8 +1,9 @@
 import type { QuoteData, FundNavData } from './types';
 
-type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'fund';
+type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'fund' | 'fx';
 
 function marketType(raw: string): Market {
+  if (raw.startsWith('fx_')) return 'fx';
   if (raw.startsWith('gb_')) return 'us';
   if (raw.startsWith('s_')) return 'cn_index';
   if (raw.startsWith('int_') || raw.startsWith('b_')) return 'intl_index';
@@ -44,14 +45,14 @@ function usTradingDate(beijingDatetime: string): string {
   return datePart;
 }
 
-function parseSinaVar(line: string): { symbol: string; data: QuoteData } | null {
+function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: QuoteData } | null {
   const match = line.match(/^var hq_str_(\w+)="(.+)";?\s*$/);
   if (!match) return null;
 
   const rawSymbol = match[1];
   const fields = match[2].split(',');
   const mkt = marketType(rawSymbol);
-  if (mkt === 'fund') return null; // handled by parseSinaFund
+  if (mkt === 'fund' || mkt === 'fx') return null; // handled by dedicated parsers
 
   let price: number;
   let previousClose: number;
@@ -125,6 +126,7 @@ function parseSinaVar(line: string): { symbol: string; data: QuoteData } | null 
       change: Number(change.toFixed(2)),
       changePercent: Number(changePct.toFixed(2)),
       time: date,
+      fetchedAt,
     },
   };
 }
@@ -147,6 +149,17 @@ function parseSinaFund(line: string): FundNavData | null {
   };
 }
 
+function parseSinaFx(line: string): { currency: string; changePercent: number } | null {
+  const match = line.match(/^var hq_str_fx_s(\w+)="(.+)";?\s*$/);
+  if (!match) return null;
+  const pair = match[1].toUpperCase();
+  const fields = match[2].split(',');
+  if (pair === 'USDCNY') {
+    return { currency: 'USD', changePercent: parseFloat(fields[10]) || 0 };
+  }
+  return null;
+}
+
 export async function fetchAllQuotes(sinaSymbols: string[]): Promise<Map<string, QuoteData>> {
   const results = new Map<string, QuoteData>();
   const unique = [...new Set(sinaSymbols)].filter((s) => !s.startsWith('f_'));
@@ -159,8 +172,9 @@ export async function fetchAllQuotes(sinaSymbols: string[]): Promise<Map<string,
       const res = await fetch(url);
       if (!res.ok) continue;
       const text = await res.text();
+      const fetchedAt = Date.now();
       for (const line of text.split('\n')) {
-        const parsed = parseSinaVar(line.trim());
+        const parsed = parseSinaVar(line.trim(), fetchedAt);
         if (parsed) results.set(parsed.symbol, parsed.data);
       }
     } catch { /* skip */ }
@@ -181,6 +195,24 @@ export async function fetchSinaFundNavs(codes: string[]): Promise<Map<string, Fu
     for (const line of text.split('\n')) {
       const parsed = parseSinaFund(line.trim());
       if (parsed) results.set(parsed.code, parsed);
+    }
+  } catch { /* skip */ }
+  return results;
+}
+
+export async function fetchFxRates(currencies: string[]): Promise<Map<string, number>> {
+  const results = new Map<string, number>([['CNY', 0]]);
+  const symbols = currencies.includes('USD') ? ['fx_susdcny'] : [];
+  if (symbols.length === 0) return results;
+
+  const url = `/api/sina?list=${symbols.join(',')}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return results;
+    const text = await res.text();
+    for (const line of text.split('\n')) {
+      const parsed = parseSinaFx(line.trim());
+      if (parsed) results.set(parsed.currency, parsed.changePercent);
     }
   } catch { /* skip */ }
   return results;

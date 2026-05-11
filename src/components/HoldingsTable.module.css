@@ -55,6 +55,11 @@
   background: #f1f5f9;
 }
 
+.stateStale {
+  color: #b45309;
+  background: #fef3c7;
+}
+
 .up { color: #16a34a; }
 .down { color: #dc2626; }
 

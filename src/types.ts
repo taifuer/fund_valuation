@@ -6,6 +6,7 @@ export interface QuoteData {
   change: number;
   changePercent: number;
   time: string; // 行情更新时间
+  fetchedAt: number;
 }
 
 export interface Holding {
@@ -13,6 +14,7 @@ export interface Holding {
   name: string;
   sinaSymbol: string; // sina format: gb_AAPL, sz300502, etc.
   weight: number;
+  currency: 'CNY' | 'USD';
 }
 
 export interface Fund {

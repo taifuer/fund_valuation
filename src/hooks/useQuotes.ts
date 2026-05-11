@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { QuoteData, FundNavData } from '../types';
-import { fetchAllQuotes, fetchFundNavs, fetchSinaFundNavs, fetchFundHistory } from '../api';
+import { fetchAllQuotes, fetchFundNavs, fetchSinaFundNavs, fetchFundHistory, fetchFxRates } from '../api';
 import { INDICES, FUNDS } from '../constants';
 
 export interface FundEstimate {
@@ -10,6 +10,11 @@ export interface FundEstimate {
   computedChange: number;
   estimatedNAV: number | null;
   holdingsQuotes: QuoteData[];
+  totalConfiguredWeight: number;
+  quoteCoverage: number;
+  missingQuoteCount: number;
+  lastUpdated: number | null;
+  currencyChanges: Record<string, number>;
 }
 
 export function useQuotes() {
@@ -22,8 +27,8 @@ export function useQuotes() {
   useEffect(() => {
     mountedRef.current = true;
 
-    async function load() {
-      setLoading(true);
+    async function load(showLoading = false) {
+      if (showLoading) setLoading(true);
       setError(null);
 
       const indexSymbols = INDICES.map((i) => i.sinaSymbol);
@@ -34,10 +39,12 @@ export function useQuotes() {
 
       try {
         const fundCodes = FUNDS.map((f) => f.code);
-        const [quotesData, navsData, historyData] = await Promise.all([
+        const currencies = [...new Set(FUNDS.flatMap((f) => f.holdings.map((h) => h.currency)))];
+        const [quotesData, navsData, historyData, fxRates] = await Promise.all([
           fetchAllQuotes(allSinaSymbols),
           fetchFundNavs(fundCodes),
           fetchFundHistory(fundCodes),
+          fetchFxRates(currencies),
         ]);
 
         if (!mountedRef.current) return;
@@ -71,12 +78,23 @@ export function useQuotes() {
           const holdingsQuotes = fund.holdings
             .map((h) => quotesData.get(h.sinaSymbol))
             .filter((q): q is QuoteData => q != null);
+          const totalConfiguredWeight = fund.holdings.reduce((sum, h) => sum + h.weight, 0);
+          const quoteCoverage = fund.holdings.reduce((sum, h) => {
+            return quotesData.has(h.sinaSymbol) ? sum + h.weight : sum;
+          }, 0);
+          const missingQuoteCount = fund.holdings.length - holdingsQuotes.length;
+          const lastUpdated = holdingsQuotes.length > 0
+            ? Math.max(...holdingsQuotes.map((q) => q.fetchedAt))
+            : null;
 
           const computedChange =
             holdingsQuotes.length > 0
               ? fund.holdings.reduce((sum, h) => {
                   const q = quotesData.get(h.sinaSymbol);
-                  return sum + (q?.changePercent ?? 0) * h.weight;
+                  if (!q) return sum;
+                  const fxChange = fxRates.get(h.currency) ?? 0;
+                  const rmbChange = ((1 + q.changePercent / 100) * (1 + fxChange / 100) - 1) * 100;
+                  return sum + rmbChange * h.weight;
                 }, 0)
               : 0;
 
@@ -92,6 +110,11 @@ export function useQuotes() {
             computedChange,
             estimatedNAV,
             holdingsQuotes,
+            totalConfiguredWeight,
+            quoteCoverage,
+            missingQuoteCount,
+            lastUpdated,
+            currencyChanges: Object.fromEntries(fxRates),
           };
         });
 
@@ -107,8 +130,12 @@ export function useQuotes() {
       }
     }
 
-    load();
-    return () => { mountedRef.current = false; };
+    load(true);
+    const timer = window.setInterval(() => load(false), 30_000);
+    return () => {
+      mountedRef.current = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   return { quotes, fundEstimates, loading, error };

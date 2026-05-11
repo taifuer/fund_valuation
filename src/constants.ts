@@ -2,10 +2,10 @@ import type { Fund, Holding, IndexConfig } from './types';
 
 // Helper to create US stock holding
 const us = (symbol: string, name: string, weight: number): Holding => ({
-  symbol, name, sinaSymbol: `gb_${symbol.toLowerCase()}`, weight,
+  symbol, name, sinaSymbol: `gb_${symbol.toLowerCase()}`, weight, currency: 'USD',
 });
 const cn = (symbol: string, name: string, weight: number): Holding => ({
-  symbol, name, sinaSymbol: symbol.toLowerCase(), weight,  // e.g. "sz300502"
+  symbol, name, sinaSymbol: symbol.toLowerCase(), weight, currency: 'CNY',  // e.g. "sz300502"
 });
 
 export const INDICES: IndexConfig[] = [
