@@ -61,7 +61,6 @@ export default function FundCard({ fund, estimate, rank, loading }: Props) {
   } = estimate;
   const up = computedChange >= 0;
   const localUp = computedChangeLocal >= 0;
-  const mixedUp = computedChange >= computedChangeLocal;
   const estBoxCls = up ? styles.estimateBox : styles.estimateBoxDown;
   const hasLiveHolding = fund.holdings.some((h) => getMarketState(h.sinaSymbol) === 'live');
   const fresh = lastUpdated != null && Date.now() - lastUpdated < 90_000;
@@ -107,7 +106,7 @@ export default function FundCard({ fund, estimate, rank, loading }: Props) {
             <div className={`${styles.navBoxValue} ${up ? styles.up : styles.down}`}>
               {estimatedNAVLocal !== null ? estimatedNAVLocal.toFixed(4) : '--'}
               {estimatedNAV !== null && (
-                <span className={`${styles.fxNavValue} ${mixedUp ? styles.up : styles.down}`}>
+                <span className={`${styles.fxNavValue} ${up ? styles.up : styles.down}`}>
                   （{estimatedNAV.toFixed(4)}）
                 </span>
               )}
@@ -117,7 +116,7 @@ export default function FundCard({ fund, estimate, rank, loading }: Props) {
                 ? `${localUp ? '+' : ''}${computedChangeLocal.toFixed(2)}%`
                 : '数据不足'}
               {estimatedNAV !== null && (
-                <span className={`${styles.fxChange} ${mixedUp ? styles.up : styles.down}`}>
+                <span className={`${styles.fxChange} ${up ? styles.up : styles.down}`}>
                   （含汇率 {up ? '+' : ''}{computedChange.toFixed(2)}%）
                 </span>
               )}
