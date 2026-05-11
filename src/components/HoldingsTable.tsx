@@ -64,7 +64,7 @@ export default function HoldingsTable({
                 <td className={styles.right}>{(h.weight * 100).toFixed(1)}%</td>
                 <td className={styles.right}>{h.currency}</td>
                 <td className={`${styles.right} ${q?.dateReliable === false ? styles.estimatedDate : ''}`}>
-                  {q ? `${formatQuoteDate(q.time)}${q.dateReliable ? '' : ' 估'}` : '-'}
+                  {q ? formatQuoteDate(q.time) : '-'}
                 </td>
                 <td className={styles.right}>{q ? q.price : '-'}</td>
                 <td className={`${styles.right} ${up ? styles.up : styles.down}`}>

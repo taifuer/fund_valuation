@@ -46,7 +46,7 @@ function Card({ idx, data, loading }: { idx: IndexConfig; data?: QuoteData; load
         {up ? '+' : ''}{data.changePercent.toFixed(2)}%
       </div>
       <span className={`${styles.quoteDate} ${data.dateReliable ? '' : styles.quoteDateEstimated}`}>
-        {formatQuoteDate(data.time)}{data.dateReliable ? '' : ' 估'}
+        {formatQuoteDate(data.time)}
       </span>
     </div>
   );
@@ -55,9 +55,8 @@ function Card({ idx, data, loading }: { idx: IndexConfig; data?: QuoteData; load
 export default function IndexCards({ quotes, loading }: Props) {
   const groups = [
     { title: 'A股', symbols: ['s_sh000001', 's_sz399006', 's_sh000300', 's_sh000905'], cols: 'grid4' },
-    { title: '港股', symbols: ['hkHSI', 'hkHSTECH'], cols: 'grid2' },
-    { title: '美股', symbols: ['gb_ixic', 'gb_ndx', 'gb_inx'], cols: 'grid3' },
-    { title: '亚太', symbols: ['int_nikkei', 'b_KOSPI', 'b_TWSE'], cols: 'grid3' },
+    { title: '美股', symbols: ['gb_ixic', 'gb_ndx', 'gb_ndxt', 'gb_inx'], cols: 'grid4' },
+    { title: '亚太', symbols: ['hkHSI', 'int_nikkei', 'b_KOSPI', 'b_TWSE'], cols: 'grid4' },
   ];
 
   return (

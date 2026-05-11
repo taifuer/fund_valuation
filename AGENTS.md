@@ -11,7 +11,7 @@ This is a Vite 5 + React 18 + TypeScript app for estimating QDII fund net values
 - `src/constants.ts` stores index and fund holding configuration.
 - `src/marketHours.ts` contains market session logic in Beijing time.
 - `vite-sina-proxy.ts` defines the dev proxy for `/api/sina`, `/api/fundnav`, and `/api/fundhistory`.
-- `demo/` stores screenshots used by the README.
+- `demo/` stores screenshots used by the README; update them when visible dashboard output changes.
 
 ## Build, Test, and Development Commands
 
