@@ -8,8 +8,9 @@
 }
 
 .table th, .table td {
-  padding: 5px 14px;
+  padding: 5px 10px;
   font-size: 11px;
+  white-space: nowrap;
 }
 
 .table th {
@@ -29,6 +30,10 @@
 .stockName { color: #94a3b8; margin-left: 4px; font-size: 10px; }
 
 .right { text-align: right; }
+
+.estimatedDate {
+  color: #94a3b8;
+}
 
 .stateTag {
   font-size: 9px;

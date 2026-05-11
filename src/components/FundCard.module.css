@@ -129,6 +129,18 @@
   margin-top: 1px;
 }
 
+.fxNavValue {
+  font-size: 12px;
+  margin-left: 2px;
+  font-weight: 700;
+}
+
+.fxChange {
+  font-size: 10px;
+  margin-left: 4px;
+  font-weight: 600;
+}
+
 .up { color: #16a34a; }
 .down { color: #dc2626; }
 

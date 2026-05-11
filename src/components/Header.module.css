@@ -30,6 +30,50 @@
   font-weight: 500;
 }
 
+.meta {
+  margin-top: 2px;
+}
+
+.fxRow {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.fxItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1;
+}
+
+.fxPair {
+  font-weight: 600;
+  color: #334155;
+}
+
+.fxRate {
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+}
+
+.fxUp {
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.fxDown {
+  color: #dc2626;
+  font-weight: 600;
+}
+
 .live {
   display: inline-block;
   width: 7px;

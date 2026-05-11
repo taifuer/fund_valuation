@@ -11,6 +11,11 @@ interface Props {
   currencyChanges: Record<string, number>;
 }
 
+function formatQuoteDate(date: string): string {
+  const match = date.match(/^\d{4}-(\d{2})-(\d{2})$/);
+  return match ? `${match[1]}/${match[2]}` : date || '-';
+}
+
 export default function HoldingsTable({
   holdings,
   quotes,
@@ -30,6 +35,7 @@ export default function HoldingsTable({
             <th>股票</th>
             <th className={styles.right}>权重</th>
             <th className={styles.right}>币种</th>
+            <th className={styles.right}>日期</th>
             <th className={styles.right}>现价</th>
             <th className={styles.right}>涨跌幅</th>
             <th className={styles.right}>汇率</th>
@@ -57,6 +63,9 @@ export default function HoldingsTable({
                 </td>
                 <td className={styles.right}>{(h.weight * 100).toFixed(1)}%</td>
                 <td className={styles.right}>{h.currency}</td>
+                <td className={`${styles.right} ${q?.dateReliable === false ? styles.estimatedDate : ''}`}>
+                  {q ? `${formatQuoteDate(q.time)}${q.dateReliable ? '' : ' 估'}` : '-'}
+                </td>
                 <td className={styles.right}>{q ? q.price : '-'}</td>
                 <td className={`${styles.right} ${up ? styles.up : styles.down}`}>
                   {q ? `${up ? '+' : ''}${q.changePercent}%` : '-'}

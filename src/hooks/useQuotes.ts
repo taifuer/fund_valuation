@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { QuoteData, FundNavData } from '../types';
+import type { QuoteData, FundNavData, FxRateData } from '../types';
 import { fetchAllQuotes, fetchFundNavs, fetchSinaFundNavs, fetchFundHistory, fetchFxRates } from '../api';
 import { INDICES, FUNDS } from '../constants';
 
@@ -7,6 +7,8 @@ export interface FundEstimate {
   fundCode: string;
   fundName: string;
   officialNAV: FundNavData | null;
+  computedChangeLocal: number;
+  estimatedNAVLocal: number | null;
   computedChange: number;
   estimatedNAV: number | null;
   holdingsQuotes: QuoteData[];
@@ -20,6 +22,7 @@ export interface FundEstimate {
 export function useQuotes() {
   const [quotes, setQuotes] = useState<Map<string, QuoteData>>(new Map());
   const [fundEstimates, setFundEstimates] = useState<FundEstimate[]>([]);
+  const [fxRates, setFxRates] = useState<Map<string, FxRateData>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
@@ -72,6 +75,7 @@ export function useQuotes() {
 
         if (!mountedRef.current) return;
         setQuotes(quotesData);
+        setFxRates(fxRates);
 
         const estimates: FundEstimate[] = FUNDS.map((fund) => {
           const officialNAV = navsData.get(fund.code) ?? null;
@@ -87,16 +91,29 @@ export function useQuotes() {
             ? Math.max(...holdingsQuotes.map((q) => q.fetchedAt))
             : null;
 
+          const computedChangeLocal =
+            holdingsQuotes.length > 0
+              ? fund.holdings.reduce((sum, h) => {
+                  const q = quotesData.get(h.sinaSymbol);
+                  return q ? sum + q.changePercent * h.weight : sum;
+                }, 0)
+              : 0;
+
           const computedChange =
             holdingsQuotes.length > 0
               ? fund.holdings.reduce((sum, h) => {
                   const q = quotesData.get(h.sinaSymbol);
                   if (!q) return sum;
-                  const fxChange = fxRates.get(h.currency) ?? 0;
+                  const fxChange = fxRates.get(h.currency)?.changePercent ?? 0;
                   const rmbChange = ((1 + q.changePercent / 100) * (1 + fxChange / 100) - 1) * 100;
                   return sum + rmbChange * h.weight;
                 }, 0)
               : 0;
+
+          const estimatedNAVLocal =
+            officialNAV && officialNAV.nav > 0
+              ? officialNAV.nav * (1 + computedChangeLocal / 100)
+              : null;
 
           const estimatedNAV =
             officialNAV && officialNAV.nav > 0
@@ -107,6 +124,8 @@ export function useQuotes() {
             fundCode: fund.code,
             fundName: fund.name,
             officialNAV,
+            computedChangeLocal,
+            estimatedNAVLocal,
             computedChange,
             estimatedNAV,
             holdingsQuotes,
@@ -114,7 +133,9 @@ export function useQuotes() {
             quoteCoverage,
             missingQuoteCount,
             lastUpdated,
-            currencyChanges: Object.fromEntries(fxRates),
+            currencyChanges: Object.fromEntries(
+              [...fxRates].map(([currency, rate]) => [currency, rate.changePercent]),
+            ),
           };
         });
 
@@ -138,5 +159,5 @@ export function useQuotes() {
     };
   }, []);
 
-  return { quotes, fundEstimates, loading, error };
+  return { quotes, fundEstimates, fxRates, loading, error };
 }

@@ -7,7 +7,7 @@ import FundCard from './components/FundCard';
 import styles from './App.module.css';
 
 export default function App() {
-  const { quotes, fundEstimates, loading, error } = useQuotes();
+  const { quotes, fundEstimates, fxRates, loading, error } = useQuotes();
 
   // Sort by computedChange descending
   const sortedEstimates = useMemo(() => {
@@ -19,7 +19,7 @@ export default function App() {
 
   return (
     <div className={styles.app}>
-      <Header />
+      <Header fxRates={fxRates} />
       {error && <div className={styles.error}>{error}</div>}
       <IndexCards quotes={quotes} loading={loading} />
       <div className={styles.fundSection}>

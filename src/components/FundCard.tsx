@@ -49,6 +49,8 @@ export default function FundCard({ fund, estimate, rank, loading }: Props) {
 
   const {
     officialNAV,
+    computedChangeLocal,
+    estimatedNAVLocal,
     computedChange,
     estimatedNAV,
     quoteCoverage,
@@ -58,6 +60,8 @@ export default function FundCard({ fund, estimate, rank, loading }: Props) {
     currencyChanges,
   } = estimate;
   const up = computedChange >= 0;
+  const localUp = computedChangeLocal >= 0;
+  const mixedUp = computedChange >= computedChangeLocal;
   const estBoxCls = up ? styles.estimateBox : styles.estimateBoxDown;
   const hasLiveHolding = fund.holdings.some((h) => getMarketState(h.sinaSymbol) === 'live');
   const fresh = lastUpdated != null && Date.now() - lastUpdated < 90_000;
@@ -101,17 +105,28 @@ export default function FundCard({ fund, estimate, rank, loading }: Props) {
               <span className={`${styles.estLiveTag} ${tagCls}`}>{estimateState}</span>
             </div>
             <div className={`${styles.navBoxValue} ${up ? styles.up : styles.down}`}>
-              {estimatedNAV !== null ? estimatedNAV.toFixed(4) : '--'}
+              {estimatedNAVLocal !== null ? estimatedNAVLocal.toFixed(4) : '--'}
+              {estimatedNAV !== null && (
+                <span className={`${styles.fxNavValue} ${mixedUp ? styles.up : styles.down}`}>
+                  （{estimatedNAV.toFixed(4)}）
+                </span>
+              )}
             </div>
-            <div className={`${styles.navBoxChange} ${up ? styles.up : styles.down}`}>
-              {estimatedNAV !== null
-                ? `${up ? '+' : ''}${computedChange.toFixed(2)}%`
+            <div className={`${styles.navBoxChange} ${localUp ? styles.up : styles.down}`}>
+              {estimatedNAVLocal !== null
+                ? `${localUp ? '+' : ''}${computedChangeLocal.toFixed(2)}%`
                 : '数据不足'}
+              {estimatedNAV !== null && (
+                <span className={`${styles.fxChange} ${mixedUp ? styles.up : styles.down}`}>
+                  （含汇率 {up ? '+' : ''}{computedChange.toFixed(2)}%）
+                </span>
+              )}
             </div>
-            <div className={styles.coverage}>
-              覆盖 {coveragePct.toFixed(0)}%
-              {missingQuoteCount > 0 ? ` · 缺 ${missingQuoteCount}` : ''}
-            </div>
+            {missingQuoteCount > 0 && (
+              <div className={styles.coverage}>
+                覆盖 {coveragePct.toFixed(0)}% · 缺 {missingQuoteCount}
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -6,6 +6,7 @@ export interface QuoteData {
   change: number;
   changePercent: number;
   time: string; // 行情更新时间
+  dateReliable: boolean;
   fetchedAt: number;
 }
 
@@ -32,6 +33,15 @@ export interface FundNavData {
   officialChange: number; // T-1 官方涨跌幅 (%)
   estimatedNav: number; // 实时估算净值
   estimatedChange: number; // 平台估算涨跌幅 (%)
+}
+
+export interface FxRateData {
+  currency: string;
+  pair: string;
+  rate: number;
+  changePercent: number;
+  date: string;
+  fetchedAt: number;
 }
 
 export interface IndexConfig {

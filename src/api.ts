@@ -1,4 +1,4 @@
-import type { QuoteData, FundNavData } from './types';
+import type { QuoteData, FundNavData, FxRateData } from './types';
 
 type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'fund' | 'fx';
 
@@ -58,6 +58,7 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
   let previousClose: number;
   let changePct: number;
   let date = '';
+  let dateReliable = true;
 
   switch (mkt) {
     case 'us':
@@ -74,6 +75,7 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       previousClose = price - (parseFloat(fields[2]) || 0);
       changePct = parseFloat(fields[3]) || 0;
       date = beijingDate();
+      dateReliable = false;
       break;
     case 'intl_index':
       if (fields.length < 4) return null;
@@ -87,7 +89,10 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
           break;
         }
       }
-      if (!date || isStale(date)) date = beijingDate();
+      if (!date || isStale(date)) {
+        date = beijingDate();
+        dateReliable = false;
+      }
       break;
     case 'hk':
       if (fields.length < 19) return null;
@@ -96,7 +101,10 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       changePct = parseFloat(fields[8]) || 0;
       // fields[17] = "2026/04/29"
       date = (fields[17] || '').replace(/\//g, '-');
-      if (isStale(date)) date = beijingDate();
+      if (isStale(date)) {
+        date = beijingDate();
+        dateReliable = false;
+      }
       break;
     case 'cn_stock':
     default:
@@ -110,7 +118,10 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
           break;
         }
       }
-      if (!date || isStale(date)) date = beijingDate();
+      if (!date || isStale(date)) {
+        date = beijingDate();
+        dateReliable = false;
+      }
       break;
   }
 
@@ -126,6 +137,7 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       change: Number(change.toFixed(2)),
       changePercent: Number(changePct.toFixed(2)),
       time: date,
+      dateReliable,
       fetchedAt,
     },
   };
@@ -149,13 +161,21 @@ function parseSinaFund(line: string): FundNavData | null {
   };
 }
 
-function parseSinaFx(line: string): { currency: string; changePercent: number } | null {
+function parseSinaFx(line: string, fetchedAt: number): FxRateData | null {
   const match = line.match(/^var hq_str_fx_s(\w+)="(.+)";?\s*$/);
   if (!match) return null;
   const pair = match[1].toUpperCase();
   const fields = match[2].split(',');
   if (pair === 'USDCNY') {
-    return { currency: 'USD', changePercent: parseFloat(fields[10]) || 0 };
+    const date = [...fields].reverse().find((field) => /^\d{4}-\d{2}-\d{2}$/.test(field)) ?? beijingDate();
+    return {
+      currency: 'USD',
+      pair: 'USD/CNY',
+      rate: parseFloat(fields[1]) || 0,
+      changePercent: parseFloat(fields[10]) || 0,
+      date,
+      fetchedAt,
+    };
   }
   return null;
 }
@@ -200,8 +220,11 @@ export async function fetchSinaFundNavs(codes: string[]): Promise<Map<string, Fu
   return results;
 }
 
-export async function fetchFxRates(currencies: string[]): Promise<Map<string, number>> {
-  const results = new Map<string, number>([['CNY', 0]]);
+export async function fetchFxRates(currencies: string[]): Promise<Map<string, FxRateData>> {
+  const results = new Map<string, FxRateData>([[
+    'CNY',
+    { currency: 'CNY', pair: 'CNY/CNY', rate: 1, changePercent: 0, date: beijingDate(), fetchedAt: Date.now() },
+  ]]);
   const symbols = currencies.includes('USD') ? ['fx_susdcny'] : [];
   if (symbols.length === 0) return results;
 
@@ -210,9 +233,10 @@ export async function fetchFxRates(currencies: string[]): Promise<Map<string, nu
     const res = await fetch(url);
     if (!res.ok) return results;
     const text = await res.text();
+    const fetchedAt = Date.now();
     for (const line of text.split('\n')) {
-      const parsed = parseSinaFx(line.trim());
-      if (parsed) results.set(parsed.currency, parsed.changePercent);
+      const parsed = parseSinaFx(line.trim(), fetchedAt);
+      if (parsed) results.set(parsed.currency, parsed);
     }
   } catch { /* skip */ }
   return results;

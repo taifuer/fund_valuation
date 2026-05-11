@@ -8,6 +8,11 @@ interface Props {
   loading: boolean;
 }
 
+function formatQuoteDate(date: string): string {
+  const match = date.match(/^\d{4}-(\d{2})-(\d{2})$/);
+  return match ? `${match[1]}/${match[2]}` : date || '--';
+}
+
 function Card({ idx, data, loading }: { idx: IndexConfig; data?: QuoteData; loading: boolean }) {
   if (loading || !data) {
     return (
@@ -40,6 +45,9 @@ function Card({ idx, data, loading }: { idx: IndexConfig; data?: QuoteData; load
       <div className={`${styles.change} ${up ? styles.up : styles.down}`}>
         {up ? '+' : ''}{data.changePercent.toFixed(2)}%
       </div>
+      <span className={`${styles.quoteDate} ${data.dateReliable ? '' : styles.quoteDateEstimated}`}>
+        {formatQuoteDate(data.time)}{data.dateReliable ? '' : ' 估'}
+      </span>
     </div>
   );
 }
