@@ -13,7 +13,17 @@ function formatQuoteDate(date: string): string {
   return match ? `${match[1]}/${match[2]}` : date || '--';
 }
 
-function Card({ idx, data, loading }: { idx: IndexConfig; data?: QuoteData; loading: boolean }) {
+function Card({
+  idx,
+  data,
+  futuresData,
+  loading,
+}: {
+  idx: IndexConfig;
+  data?: QuoteData;
+  futuresData?: QuoteData;
+  loading: boolean;
+}) {
   if (loading || !data) {
     return (
       <div className={styles.card}>
@@ -23,30 +33,49 @@ function Card({ idx, data, loading }: { idx: IndexConfig; data?: QuoteData; load
       </div>
     );
   }
-  const up = data.change >= 0;
   const state = getMarketState(idx.sinaSymbol);
-  const fresh = Date.now() - data.fetchedAt < 90_000;
-  const displayState = state === 'live' && fresh ? 'live' : state === 'live' ? 'stale' : 'closed';
+  const futuresState = idx.futures ? getMarketState(idx.futures.sinaSymbol) : 'closed';
+  const futuresFresh = futuresData ? Date.now() - futuresData.fetchedAt < 90_000 : false;
+  const useFutures = state !== 'live' && futuresData && futuresState === 'live' && futuresFresh;
+  const displayData = useFutures ? futuresData : data;
+  const up = displayData.change >= 0;
+  const fresh = Date.now() - displayData.fetchedAt < 90_000;
+  const displayState = useFutures
+    ? 'futuresLive'
+    : state === 'live' && fresh
+      ? 'live'
+      : state === 'live'
+        ? 'stale'
+        : 'closed';
+
   return (
     <div className={styles.card}>
       <span
         className={`${styles.state} ${
-          displayState === 'live'
+          displayState === 'futuresLive'
+            ? styles.stateFutures
+            : displayState === 'live'
             ? styles.stateLive
             : displayState === 'stale'
               ? styles.stateStale
               : styles.stateClosed
         }`}
       >
-        {displayState === 'live' ? 'LIVE' : displayState === 'stale' ? '延迟' : '已收盘'}
+        {displayState === 'futuresLive'
+          ? '期货 LIVE'
+          : displayState === 'live'
+            ? 'LIVE'
+            : displayState === 'stale'
+              ? '延迟'
+              : '已收盘'}
       </span>
-      <div className={styles.label}>{idx.name}</div>
-      <div className={styles.price}>{data.price.toLocaleString()}</div>
+      <div className={styles.label}>{useFutures ? idx.futures?.label : idx.name}</div>
+      <div className={styles.price}>{displayData.price.toLocaleString()}</div>
       <div className={`${styles.change} ${up ? styles.up : styles.down}`}>
-        {up ? '+' : ''}{data.changePercent.toFixed(2)}%
+        {up ? '+' : ''}{displayData.changePercent.toFixed(2)}%
       </div>
-      <span className={`${styles.quoteDate} ${data.dateReliable ? '' : styles.quoteDateEstimated}`}>
-        {formatQuoteDate(data.time)}
+      <span className={`${styles.quoteDate} ${displayData.dateReliable ? '' : styles.quoteDateEstimated}`}>
+        {formatQuoteDate(displayData.time)}
       </span>
     </div>
   );
@@ -67,7 +96,15 @@ export default function IndexCards({ quotes, loading }: Props) {
           <div className={`${styles.grid} ${styles[g.cols]}`}>
             {g.symbols.map((sym) => {
               const idx = INDICES.find((i) => i.sinaSymbol === sym)!;
-              return <Card key={sym} idx={idx} data={quotes.get(sym)} loading={loading} />;
+              return (
+                <Card
+                  key={sym}
+                  idx={idx}
+                  data={quotes.get(sym)}
+                  futuresData={idx.futures ? quotes.get(idx.futures.sinaSymbol) : undefined}
+                  loading={loading}
+                />
+              );
             })}
           </div>
         </div>

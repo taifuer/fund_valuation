@@ -106,6 +106,12 @@
   background: #fef3c7;
 }
 
+.stateFutures {
+  color: #2563eb;
+  background: #dbeafe;
+  animation: livePulse 1.8s ease-in-out infinite;
+}
+
 .up { color: #16a34a; }
 .down { color: #dc2626; }
 

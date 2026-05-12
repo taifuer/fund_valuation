@@ -16,9 +16,9 @@ export const INDICES: IndexConfig[] = [
   { symbol: 'SH000905', name: '中证500', sinaSymbol: 's_sh000905' },
   // 美股
   { symbol: 'IXIC', name: '纳斯达克', sinaSymbol: 'gb_ixic' },
-  { symbol: 'NDX', name: '纳指100', sinaSymbol: 'gb_ndx' },
+  { symbol: 'NDX', name: '纳指100', sinaSymbol: 'gb_ndx', futures: { sinaSymbol: 'hf_NQ', label: '纳指100期货' } },
   { symbol: 'NDXT', name: '纳指100科技', sinaSymbol: 'gb_ndxt' },
-  { symbol: 'INX', name: '标普500', sinaSymbol: 'gb_inx' },
+  { symbol: 'INX', name: '标普500', sinaSymbol: 'gb_inx', futures: { sinaSymbol: 'hf_ES', label: '标普500期货' } },
   // 亚太
   { symbol: 'HSI', name: '恒生指数', sinaSymbol: 'hkHSI' },
   { symbol: 'N225', name: '日经225', sinaSymbol: 'int_nikkei' },

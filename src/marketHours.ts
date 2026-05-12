@@ -132,6 +132,7 @@ function isInSession(sessions: Session[], minutes: number): boolean {
 }
 
 function marketKey(sinaSymbol: string): string | null {
+  if (sinaSymbol.startsWith('hf_')) return 'us_futures';
   if (sinaSymbol.startsWith('gb_')) return 'us';
   if (sinaSymbol.startsWith('hk')) return 'hk';
   if (sinaSymbol.startsWith('s_') || /^(sz|sh)\d/.test(sinaSymbol)) return 'cn';
@@ -146,6 +147,18 @@ export type MarketState = 'live' | 'closed';
 export function getMarketState(sinaSymbol: string, now = new Date()): MarketState {
   const key = marketKey(sinaSymbol);
   if (!key) return 'closed';
+
+  if (key === 'us_futures') {
+    const local = zonedNow('America/New_York', now);
+    const maintenanceStart = 17 * 60;
+    const maintenanceEnd = 18 * 60;
+
+    if (local.weekday === 'Sat') return 'closed';
+    if (local.weekday === 'Sun') return local.minutes >= maintenanceEnd ? 'live' : 'closed';
+    if (local.weekday === 'Fri') return local.minutes < maintenanceStart ? 'live' : 'closed';
+    if (local.minutes >= maintenanceStart && local.minutes < maintenanceEnd) return 'closed';
+    return 'live';
+  }
 
   const calendar = MARKETS[key];
   const local = zonedNow(calendar.timezone, now);

@@ -1,9 +1,10 @@
 import type { QuoteData, FundNavData, FxRateData } from './types';
 
-type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'fund' | 'fx';
+type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'fund' | 'fx';
 
 function marketType(raw: string): Market {
   if (raw.startsWith('fx_')) return 'fx';
+  if (raw.startsWith('hf_')) return 'global_future';
   if (raw.startsWith('gb_')) return 'us';
   if (raw.startsWith('s_')) return 'cn_index';
   if (raw.startsWith('int_') || raw.startsWith('b_')) return 'intl_index';
@@ -101,6 +102,17 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       changePct = parseFloat(fields[8]) || 0;
       // fields[17] = "2026/04/29"
       date = (fields[17] || '').replace(/\//g, '-');
+      if (isStale(date)) {
+        date = beijingDate();
+        dateReliable = false;
+      }
+      break;
+    case 'global_future':
+      if (fields.length < 13) return null;
+      price = parseFloat(fields[0]) || 0;
+      previousClose = parseFloat(fields[8]) || price;
+      changePct = previousClose ? ((price - previousClose) / previousClose) * 100 : 0;
+      date = fields[12] || beijingDate();
       if (isStale(date)) {
         date = beijingDate();
         dateReliable = false;

@@ -35,10 +35,11 @@ export function useQuotes() {
       setError(null);
 
       const indexSymbols = INDICES.map((i) => i.sinaSymbol);
+      const futuresSymbols = INDICES.flatMap((i) => i.futures?.sinaSymbol ?? []);
       const holdingSymbols = FUNDS.flatMap((f) =>
         f.holdings.map((h) => h.sinaSymbol),
       );
-      const allSinaSymbols = [...new Set([...indexSymbols, ...holdingSymbols])];
+      const allSinaSymbols = [...new Set([...indexSymbols, ...futuresSymbols, ...holdingSymbols])];
 
       try {
         const fundCodes = FUNDS.map((f) => f.code);

@@ -48,4 +48,8 @@ export interface IndexConfig {
   symbol: string;
   name: string;
   sinaSymbol: string;
+  futures?: {
+    sinaSymbol: string;
+    label: string;
+  };
 }
