@@ -1,8 +1,9 @@
 import type { QuoteData, FundNavData, FxRateData } from './types';
 
-type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'fund' | 'fx';
+type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'crypto' | 'fund' | 'fx';
 
 function marketType(raw: string): Market {
+  if (raw === 'fx_sbtcusd') return 'crypto';
   if (raw.startsWith('fx_')) return 'fx';
   if (raw.startsWith('hf_')) return 'global_future';
   if (raw.startsWith('gb_')) return 'us';
@@ -118,6 +119,19 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
         dateReliable = false;
       }
       break;
+    case 'crypto': {
+      if (fields.length < 12) return null;
+      price = parseFloat(fields[1]) || 0;
+      const changeRaw = parseFloat(fields[11]) || 0;
+      previousClose = price - changeRaw || price;
+      changePct = parseFloat(fields[10]) || 0;
+      date = [...fields].reverse().find((field) => /^\d{4}-\d{2}-\d{2}$/.test(field)) ?? beijingDate();
+      if (isStale(date)) {
+        date = beijingDate();
+        dateReliable = false;
+      }
+      break;
+    }
     case 'cn_stock':
     default:
       if (fields.length < 10) return null;

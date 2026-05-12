@@ -1,5 +1,5 @@
 import type { QuoteData, IndexConfig } from '../types';
-import { INDICES } from '../constants';
+import { INDICES, MARKET_ASSETS } from '../constants';
 import { getMarketState } from '../marketHours';
 import styles from './IndexCards.module.css';
 
@@ -86,7 +86,9 @@ export default function IndexCards({ quotes, loading }: Props) {
     { title: 'A股', symbols: ['s_sh000001', 's_sz399006', 's_sh000300', 's_sh000905'], cols: 'grid4' },
     { title: '美股', symbols: ['gb_ixic', 'gb_ndx', 'gb_inx', 'gb_dji'], cols: 'grid4' },
     { title: '亚太', symbols: ['hkHSI', 'int_nikkei', 'b_KOSPI', 'b_TWSE'], cols: 'grid4' },
+    { title: '资产', symbols: ['hf_GC', 'hf_SI', 'hf_CL', 'fx_sbtcusd'], cols: 'grid4' },
   ];
+  const cards = [...INDICES, ...MARKET_ASSETS];
 
   return (
     <div className={styles.container}>
@@ -95,7 +97,7 @@ export default function IndexCards({ quotes, loading }: Props) {
           <div className={styles.sectionTitle}>{g.title}</div>
           <div className={`${styles.grid} ${styles[g.cols]}`}>
             {g.symbols.map((sym) => {
-              const idx = INDICES.find((i) => i.sinaSymbol === sym)!;
+              const idx = cards.find((i) => i.sinaSymbol === sym)!;
               return (
                 <Card
                   key={sym}

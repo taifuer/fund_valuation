@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { QuoteData, FundNavData, FxRateData } from '../types';
 import { fetchAllQuotes, fetchFundNavs, fetchSinaFundNavs, fetchFundHistory, fetchFxRates } from '../api';
-import { INDICES, FUNDS } from '../constants';
+import { INDICES, MARKET_ASSETS, FUNDS } from '../constants';
 
 export interface FundEstimate {
   fundCode: string;
@@ -35,11 +35,12 @@ export function useQuotes() {
       setError(null);
 
       const indexSymbols = INDICES.map((i) => i.sinaSymbol);
+      const assetSymbols = MARKET_ASSETS.map((i) => i.sinaSymbol);
       const futuresSymbols = INDICES.flatMap((i) => i.futures?.sinaSymbol ?? []);
       const holdingSymbols = FUNDS.flatMap((f) =>
         f.holdings.map((h) => h.sinaSymbol),
       );
-      const allSinaSymbols = [...new Set([...indexSymbols, ...futuresSymbols, ...holdingSymbols])];
+      const allSinaSymbols = [...new Set([...indexSymbols, ...futuresSymbols, ...assetSymbols, ...holdingSymbols])];
 
       try {
         const fundCodes = FUNDS.map((f) => f.code);

@@ -26,6 +26,13 @@ export const INDICES: IndexConfig[] = [
   { symbol: 'TWSE', name: '台湾加权', sinaSymbol: 'b_TWSE' },
 ];
 
+export const MARKET_ASSETS: IndexConfig[] = [
+  { symbol: 'GC', name: '黄金', sinaSymbol: 'hf_GC' },
+  { symbol: 'SI', name: '白银', sinaSymbol: 'hf_SI' },
+  { symbol: 'CL', name: '原油', sinaSymbol: 'hf_CL' },
+  { symbol: 'BTC', name: '比特币', sinaSymbol: 'fx_sbtcusd' },
+];
+
 export const FUNDS: Fund[] = [
   // ──── 纳斯达克/美股科技 ────
   {

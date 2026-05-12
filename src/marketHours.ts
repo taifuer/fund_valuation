@@ -205,7 +205,14 @@ function isInFuturesSession(calendar: FuturesCalendar, local: ZonedNow): boolean
 }
 
 function futuresMarketKey(sinaSymbol: string): string | null {
-  if (sinaSymbol === 'hf_NQ' || sinaSymbol === 'hf_ES' || sinaSymbol === 'hf_YM') return 'us_futures';
+  if (
+    sinaSymbol === 'hf_NQ' ||
+    sinaSymbol === 'hf_ES' ||
+    sinaSymbol === 'hf_YM' ||
+    sinaSymbol === 'hf_GC' ||
+    sinaSymbol === 'hf_SI' ||
+    sinaSymbol === 'hf_CL'
+  ) return 'us_futures';
   if (sinaSymbol === 'hf_HSI') return 'hk_futures';
   if (sinaSymbol === 'hf_NK') return 'jp_futures';
   return null;
@@ -220,6 +227,7 @@ function marketKey(sinaSymbol: string): string | null {
   if (sinaSymbol === 'int_nikkei') return 'jp';
   if (sinaSymbol === 'b_KOSPI') return 'kr';
   if (sinaSymbol === 'b_TWSE') return 'tw';
+  if (sinaSymbol === 'fx_sbtcusd') return 'crypto';
   return null;
 }
 
@@ -246,6 +254,8 @@ export function getMarketState(sinaSymbol: string, now = new Date()): MarketStat
     const local = zonedNow(calendar.timezone, now);
     return isInFuturesSession(calendar, local) ? 'live' : 'closed';
   }
+
+  if (key === 'crypto') return 'live';
 
   const calendar = MARKETS[key];
   const local = zonedNow(calendar.timezone, now);

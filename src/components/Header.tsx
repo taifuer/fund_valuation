@@ -35,7 +35,7 @@ export default function Header({ fxRates }: Props) {
         <Logo />
         <div>
           <h1 className={styles.title}>全球基金估值看板</h1>
-          <div className={styles.subtitle}>QDII Active Funds · Real-Time NAV</div>
+          <div className={styles.subtitle}>QDII Active Funds · Market Assets</div>
         </div>
       </div>
       <div className={styles.meta}>
