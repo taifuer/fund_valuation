@@ -17,11 +17,11 @@ export const INDICES: IndexConfig[] = [
   // 美股
   { symbol: 'IXIC', name: '纳斯达克', sinaSymbol: 'gb_ixic' },
   { symbol: 'NDX', name: '纳指100', sinaSymbol: 'gb_ndx', futures: { sinaSymbol: 'hf_NQ', label: '纳指100期货' } },
-  { symbol: 'NDXT', name: '纳指100科技', sinaSymbol: 'gb_ndxt' },
   { symbol: 'INX', name: '标普500', sinaSymbol: 'gb_inx', futures: { sinaSymbol: 'hf_ES', label: '标普500期货' } },
+  { symbol: 'DJI', name: '道琼斯', sinaSymbol: 'gb_dji', futures: { sinaSymbol: 'hf_YM', label: '道指期货' } },
   // 亚太
-  { symbol: 'HSI', name: '恒生指数', sinaSymbol: 'hkHSI' },
-  { symbol: 'N225', name: '日经225', sinaSymbol: 'int_nikkei' },
+  { symbol: 'HSI', name: '恒生指数', sinaSymbol: 'hkHSI', futures: { sinaSymbol: 'hf_HSI', label: '恒指期货' } },
+  { symbol: 'N225', name: '日经225', sinaSymbol: 'int_nikkei', futures: { sinaSymbol: 'hf_NK', label: '日经225期货' } },
   { symbol: 'KOSPI', name: '韩国KOSPI', sinaSymbol: 'b_KOSPI' },
   { symbol: 'TWSE', name: '台湾加权', sinaSymbol: 'b_TWSE' },
 ];

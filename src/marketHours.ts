@@ -10,6 +10,12 @@ interface MarketCalendar {
   halfDays2026?: Record<string, Session[]>;
 }
 
+interface FuturesCalendar {
+  timezone: string;
+  sessions: Session[];
+  holidays2026: Set<string>;
+}
+
 const HOLIDAYS_2026 = {
   cn: new Set([
     '2026-01-01', '2026-02-16', '2026-02-17', '2026-02-18', '2026-02-19', '2026-02-20',
@@ -93,6 +99,26 @@ const MARKETS: Record<string, MarketCalendar> = {
   },
 };
 
+const FUTURES_MARKETS: Record<string, FuturesCalendar> = {
+  hk_futures: {
+    timezone: 'Asia/Hong_Kong',
+    sessions: [
+      { start: [9, 15], end: [12, 0] },
+      { start: [13, 0], end: [16, 30] },
+      { start: [17, 15], end: [3, 0] },
+    ],
+    holidays2026: HOLIDAYS_2026.hk,
+  },
+  jp_futures: {
+    timezone: 'Asia/Tokyo',
+    sessions: [
+      { start: [7, 30], end: [14, 25] },
+      { start: [14, 55], end: [5, 15] },
+    ],
+    holidays2026: HOLIDAYS_2026.jp,
+  },
+};
+
 interface ZonedNow {
   date: string;
   weekday: string;
@@ -131,8 +157,63 @@ function isInSession(sessions: Session[], minutes: number): boolean {
   });
 }
 
+function isWeekday(weekday: string): boolean {
+  return weekday !== 'Sat' && weekday !== 'Sun';
+}
+
+function previousDate(date: string): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function previousWeekday(weekday: string): string {
+  const order = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const index = order.indexOf(weekday);
+  return order[(index + 6) % 7];
+}
+
+function isTradingDate(date: string, weekday: string, holidays: Set<string>): boolean {
+  return isWeekday(weekday) && !holidays.has(date);
+}
+
+function isInFuturesSession(calendar: FuturesCalendar, local: ZonedNow): boolean {
+  return calendar.sessions.some((s) => {
+    const start = s.start[0] * 60 + s.start[1];
+    const end = s.end[0] * 60 + s.end[1];
+
+    if (start < end) {
+      return (
+        local.minutes >= start &&
+        local.minutes < end &&
+        isTradingDate(local.date, local.weekday, calendar.holidays2026)
+      );
+    }
+
+    if (local.minutes >= start) {
+      return isTradingDate(local.date, local.weekday, calendar.holidays2026);
+    }
+
+    if (local.minutes < end) {
+      const prevDate = previousDate(local.date);
+      const prevWeekday = previousWeekday(local.weekday);
+      return isTradingDate(prevDate, prevWeekday, calendar.holidays2026);
+    }
+
+    return false;
+  });
+}
+
+function futuresMarketKey(sinaSymbol: string): string | null {
+  if (sinaSymbol === 'hf_NQ' || sinaSymbol === 'hf_ES' || sinaSymbol === 'hf_YM') return 'us_futures';
+  if (sinaSymbol === 'hf_HSI') return 'hk_futures';
+  if (sinaSymbol === 'hf_NK') return 'jp_futures';
+  return null;
+}
+
 function marketKey(sinaSymbol: string): string | null {
-  if (sinaSymbol.startsWith('hf_')) return 'us_futures';
+  const futuresKey = futuresMarketKey(sinaSymbol);
+  if (futuresKey) return futuresKey;
   if (sinaSymbol.startsWith('gb_')) return 'us';
   if (sinaSymbol.startsWith('hk')) return 'hk';
   if (sinaSymbol.startsWith('s_') || /^(sz|sh)\d/.test(sinaSymbol)) return 'cn';
@@ -158,6 +239,12 @@ export function getMarketState(sinaSymbol: string, now = new Date()): MarketStat
     if (local.weekday === 'Fri') return local.minutes < maintenanceStart ? 'live' : 'closed';
     if (local.minutes >= maintenanceStart && local.minutes < maintenanceEnd) return 'closed';
     return 'live';
+  }
+
+  if (key === 'hk_futures' || key === 'jp_futures') {
+    const calendar = FUTURES_MARKETS[key];
+    const local = zonedNow(calendar.timezone, now);
+    return isInFuturesSession(calendar, local) ? 'live' : 'closed';
   }
 
   const calendar = MARKETS[key];

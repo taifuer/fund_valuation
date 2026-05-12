@@ -84,7 +84,7 @@ function Card({
 export default function IndexCards({ quotes, loading }: Props) {
   const groups = [
     { title: 'A股', symbols: ['s_sh000001', 's_sz399006', 's_sh000300', 's_sh000905'], cols: 'grid4' },
-    { title: '美股', symbols: ['gb_ixic', 'gb_ndx', 'gb_ndxt', 'gb_inx'], cols: 'grid4' },
+    { title: '美股', symbols: ['gb_ixic', 'gb_ndx', 'gb_inx', 'gb_dji'], cols: 'grid4' },
     { title: '亚太', symbols: ['hkHSI', 'int_nikkei', 'b_KOSPI', 'b_TWSE'], cols: 'grid4' },
   ];
 
