@@ -72,18 +72,27 @@ export default function dataProxy(): Plugin {
 
       // East Money fund NAV history (last 2 records)
       server.middlewares.use('/api/fundhistory', async (req, res) => {
-        const codes = new URL(req.url!, 'http://localhost').searchParams.get('codes');
+        const params = new URL(req.url!, 'http://localhost').searchParams;
+        const codes = params.get('codes');
         if (!codes) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Missing codes parameter' }));
           return;
         }
+        const requestedPageSize = Number(params.get('pageSize') ?? '2');
+        const pageSize = Number.isFinite(requestedPageSize)
+          ? Math.min(Math.max(Math.floor(requestedPageSize), 2), 200)
+          : 2;
+        const requestedPageIndex = Number(params.get('pageIndex') ?? '1');
+        const pageIndex = Number.isFinite(requestedPageIndex)
+          ? Math.max(Math.floor(requestedPageIndex), 1)
+          : 1;
 
         const results: Record<string, unknown> = {};
         for (const code of codes.split(',')) {
           try {
             const upstream = await fetch(
-              `https://api.fund.eastmoney.com/f10/lsjz?callback=jQuery&fundCode=${code}&pageIndex=1&pageSize=2&_=${Date.now()}`,
+              `https://api.fund.eastmoney.com/f10/lsjz?callback=jQuery&fundCode=${code}&pageIndex=${pageIndex}&pageSize=${pageSize}&_=${Date.now()}`,
               {
                 headers: {
                   'User-Agent':

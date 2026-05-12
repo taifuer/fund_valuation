@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Fund } from '../types';
 import type { FundEstimate } from '../hooks/useQuotes';
 import HoldingsTable from './HoldingsTable';
+import FundHistoryChart from './FundHistoryChart';
 import { getMarketState } from '../marketHours';
 import styles from './FundCard.module.css';
 
@@ -28,6 +29,7 @@ function formatDate(yyyymmdd: string): string {
 
 export default function FundCard({ fund, estimate, rank, loading }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<'holdings' | 'history'>('holdings');
   const badge = RANK_BADGE[rank];
 
   if (loading) {
@@ -131,14 +133,36 @@ export default function FundCard({ fund, estimate, rank, loading }: Props) {
       </div>
 
       {expanded && (
-        <HoldingsTable
-          holdings={fund.holdings}
-          quotes={estimate.holdingsQuotes}
-          computedChange={computedChange}
-          quoteCoverage={quoteCoverage}
-          totalConfiguredWeight={totalConfiguredWeight}
-          currencyChanges={currencyChanges}
-        />
+        <div className={styles.expanded} onClick={(event) => event.stopPropagation()}>
+          <div className={styles.tabs}>
+            <button
+              type="button"
+              className={`${styles.tabButton} ${activeTab === 'holdings' ? styles.tabButtonActive : ''}`}
+              onClick={() => setActiveTab('holdings')}
+            >
+              持仓
+            </button>
+            <button
+              type="button"
+              className={`${styles.tabButton} ${activeTab === 'history' ? styles.tabButtonActive : ''}`}
+              onClick={() => setActiveTab('history')}
+            >
+              历史
+            </button>
+          </div>
+          {activeTab === 'holdings' ? (
+            <HoldingsTable
+              holdings={fund.holdings}
+              quotes={estimate.holdingsQuotes}
+              computedChange={computedChange}
+              quoteCoverage={quoteCoverage}
+              totalConfiguredWeight={totalConfiguredWeight}
+              currencyChanges={currencyChanges}
+            />
+          ) : (
+            <FundHistoryChart fundCode={fund.code} />
+          )}
+        </div>
       )}
     </div>
   );

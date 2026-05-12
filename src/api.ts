@@ -1,4 +1,4 @@
-import type { QuoteData, FundNavData, FxRateData } from './types';
+import type { QuoteData, FundNavData, FundHistoryPoint, FxRateData } from './types';
 
 type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'crypto' | 'fund' | 'fx';
 
@@ -304,6 +304,45 @@ export async function fetchFundHistory(
     }
   } catch { /* skip */ }
   return results;
+}
+
+export async function fetchFundHistorySeries(
+  code: string,
+  targetSize = 3000,
+): Promise<FundHistoryPoint[]> {
+  // East Money caps this endpoint at 20 rows even when a larger pageSize is requested.
+  const pageSize = 20;
+  const maxPages = Math.ceil(targetSize / pageSize);
+  const rows: FundHistoryRow[] = [];
+  let previousFirstDate = '';
+
+  try {
+    for (let pageIndex = 1; pageIndex <= maxPages; pageIndex += 1) {
+      const url = `/api/fundhistory?codes=${code}&pageSize=${pageSize}&pageIndex=${pageIndex}`;
+      const res = await fetch(url);
+      if (!res.ok) break;
+      const json = await res.json();
+      const pageRows: FundHistoryRow[] | undefined = json[code];
+      if (!pageRows || pageRows.length === 0) break;
+      if (pageRows[0]?.FSRQ === previousFirstDate) break;
+      previousFirstDate = pageRows[0]?.FSRQ ?? '';
+      rows.push(...pageRows);
+      if (rows.length >= targetSize) break;
+    }
+
+    const uniqueRows = [...new Map(rows.map((row) => [row.FSRQ, row])).values()];
+    return uniqueRows
+      .slice(0, targetSize)
+      .map((row) => ({
+        date: row.FSRQ,
+        nav: parseFloat(row.DWJZ) || 0,
+        changePercent: parseFloat(row.JZZZL) || 0,
+      }))
+      .filter((point) => point.date && point.nav > 0)
+      .sort((a, b) => a.date.localeCompare(b.date));
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchFundNavs(codes: string[]): Promise<Map<string, FundNavData>> {

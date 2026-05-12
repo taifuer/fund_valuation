@@ -144,6 +144,37 @@
 .up { color: #16a34a; }
 .down { color: #dc2626; }
 
+.expanded {
+  cursor: default;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 14px;
+  border-top: 1px solid #f1f5f9;
+  background: #fff;
+}
+
+.tabButton {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 24px;
+  min-width: 56px;
+  padding: 0 10px;
+}
+
+.tabButtonActive {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #fff;
+}
+
 .skeleton {
   animation: pulse 1.5s ease-in-out infinite;
   background: #e2e8f0;

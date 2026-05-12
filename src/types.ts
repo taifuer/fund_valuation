@@ -35,6 +35,12 @@ export interface FundNavData {
   estimatedChange: number; // 平台估算涨跌幅 (%)
 }
 
+export interface FundHistoryPoint {
+  date: string;
+  nav: number;
+  changePercent: number;
+}
+
 export interface FxRateData {
   currency: string;
   pair: string;
