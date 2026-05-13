@@ -121,6 +121,71 @@ export default function dataProxy(): Plugin {
         });
         res.end(JSON.stringify(results));
       });
+
+      // Market history for supported indices and global futures
+      server.middlewares.use('/api/markethistory', async (req, res) => {
+        const params = new URL(req.url!, 'http://localhost').searchParams;
+        const source = params.get('source');
+        const symbol = params.get('symbol');
+        if (!source || !symbol) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Missing source or symbol parameter' }));
+          return;
+        }
+
+        try {
+          let upstream: Response;
+          if (source === 'sina-cn') {
+            upstream = await fetch(
+              `https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketData.getKLineData?symbol=${encodeURIComponent(symbol)}&scale=240&ma=no&datalen=1023`,
+              {
+                headers: {
+                  'User-Agent':
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  Referer: 'https://finance.sina.com.cn/',
+                },
+              },
+            );
+          } else if (source === 'sina-us') {
+            upstream = await fetch(
+              `https://stock.finance.sina.com.cn/usstock/api/jsonp.php/var%20_=/US_MinKService.getDailyK?symbol=${encodeURIComponent(symbol)}`,
+              {
+                headers: {
+                  'User-Agent':
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  Referer: 'https://finance.sina.com.cn/stock/usstock/',
+                },
+              },
+            );
+          } else if (source === 'sina-futures') {
+            upstream = await fetch(
+              `https://stock2.finance.sina.com.cn/futures/api/json.php/GlobalFuturesService.getGlobalFuturesDailyKLine?symbol=${encodeURIComponent(symbol)}`,
+              {
+                headers: {
+                  'User-Agent':
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  Referer: 'https://finance.sina.com.cn/futures/',
+                },
+              },
+            );
+          } else {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Unsupported source' }));
+            return;
+          }
+
+          const text = await upstream.text();
+          res.writeHead(upstream.status, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=300',
+          });
+          res.end(text);
+        } catch {
+          res.writeHead(502, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Upstream fetch failed' }));
+        }
+      });
     },
   };
 }

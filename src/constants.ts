@@ -10,26 +10,26 @@ const cn = (symbol: string, name: string, weight: number): Holding => ({
 
 export const INDICES: IndexConfig[] = [
   // A股
-  { symbol: 'SH000001', name: '上证指数', sinaSymbol: 's_sh000001' },
-  { symbol: 'SZ399006', name: '创业板指', sinaSymbol: 's_sz399006' },
-  { symbol: 'SH000300', name: '沪深300', sinaSymbol: 's_sh000300' },
-  { symbol: 'SH000905', name: '中证500', sinaSymbol: 's_sh000905' },
+  { symbol: 'SH000001', name: '上证指数', sinaSymbol: 's_sh000001', history: { source: 'sina-cn', symbol: 'sh000001' } },
+  { symbol: 'SZ399006', name: '创业板指', sinaSymbol: 's_sz399006', history: { source: 'sina-cn', symbol: 'sz399006' } },
+  { symbol: 'SH000300', name: '沪深300', sinaSymbol: 's_sh000300', history: { source: 'sina-cn', symbol: 'sh000300' } },
+  { symbol: 'SH000905', name: '中证500', sinaSymbol: 's_sh000905', history: { source: 'sina-cn', symbol: 'sh000905' } },
   // 美股
-  { symbol: 'IXIC', name: '纳斯达克', sinaSymbol: 'gb_ixic' },
-  { symbol: 'NDX', name: '纳指100', sinaSymbol: 'gb_ndx', futures: { sinaSymbol: 'hf_NQ', label: '纳指100期货' } },
-  { symbol: 'INX', name: '标普500', sinaSymbol: 'gb_inx', futures: { sinaSymbol: 'hf_ES', label: '标普500期货' } },
-  { symbol: 'DJI', name: '道琼斯', sinaSymbol: 'gb_dji', futures: { sinaSymbol: 'hf_YM', label: '道指期货' } },
+  { symbol: 'IXIC', name: '纳斯达克', sinaSymbol: 'gb_ixic', history: { source: 'sina-us', symbol: '.IXIC' } },
+  { symbol: 'NDX', name: '纳指100', sinaSymbol: 'gb_ndx', futures: { sinaSymbol: 'hf_NQ', label: '纳指100期货' }, history: { source: 'sina-us', symbol: '.NDX' } },
+  { symbol: 'INX', name: '标普500', sinaSymbol: 'gb_inx', futures: { sinaSymbol: 'hf_ES', label: '标普500期货' }, history: { source: 'sina-us', symbol: '.INX' } },
+  { symbol: 'DJI', name: '道琼斯', sinaSymbol: 'gb_dji', futures: { sinaSymbol: 'hf_YM', label: '道指期货' }, history: { source: 'sina-us', symbol: '.DJI' } },
   // 亚太
-  { symbol: 'HSI', name: '恒生指数', sinaSymbol: 'hkHSI', futures: { sinaSymbol: 'hf_HSI', label: '恒指期货' } },
-  { symbol: 'N225', name: '日经225', sinaSymbol: 'int_nikkei', futures: { sinaSymbol: 'hf_NK', label: '日经225期货' } },
+  { symbol: 'HSI', name: '恒生指数', sinaSymbol: 'hkHSI', futures: { sinaSymbol: 'hf_HSI', label: '恒指期货' }, history: { source: 'sina-futures', symbol: 'HSI' } },
+  { symbol: 'N225', name: '日经225', sinaSymbol: 'int_nikkei', futures: { sinaSymbol: 'hf_NK', label: '日经225期货' }, history: { source: 'sina-futures', symbol: 'NK' } },
   { symbol: 'KOSPI', name: '韩国KOSPI', sinaSymbol: 'b_KOSPI' },
   { symbol: 'TWSE', name: '台湾加权', sinaSymbol: 'b_TWSE' },
 ];
 
 export const MARKET_ASSETS: IndexConfig[] = [
-  { symbol: 'GC', name: '黄金', sinaSymbol: 'hf_GC' },
-  { symbol: 'SI', name: '白银', sinaSymbol: 'hf_SI' },
-  { symbol: 'CL', name: '原油', sinaSymbol: 'hf_CL' },
+  { symbol: 'GC', name: '黄金', sinaSymbol: 'hf_GC', history: { source: 'sina-futures', symbol: 'GC' } },
+  { symbol: 'SI', name: '白银', sinaSymbol: 'hf_SI', history: { source: 'sina-futures', symbol: 'SI' } },
+  { symbol: 'CL', name: '原油', sinaSymbol: 'hf_CL', history: { source: 'sina-futures', symbol: 'CL' } },
   { symbol: 'BTC', name: '比特币', sinaSymbol: 'fx_sbtcusd' },
 ];
 

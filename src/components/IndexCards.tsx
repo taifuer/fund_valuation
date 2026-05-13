@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import type { QuoteData, IndexConfig } from '../types';
 import { INDICES, MARKET_ASSETS } from '../constants';
 import { getMarketState } from '../marketHours';
+import MarketHistoryModal from './MarketHistoryModal';
 import styles from './IndexCards.module.css';
 
 interface Props {
@@ -18,15 +20,17 @@ function Card({
   data,
   futuresData,
   loading,
+  onOpenHistory,
 }: {
   idx: IndexConfig;
   data?: QuoteData;
   futuresData?: QuoteData;
   loading: boolean;
+  onOpenHistory?: () => void;
 }) {
   if (loading || !data) {
     return (
-      <div className={styles.card}>
+      <div className={`${styles.card} ${idx.history ? styles.cardClickable : ''}`}>
         <div className={styles.label}>{idx.name}</div>
         <div className={styles.skeleton} style={{ height: 24, width: 90, margin: '4px auto' }} />
         <div className={styles.skeleton} style={{ height: 14, width: 60, margin: '3px auto 0' }} />
@@ -49,7 +53,12 @@ function Card({
         : 'closed';
 
   return (
-    <div className={styles.card}>
+    <button
+      type="button"
+      className={`${styles.card} ${idx.history ? styles.cardClickable : ''}`}
+      onClick={onOpenHistory}
+      disabled={!idx.history}
+    >
       <span
         className={`${styles.state} ${
           displayState === 'futuresLive'
@@ -77,11 +86,12 @@ function Card({
       <span className={`${styles.quoteDate} ${displayData.dateReliable ? '' : styles.quoteDateEstimated}`}>
         {formatQuoteDate(displayData.time)}
       </span>
-    </div>
+    </button>
   );
 }
 
 export default function IndexCards({ quotes, loading }: Props) {
+  const [selectedHistory, setSelectedHistory] = useState<IndexConfig | null>(null);
   const groups = [
     { title: 'A股', symbols: ['s_sh000001', 's_sz399006', 's_sh000300', 's_sh000905'], cols: 'grid4' },
     { title: '美股', symbols: ['gb_ixic', 'gb_ndx', 'gb_inx', 'gb_dji'], cols: 'grid4' },
@@ -105,12 +115,16 @@ export default function IndexCards({ quotes, loading }: Props) {
                   data={quotes.get(sym)}
                   futuresData={idx.futures ? quotes.get(idx.futures.sinaSymbol) : undefined}
                   loading={loading}
+                  onOpenHistory={idx.history ? () => setSelectedHistory(idx) : undefined}
                 />
               );
             })}
           </div>
         </div>
       ))}
+      {selectedHistory && (
+        <MarketHistoryModal item={selectedHistory} onClose={() => setSelectedHistory(null)} />
+      )}
     </div>
   );
 }

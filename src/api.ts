@@ -1,4 +1,11 @@
-import type { QuoteData, FundNavData, FundHistoryPoint, FxRateData } from './types';
+import type {
+  QuoteData,
+  FundNavData,
+  FundHistoryPoint,
+  FxRateData,
+  MarketHistoryConfig,
+  MarketHistoryPoint,
+} from './types';
 
 type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'crypto' | 'fund' | 'fx';
 
@@ -331,6 +338,32 @@ interface FundHistoryRow {
   JZZZL: string;
 }
 
+interface SinaCnKlineRow {
+  day?: string;
+  close?: string | number;
+}
+
+interface SinaUsKlineRow {
+  d?: string;
+  c?: string | number;
+}
+
+interface SinaFuturesKlineRow {
+  date?: string;
+  close?: string | number;
+}
+
+function parseSinaJsonpArray<T>(text: string): T[] {
+  const match = text.match(/=\((.*)\);?\s*$/s);
+  if (!match) return [];
+  try {
+    const parsed = JSON.parse(match[1]);
+    return Array.isArray(parsed) ? parsed as T[] : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchFundHistory(
   codes: string[],
 ): Promise<Map<string, { navDate: string; nav: number; officialChange: number }>> {
@@ -390,6 +423,51 @@ export async function fetchFundHistorySeries(
         changePercent: parseFloat(row.JZZZL) || 0,
       }))
       .filter((point) => point.date && point.nav > 0)
+      .sort((a, b) => a.date.localeCompare(b.date));
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchMarketHistory(config: MarketHistoryConfig): Promise<MarketHistoryPoint[]> {
+  try {
+    const params = new URLSearchParams({
+      source: config.source,
+      symbol: config.symbol,
+    });
+    const res = await fetch(`/api/markethistory?${params.toString()}`);
+    if (!res.ok) return [];
+    const text = await res.text();
+    let points: MarketHistoryPoint[] = [];
+
+    if (config.source === 'sina-cn') {
+      const rows = JSON.parse(text) as SinaCnKlineRow[];
+      points = (Array.isArray(rows) ? rows : []).map((row) => ({
+        date: row.day ?? '',
+        close: typeof row.close === 'number' ? row.close : parseFloat(row.close ?? ''),
+      }));
+    } else if (config.source === 'sina-us') {
+      const rows = parseSinaJsonpArray<SinaUsKlineRow>(text);
+      points = rows.map((row) => ({
+        date: row.d ?? '',
+        close: typeof row.c === 'number' ? row.c : parseFloat(row.c ?? ''),
+      }));
+    } else if (config.source === 'sina-futures') {
+      const json = JSON.parse(text);
+      const rows = Array.isArray(json) ? (json as SinaFuturesKlineRow[]) : [];
+      points = rows.map((row) => ({
+        date: row.date ?? '',
+        close: typeof row.close === 'number' ? row.close : parseFloat(row.close ?? ''),
+      }));
+    }
+
+    return points
+      .filter((point) => (
+        /^\d{4}-\d{2}-\d{2}$/.test(point.date) &&
+        point.date <= beijingDate() &&
+        Number.isFinite(point.close) &&
+        point.close > 0
+      ))
       .sort((a, b) => a.date.localeCompare(b.date));
   } catch {
     return [];

@@ -42,6 +42,16 @@ export interface FundHistoryPoint {
   changePercent: number;
 }
 
+export interface MarketHistoryPoint {
+  date: string;
+  close: number;
+}
+
+export interface MarketHistoryConfig {
+  source: 'sina-cn' | 'sina-us' | 'sina-futures';
+  symbol: string;
+}
+
 export interface FxRateData {
   currency: string;
   pair: string;
@@ -59,4 +69,5 @@ export interface IndexConfig {
     sinaSymbol: string;
     label: string;
   };
+  history?: MarketHistoryConfig;
 }

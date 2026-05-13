@@ -1,36 +1,93 @@
-.container {
-  border-top: 1px solid #f1f5f9;
-  background: #fff;
-  padding: 10px 14px 12px;
+.backdrop {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.42);
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  left: 0;
+  padding: 20px;
+  position: fixed;
+  right: 0;
+  top: 0;
+  z-index: 50;
 }
 
-.toolbar {
+.dialog {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.2);
+  max-height: calc(100vh - 40px);
+  max-width: 760px;
+  overflow: auto;
+  padding: 18px;
+  width: min(760px, 100%);
+}
+
+.header {
+  align-items: flex-start;
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 8px;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.title {
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.subtitle {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.closeButton {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  color: #475569;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 22px;
+  height: 32px;
+  justify-content: center;
+  line-height: 1;
+  width: 32px;
+}
+
+.closeButton:hover {
+  background: #f1f5f9;
 }
 
 .rangeGroup {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
   display: inline-flex;
   flex-wrap: wrap;
   gap: 2px;
+  margin-bottom: 12px;
   padding: 2px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: #f8fafc;
 }
 
 .rangeButton {
+  background: transparent;
   border: 0;
   border-radius: 6px;
-  background: transparent;
   color: #64748b;
   cursor: pointer;
   font-size: 11px;
   font-weight: 600;
-  line-height: 22px;
+  line-height: 24px;
   min-width: 38px;
-  padding: 0 6px;
+  padding: 0 7px;
 }
 
 .rangeButtonActive {
@@ -40,44 +97,45 @@
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
-  margin-bottom: 8px;
+  grid-template-columns: repeat(4, 1fr);
+  margin-bottom: 10px;
 }
 
 .metrics div {
   background: #f8fafc;
   border: 1px solid #f1f5f9;
   border-radius: 6px;
-  padding: 7px 8px;
+  padding: 8px 9px;
 }
 
 .metrics span {
-  display: block;
   color: #94a3b8;
+  display: block;
   font-size: 10px;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 
 .metrics strong {
   color: #0f172a;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+  line-height: 1.3;
 }
 
 .chartWrap {
+  background: #fff;
   border: 1px solid #f1f5f9;
   border-radius: 8px;
-  padding: 6px 8px 5px;
-  background: #fff;
+  padding: 8px 10px 6px;
 }
 
 .chart {
-  display: block;
-  width: 100%;
-  height: 206px;
   cursor: crosshair;
+  display: block;
+  height: 218px;
   touch-action: none;
+  width: 100%;
 }
 
 .gridLine {
@@ -85,12 +143,7 @@
   stroke-width: 1;
 }
 
-.yLabel {
-  fill: #94a3b8;
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
-
+.yLabel,
 .xLabel {
   fill: #94a3b8;
   font-size: 10px;
@@ -104,10 +157,10 @@
 
 .line {
   fill: none;
+  pointer-events: none;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 2.5;
-  pointer-events: none;
 }
 
 .lineUp {
@@ -119,11 +172,11 @@
 }
 
 .crosshair {
+  opacity: 0.55;
   pointer-events: none;
   stroke: #64748b;
   stroke-dasharray: 3 3;
   stroke-width: 1;
-  opacity: 0.55;
 }
 
 .focusPoint {
@@ -160,10 +213,10 @@
 }
 
 .state {
-  padding: 28px 12px;
-  text-align: center;
   color: #94a3b8;
   font-size: 12px;
+  padding: 42px 12px;
+  text-align: center;
 }
 
 .up {
@@ -175,8 +228,14 @@
 }
 
 @media (max-width: 640px) {
-  .toolbar {
-    justify-content: flex-start;
+  .backdrop {
+    align-items: flex-end;
+    padding: 10px;
+  }
+
+  .dialog {
+    max-height: calc(100vh - 20px);
+    padding: 14px;
   }
 
   .metrics {

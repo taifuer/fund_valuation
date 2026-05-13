@@ -43,6 +43,12 @@
   color: #94a3b8;
 }
 
+.sortControls {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
 .sortToggle {
   display: inline-flex;
   flex: 0 0 auto;
@@ -70,10 +76,24 @@
   color: #fff;
 }
 
+.footer {
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.7;
+  margin: 0 auto;
+  max-width: 960px;
+  padding: 0 16px 22px;
+  text-align: center;
+}
+
 @media (max-width: 640px) {
   .sectionHeader {
     align-items: flex-start;
     flex-direction: column;
     gap: 8px;
+  }
+
+  .sortControls {
+    flex-wrap: wrap;
   }
 }

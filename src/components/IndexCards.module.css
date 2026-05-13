@@ -38,6 +38,24 @@
   text-align: center;
   border: 1px solid #f1f5f9;
   position: relative;
+  color: inherit;
+  display: block;
+  font: inherit;
+  width: 100%;
+}
+
+.card:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.cardClickable {
+  cursor: pointer;
+}
+
+.cardClickable:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
 }
 
 .label {

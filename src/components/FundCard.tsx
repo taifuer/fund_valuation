@@ -10,6 +10,7 @@ interface Props {
   fund: Fund;
   estimate?: FundEstimate;
   rank: number;
+  rankLabel?: string;
   loading: boolean;
 }
 
@@ -27,10 +28,11 @@ function formatDate(yyyymmdd: string): string {
   return yyyymmdd;
 }
 
-export default function FundCard({ fund, estimate, rank, loading }: Props) {
+export default function FundCard({ fund, estimate, rank, rankLabel, loading }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'holdings' | 'history'>('holdings');
   const badge = RANK_BADGE[rank];
+  const badgeLabel = rankLabel ?? badge?.label;
 
   if (loading) {
     return <div className={styles.skeleton} style={{ height: 96, width: '100%' }} />;
@@ -39,7 +41,7 @@ export default function FundCard({ fund, estimate, rank, loading }: Props) {
   if (!estimate || !estimate.officialNAV) {
     return (
       <div className={styles.card}>
-        {badge && <div className={`${styles.badge} ${styles[badge.cls]}`}>{badge.label}</div>}
+        {badge && <div className={`${styles.badge} ${styles[badge.cls]}`}>{badgeLabel}</div>}
         <div className={styles.main}>
           <div className={styles.topRow}>
             <span className={styles.name}>{fund.name}<span className={styles.code}>{fund.code}</span></span>
@@ -86,7 +88,7 @@ export default function FundCard({ fund, estimate, rank, loading }: Props) {
 
   return (
     <div className={styles.card} onClick={() => setExpanded(!expanded)}>
-      {badge && <div className={`${styles.badge} ${styles[badge.cls]}`}>{badge.label}</div>}
+      {badge && <div className={`${styles.badge} ${styles[badge.cls]}`}>{badgeLabel}</div>}
       <div className={styles.main}>
         <div className={styles.topRow}>
           <span className={styles.name}>{fund.name}<span className={styles.code}>{fund.code}</span></span>
