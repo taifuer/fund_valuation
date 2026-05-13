@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchMarketHistory } from '../api';
-import type { IndexConfig, MarketHistoryPoint } from '../types';
+import type { IndexConfig, MarketHistoryPoint, QuoteData } from '../types';
 import styles from './MarketHistoryModal.module.css';
 
 interface Props {
   item: IndexConfig;
+  currentQuote?: QuoteData;
   onClose: () => void;
 }
 
-type RangeKey = '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | '5y' | 'all';
+type RangeKey = '1d' | '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | '5y' | 'all';
 type TextAnchor = 'start' | 'middle' | 'end';
 
 const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
+  { key: '1d', label: '1日', days: 1 },
   { key: '1w', label: '1周', days: 7 },
   { key: '1m', label: '1月', days: 30 },
   { key: '3m', label: '3月', days: 90 },
@@ -23,6 +25,12 @@ const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
 ];
 
 const historyCache = new Map<string, MarketHistoryPoint[]>();
+
+function todayDate(): string {
+  const now = new Date();
+  const bj = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  return bj.toISOString().slice(0, 10);
+}
 
 function cutoffDate(latestDate: string, days: number): string {
   const date = new Date(`${latestDate}T12:00:00+08:00`);
@@ -41,7 +49,30 @@ function selectRange(points: MarketHistoryPoint[], days: number | null): MarketH
   return sliced.length >= 2 ? sliced : points.slice(-2);
 }
 
+function selectOneDay(points: MarketHistoryPoint[], currentQuote?: QuoteData): MarketHistoryPoint[] {
+  if (!currentQuote || currentQuote.price <= 0 || currentQuote.previousClose <= 0) {
+    return points.slice(-Math.min(points.length, 2));
+  }
+
+  const quoteDate = currentQuote.dateReliable && currentQuote.time ? currentQuote.time : todayDate();
+  const previousPoint =
+    [...points].reverse().find((point) => point.date < quoteDate) ??
+    points[points.length - 2];
+  const basePoint: MarketHistoryPoint = previousPoint
+    ? { date: previousPoint.date, close: currentQuote.previousClose }
+    : { date: '前收', close: currentQuote.previousClose };
+
+  return [
+    basePoint,
+    {
+      date: quoteDate,
+      close: currentQuote.price,
+    },
+  ];
+}
+
 function tickCount(range: RangeKey): number {
+  if (range === '1d') return 2;
   if (range === '1w') return 6;
   if (range === '1m') return 6;
   if (range === '3m') return 5;
@@ -61,7 +92,7 @@ function formatAxisDate(date: string, range: RangeKey): string {
   const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return date;
   const [, year, month, day] = match;
-  if (range === '1w' || range === '1m' || range === '3m' || range === '6m') {
+  if (range === '1d' || range === '1w' || range === '1m' || range === '3m' || range === '6m') {
     return `${month}/${day}`;
   }
   if (range === '1y') {
@@ -179,7 +210,7 @@ function pointerSvgX(event: React.PointerEvent<SVGSVGElement>): number {
   return point.matrixTransform(matrix.inverse()).x;
 }
 
-export default function MarketHistoryModal({ item, onClose }: Props) {
+export default function MarketHistoryModal({ item, currentQuote, onClose }: Props) {
   const [range, setRange] = useState<RangeKey>('3m');
   const cacheKey = item.history ? `${item.history.source}:${item.history.symbol}` : item.sinaSymbol;
   const [history, setHistory] = useState<MarketHistoryPoint[]>(() => historyCache.get(cacheKey) ?? []);
@@ -236,8 +267,9 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
 
   const selectedRange = RANGES.find((rangeItem) => rangeItem.key === range) ?? RANGES[2];
   const visible = useMemo(() => {
+    if (range === '1d') return selectOneDay(history, currentQuote);
     return selectRange(history, selectedRange.days);
-  }, [history, selectedRange.days]);
+  }, [currentQuote, history, range, selectedRange.days]);
 
   const metrics = useMemo(() => {
     if (visible.length < 2) return null;

@@ -10,6 +10,11 @@ interface Props {
   loading: boolean;
 }
 
+interface SelectedHistory {
+  item: IndexConfig;
+  quote: QuoteData;
+}
+
 function formatQuoteDate(date: string): string {
   const match = date.match(/^\d{4}-(\d{2})-(\d{2})$/);
   return match ? `${match[1]}/${match[2]}` : date || '--';
@@ -26,7 +31,7 @@ function Card({
   data?: QuoteData;
   futuresData?: QuoteData;
   loading: boolean;
-  onOpenHistory?: () => void;
+  onOpenHistory?: (quote: QuoteData) => void;
 }) {
   if (loading || !data) {
     return (
@@ -56,7 +61,7 @@ function Card({
     <button
       type="button"
       className={`${styles.card} ${idx.history ? styles.cardClickable : ''}`}
-      onClick={onOpenHistory}
+      onClick={() => onOpenHistory?.(displayData)}
       disabled={!idx.history}
     >
       <span
@@ -91,7 +96,7 @@ function Card({
 }
 
 export default function IndexCards({ quotes, loading }: Props) {
-  const [selectedHistory, setSelectedHistory] = useState<IndexConfig | null>(null);
+  const [selectedHistory, setSelectedHistory] = useState<SelectedHistory | null>(null);
   const groups = [
     { title: 'A股', symbols: ['s_sh000001', 's_sz399006', 's_sh000300', 's_sh000905'], cols: 'grid4' },
     { title: '美股', symbols: ['gb_ixic', 'gb_ndx', 'gb_inx', 'gb_dji'], cols: 'grid4' },
@@ -115,7 +120,7 @@ export default function IndexCards({ quotes, loading }: Props) {
                   data={quotes.get(sym)}
                   futuresData={idx.futures ? quotes.get(idx.futures.sinaSymbol) : undefined}
                   loading={loading}
-                  onOpenHistory={idx.history ? () => setSelectedHistory(idx) : undefined}
+                  onOpenHistory={idx.history ? (quote) => setSelectedHistory({ item: idx, quote }) : undefined}
                 />
               );
             })}
@@ -123,7 +128,11 @@ export default function IndexCards({ quotes, loading }: Props) {
         </div>
       ))}
       {selectedHistory && (
-        <MarketHistoryModal item={selectedHistory} onClose={() => setSelectedHistory(null)} />
+        <MarketHistoryModal
+          item={selectedHistory.item}
+          currentQuote={selectedHistory.quote}
+          onClose={() => setSelectedHistory(null)}
+        />
       )}
     </div>
   );

@@ -33,9 +33,7 @@ export default function App() {
     return sorted.map((e, i) => ({ ...e, rank: i + 1 }));
   }, [fundEstimates, sortMode, sortDirection]);
 
-  const sortLabel = `${sortMode === 'official' ? '按T-1 已出净值排序' : '按实时估算涨跌排序'} · ${
-    sortDirection === 'desc' ? '高到低' : '低到高'
-  }`;
+  const sortLabel = sortMode === 'official' ? '按 T-1 已出净值排序' : '按实时估算涨跌排序';
 
   return (
     <div className={styles.app}>
