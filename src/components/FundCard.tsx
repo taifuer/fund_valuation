@@ -66,11 +66,19 @@ export default function FundCard({ fund, estimate, rank, loading }: Props) {
   const estBoxCls = up ? styles.estimateBox : styles.estimateBoxDown;
   const hasLiveHolding = fund.holdings.some((h) => getMarketState(h.sinaSymbol) === 'live');
   const fresh = lastUpdated != null && Date.now() - lastUpdated < 90_000;
-  const estimateState = hasLiveHolding && fresh
+  const hasPreHolding = estimate.holdingsQuotes.some((q) => q.session === 'pre');
+  const hasPostHolding = estimate.holdingsQuotes.some((q) => q.session === 'post');
+  const estimateState = fresh && hasPreHolding
+    ? 'PRE'
+    : fresh && hasPostHolding
+      ? 'POST'
+      : hasLiveHolding && fresh
     ? (missingQuoteCount > 0 ? 'PARTIAL' : 'LIVE')
     : 'CLOSED';
   const tagCls = estimateState === 'LIVE'
     ? styles.estLiveTagUp
+    : estimateState === 'PRE' || estimateState === 'POST'
+      ? styles.estLiveTagExtended
     : estimateState === 'PARTIAL'
       ? styles.estLiveTagPartial
       : styles.estLiveTagClosed;

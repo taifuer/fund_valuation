@@ -1,15 +1,31 @@
 .container {
   border-top: 1px solid #f1f5f9;
+  overflow-x: auto;
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
+  min-width: 760px;
 }
 
+.colStock { width: 172px; }
+.colWeight { width: 62px; }
+.colCurrency { width: 54px; }
+.colDate { width: 58px; }
+.colPrice { width: 70px; }
+.colChange { width: 72px; }
+.colFx { width: 62px; }
+.colContrib { width: 68px; }
+.colState { width: 70px; }
+
 .table th, .table td {
-  padding: 5px 10px;
+  box-sizing: border-box;
+  padding: 5px 8px;
   font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -23,13 +39,39 @@
 .table td {
   color: #334155;
   border-bottom: 1px solid #f8fafc;
+  text-align: left;
 }
 
 .table tr:hover td { background: #fafbfc; }
 
-.stockName { color: #94a3b8; margin-left: 4px; font-size: 10px; }
+.stockCell {
+  text-align: left;
+}
 
-.right { text-align: right; }
+.stockContent {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.symbol {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+.stockName {
+  color: #94a3b8;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 
 .estimatedDate {
   color: #94a3b8;
@@ -47,6 +89,12 @@
 .stateLive {
   color: #16a34a;
   background: #dcfce7;
+  animation: livePulse 1.8s ease-in-out infinite;
+}
+
+.stateExtended {
+  color: #2563eb;
+  background: #dbeafe;
   animation: livePulse 1.8s ease-in-out infinite;
 }
 

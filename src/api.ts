@@ -47,6 +47,32 @@ function usTradingDate(beijingDatetime: string): string {
   return datePart;
 }
 
+function usExtendedDate(raw: string, fallbackYear: string): string {
+  const match = raw.match(/^([A-Za-z]{3})\s+(\d{1,2})\s+/);
+  if (!match || !fallbackYear) return beijingDate();
+  const months: Record<string, string> = {
+    Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
+    Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12',
+  };
+  const month = months[match[1]];
+  if (!month) return beijingDate();
+  return `${fallbackYear}-${month}-${match[2].padStart(2, '0')}`;
+}
+
+function usExtendedSession(raw: string): 'pre' | 'post' | null {
+  const match = raw.match(/\s(\d{1,2}):(\d{2})(AM|PM)\s/);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const ampm = match[3];
+  if (ampm === 'PM' && hour !== 12) hour += 12;
+  if (ampm === 'AM' && hour === 12) hour = 0;
+  const minutes = hour * 60 + minute;
+  if (minutes < 9 * 60 + 30) return 'pre';
+  if (minutes >= 16 * 60) return 'post';
+  return null;
+}
+
 function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: QuoteData } | null {
   const match = line.match(/^var hq_str_(\w+)="(.+)";?\s*$/);
   if (!match) return null;
@@ -61,6 +87,7 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
   let changePct: number;
   let date = '';
   let dateReliable = true;
+  let session: QuoteData['session'];
 
   switch (mkt) {
     case 'us':
@@ -70,6 +97,25 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       changePct = parseFloat(fields[2]) || 0;
       // fields[3] = "2026-04-29 09:41:59" Beijing time → derive US trading date
       date = usTradingDate(fields[3] || '');
+      session = 'regular';
+      if (fields.length > 29) {
+        const extendedPrice = parseFloat(fields[21]) || 0;
+        const extendedPct = parseFloat(fields[22]) || 0;
+        const extendedTime = fields[24] || '';
+        const extendedSession = usExtendedSession(extendedTime);
+        if (extendedPrice > 0 && extendedSession === 'pre') {
+          previousClose = price;
+          price = extendedPrice;
+          changePct = extendedPct;
+          date = usExtendedDate(extendedTime, fields[29] || date.slice(0, 4));
+          session = 'pre';
+        } else if (extendedPrice > 0 && extendedSession === 'post') {
+          price = extendedPrice;
+          changePct = previousClose ? ((extendedPrice - previousClose) / previousClose) * 100 : 0;
+          date = usExtendedDate(extendedTime, fields[29] || date.slice(0, 4));
+          session = 'post';
+        }
+      }
       break;
     case 'cn_index':
       if (fields.length < 4) return null;
@@ -164,6 +210,7 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       changePercent: Number(changePct.toFixed(2)),
       time: date,
       dateReliable,
+      session,
       fetchedAt,
     },
   };
@@ -286,8 +333,8 @@ interface FundHistoryRow {
 
 export async function fetchFundHistory(
   codes: string[],
-): Promise<Map<string, { officialChange: number }>> {
-  const results = new Map<string, { officialChange: number }>();
+): Promise<Map<string, { navDate: string; nav: number; officialChange: number }>> {
+  const results = new Map<string, { navDate: string; nav: number; officialChange: number }>();
   const url = `/api/fundhistory?codes=${codes.join(',')}`;
   try {
     const res = await fetch(url);
@@ -300,7 +347,11 @@ export async function fetchFundHistory(
       const nav = parseFloat(rows[0].DWJZ) || 0;
       const prevNav = parseFloat(rows[1].DWJZ) || nav;
       const officialChange = prevNav ? ((nav - prevNav) / prevNav) * 100 : 0;
-      results.set(code, { officialChange: Number(officialChange.toFixed(2)) });
+      results.set(code, {
+        navDate: rows[0].FSRQ,
+        nav,
+        officialChange: Number(officialChange.toFixed(2)),
+      });
     }
   } catch { /* skip */ }
   return results;

@@ -67,11 +67,18 @@ export function useQuotes() {
           }
         }
 
-        // Merge history data (officialChange) into NAVs from East Money
+        // Merge official NAV history. The fundnav endpoint may lag behind
+        // East Money history, so prefer history when it has a newer NAV date.
         for (const [code, hist] of historyData) {
           const existing = navsData.get(code);
           if (existing) {
-            navsData.set(code, { ...existing, officialChange: hist.officialChange });
+            const historyIsNewer = hist.navDate && (!existing.navDate || hist.navDate > existing.navDate);
+            navsData.set(code, {
+              ...existing,
+              navDate: historyIsNewer ? hist.navDate : existing.navDate,
+              nav: historyIsNewer ? hist.nav : existing.nav,
+              officialChange: hist.officialChange,
+            });
           }
         }
 

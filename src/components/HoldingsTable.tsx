@@ -30,6 +30,17 @@ export default function HoldingsTable({
   return (
     <div className={styles.container} onClick={(e) => e.stopPropagation()}>
       <table className={styles.table}>
+        <colgroup>
+          <col className={styles.colStock} />
+          <col className={styles.colWeight} />
+          <col className={styles.colCurrency} />
+          <col className={styles.colDate} />
+          <col className={styles.colPrice} />
+          <col className={styles.colChange} />
+          <col className={styles.colFx} />
+          <col className={styles.colContrib} />
+          <col className={styles.colState} />
+        </colgroup>
         <thead>
           <tr>
             <th>股票</th>
@@ -54,12 +65,22 @@ export default function HoldingsTable({
             const contrib = q ? rmbChange * h.weight : 0;
             const state = getMarketState(h.sinaSymbol);
             const fresh = q ? Date.now() - q.fetchedAt < 90_000 : false;
-            const displayState = state === 'live' && fresh ? 'live' : state === 'live' ? 'stale' : 'closed';
+            const displayState = q?.session === 'pre' && fresh
+              ? 'pre'
+              : q?.session === 'post' && fresh
+                ? 'post'
+                : state === 'live' && fresh
+                  ? 'live'
+                  : state === 'live'
+                    ? 'stale'
+                    : 'closed';
             return (
               <tr key={h.symbol}>
-                <td>
-                  {h.symbol}
-                  <span className={styles.stockName}>{h.name}</span>
+                <td className={styles.stockCell}>
+                  <div className={styles.stockContent}>
+                    <span className={styles.symbol}>{h.symbol}</span>
+                    <span className={styles.stockName}>{h.name}</span>
+                  </div>
                 </td>
                 <td className={styles.right}>{(h.weight * 100).toFixed(1)}%</td>
                 <td className={styles.right}>{h.currency}</td>
@@ -81,12 +102,22 @@ export default function HoldingsTable({
                     className={`${styles.stateTag} ${
                       displayState === 'live'
                         ? styles.stateLive
+                        : displayState === 'pre' || displayState === 'post'
+                          ? styles.stateExtended
                         : displayState === 'stale'
                           ? styles.stateStale
                           : styles.stateClosed
                     }`}
                   >
-                    {displayState === 'live' ? 'LIVE' : displayState === 'stale' ? '延迟' : '已收盘'}
+                    {displayState === 'live'
+                      ? 'LIVE'
+                      : displayState === 'pre'
+                        ? '盘前'
+                        : displayState === 'post'
+                          ? '盘后'
+                          : displayState === 'stale'
+                            ? '延迟'
+                            : '已收盘'}
                   </span>
                 </td>
               </tr>
