@@ -130,8 +130,8 @@
   animation: livePulse 1.8s ease-in-out infinite;
 }
 
-.up { color: #16a34a; }
-.down { color: #dc2626; }
+.up { color: var(--color-up); }
+.down { color: var(--color-down); }
 
 .skeleton {
   animation: pulse 1.5s ease-in-out infinite;

@@ -7,6 +7,12 @@ const us = (symbol: string, name: string, weight: number): Holding => ({
 const cn = (symbol: string, name: string, weight: number): Holding => ({
   symbol, name, sinaSymbol: symbol.toLowerCase(), weight, currency: 'CNY',  // e.g. "sz300502"
 });
+const hk = (symbol: string, name: string, weight: number): Holding => ({
+  symbol, name, sinaSymbol: `hk${symbol}`, weight, currency: 'HKD',
+});
+const kr = (symbol: string, name: string, weight: number): Holding => ({
+  symbol, name, sinaSymbol: `kr${symbol}`, weight, currency: 'KRW',
+});
 
 export const INDICES: IndexConfig[] = [
   // A股
@@ -53,6 +59,16 @@ export const FUNDS: Fund[] = [
       us('META', 'Meta', 0.0679), us('GOOGL', 'Alphabet A', 0.0610),
       us('GOOG', 'Alphabet C', 0.0569), us('MU', '美光科技', 0.0294),
       us('PLTR', 'Palantir', 0.0245), us('AMD', 'AMD', 0.024),
+    ],
+  },
+  {
+    symbol: '022184', name: '富国全球科技互联网', code: '022184',
+    holdings: [
+      us('TSM', '台积电', 0.1006), us('NVDA', 'NVIDIA', 0.0980),
+      us('GOOGL', 'Alphabet A', 0.0856), hk('09899', '网易云音乐', 0.0817),
+      us('AMD', 'AMD', 0.0740), hk('00522', 'ASMPT', 0.0629),
+      kr('000660', 'SK海力士', 0.0411), us('INTC', 'Intel', 0.0366),
+      us('ASML', 'ASML', 0.0358), kr('005930', '三星电子', 0.0333),
     ],
   },
   {

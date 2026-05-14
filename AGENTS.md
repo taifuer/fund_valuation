@@ -36,6 +36,8 @@ No test framework is configured yet. For logic-heavy changes, especially in `src
 
 Recent history uses Conventional Commit-style messages such as `feat: ...`, `fix: ...`, and `docs: ...`. Keep subjects short and imperative.
 
+Commit messages should include a concise subject plus a body that lists the main user-visible or technical changes. For feature/release commits, include 3-6 bullet points covering the important behavior, data-source, UI, documentation, screenshot, and version changes as applicable; avoid vague subjects such as only `release vX.Y.Z`.
+
 Use `taifu <taifu@taifua.com>` as the Git author. Agent-assisted commits must include `Co-Authored-By: Codex (GPT-5.5) <noreply@openai.com>` in the commit message body.
 
 Pull requests should include a concise summary, verification performed, and screenshots when UI output changes. Link related issues when applicable, and call out data-source or proxy changes because production deployments must mirror `vite-sina-proxy.ts`.

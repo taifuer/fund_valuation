@@ -41,6 +41,7 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
   if (!estimate || !estimate.officialNAV) {
     return (
       <div className={styles.card}>
+        <div className={styles.rankNumber}>#{rank}</div>
         {badge && <div className={`${styles.badge} ${styles[badge.cls]}`}>{badgeLabel}</div>}
         <div className={styles.main}>
           <div className={styles.topRow}>
@@ -84,10 +85,10 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
     : estimateState === 'PARTIAL'
       ? styles.estLiveTagPartial
       : styles.estLiveTagClosed;
-  const coveragePct = totalConfiguredWeight > 0 ? (quoteCoverage / totalConfiguredWeight) * 100 : 0;
 
   return (
     <div className={styles.card} onClick={() => setExpanded(!expanded)}>
+      <div className={styles.rankNumber}>#{rank}</div>
       {badge && <div className={`${styles.badge} ${styles[badge.cls]}`}>{badgeLabel}</div>}
       <div className={styles.main}>
         <div className={styles.topRow}>
@@ -133,11 +134,6 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
                 </span>
               )}
             </div>
-            {missingQuoteCount > 0 && (
-              <div className={styles.coverage}>
-                覆盖 {coveragePct.toFixed(0)}% · 缺 {missingQuoteCount}
-              </div>
-            )}
           </div>
         </div>
       </div>

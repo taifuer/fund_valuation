@@ -246,11 +246,12 @@ function parseSinaFx(line: string, fetchedAt: number): FxRateData | null {
   if (!match) return null;
   const pair = match[1].toUpperCase();
   const fields = match[2].split(',');
-  if (pair === 'USDCNY') {
+  if (pair === 'USDCNY' || pair === 'EURCNY' || pair === 'JPYCNY' || pair === 'KRWCNY' || pair === 'HKDCNY') {
     const date = [...fields].reverse().find((field) => /^\d{4}-\d{2}-\d{2}$/.test(field)) ?? beijingDate();
+    const currency = pair.slice(0, 3);
     return {
-      currency: 'USD',
-      pair: 'USD/CNY',
+      currency,
+      pair: `${currency}/CNY`,
       rate: parseFloat(fields[1]) || 0,
       changePercent: parseFloat(fields[10]) || 0,
       date,
@@ -305,7 +306,13 @@ export async function fetchFxRates(currencies: string[]): Promise<Map<string, Fx
     'CNY',
     { currency: 'CNY', pair: 'CNY/CNY', rate: 1, changePercent: 0, date: beijingDate(), fetchedAt: Date.now() },
   ]]);
-  const symbols = currencies.includes('USD') ? ['fx_susdcny'] : [];
+  const symbols = [
+    currencies.includes('USD') ? 'fx_susdcny' : null,
+    currencies.includes('EUR') ? 'fx_seurcny' : null,
+    currencies.includes('JPY') ? 'fx_sjpycny' : null,
+    currencies.includes('KRW') ? 'fx_skrwcny' : null,
+    currencies.includes('HKD') ? 'fx_shkdcny' : null,
+  ].filter((symbol): symbol is string => symbol != null);
   if (symbols.length === 0) return results;
 
   const url = `/api/sina?list=${symbols.join(',')}`;
@@ -352,6 +359,8 @@ interface SinaFuturesKlineRow {
   date?: string;
   close?: string | number;
 }
+
+type MarketHistorySource = MarketHistoryConfig['source'];
 
 function parseSinaJsonpArray<T>(text: string): T[] {
   const match = text.match(/=\((.*)\);?\s*$/s);
@@ -429,6 +438,38 @@ export async function fetchFundHistorySeries(
   }
 }
 
+function parseClose(value: unknown): number {
+  return typeof value === 'number' ? value : parseFloat(String(value ?? ''));
+}
+
+function latestIntradaySession(points: MarketHistoryPoint[]): MarketHistoryPoint[] {
+  const valid = points
+    .filter((point) => (
+      /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?$/.test(point.date) &&
+      Number.isFinite(point.close) &&
+      point.close > 0
+    ))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (valid.length === 0) return [];
+
+  const latestDate = valid[valid.length - 1].date.slice(0, 10);
+  return [...new Map(
+    valid
+      .filter((point) => point.date.slice(0, 10) === latestDate)
+      .map((point) => [point.date, point]),
+  ).values()];
+}
+
+function intradaySource(
+  config: MarketHistoryConfig,
+  currentSymbol?: string,
+): { source: MarketHistorySource; symbol: string } {
+  if (currentSymbol?.startsWith('hf_')) {
+    return { source: 'sina-futures', symbol: currentSymbol.slice(3) };
+  }
+  return config;
+}
+
 export async function fetchMarketHistory(config: MarketHistoryConfig): Promise<MarketHistoryPoint[]> {
   try {
     const params = new URLSearchParams({
@@ -469,6 +510,51 @@ export async function fetchMarketHistory(config: MarketHistoryConfig): Promise<M
         point.close > 0
       ))
       .sort((a, b) => a.date.localeCompare(b.date));
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchMarketIntraday(
+  config: MarketHistoryConfig,
+  currentSymbol?: string,
+): Promise<MarketHistoryPoint[]> {
+  const resolved = intradaySource(config, currentSymbol);
+  try {
+    const params = new URLSearchParams({
+      source: resolved.source,
+      symbol: resolved.symbol,
+    });
+    const res = await fetch(`/api/marketintraday?${params.toString()}`);
+    if (!res.ok) return [];
+    const text = await res.text();
+    let points: MarketHistoryPoint[] = [];
+
+    if (resolved.source === 'sina-cn') {
+      const rows = JSON.parse(text) as SinaCnKlineRow[];
+      points = (Array.isArray(rows) ? rows : []).map((row) => ({
+        date: row.day ?? '',
+        close: parseClose(row.close),
+      }));
+    } else if (resolved.source === 'sina-us') {
+      const rows = parseSinaJsonpArray<SinaUsKlineRow>(text);
+      points = rows.map((row) => ({
+        date: row.d ?? '',
+        close: parseClose(row.c),
+      }));
+    } else if (resolved.source === 'sina-futures') {
+      const json = JSON.parse(text);
+      const rows = Array.isArray(json?.minLine_1d) ? json.minLine_1d as unknown[][] : [];
+      points = rows.map((row) => {
+        const isHeadRow = row.length >= 10;
+        return {
+          date: String(isHeadRow ? row[9] : row[5] ?? ''),
+          close: parseClose(isHeadRow ? row[5] : row[1]),
+        };
+      });
+    }
+
+    return latestIntradaySession(points);
   } catch {
     return [];
   }

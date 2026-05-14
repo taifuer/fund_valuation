@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchMarketHistory } from '../api';
+import { fetchMarketHistory, fetchMarketIntraday } from '../api';
 import type { IndexConfig, MarketHistoryPoint, QuoteData } from '../types';
 import styles from './MarketHistoryModal.module.css';
 
@@ -13,7 +13,7 @@ type RangeKey = '1d' | '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | '5y' | 'all';
 type TextAnchor = 'start' | 'middle' | 'end';
 
 const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
-  { key: '1d', label: '1日', days: 1 },
+  { key: '1d', label: '实时', days: 1 },
   { key: '1w', label: '1周', days: 7 },
   { key: '1m', label: '1月', days: 30 },
   { key: '3m', label: '3月', days: 90 },
@@ -72,7 +72,7 @@ function selectOneDay(points: MarketHistoryPoint[], currentQuote?: QuoteData): M
 }
 
 function tickCount(range: RangeKey): number {
-  if (range === '1d') return 2;
+  if (range === '1d') return 6;
   if (range === '1w') return 6;
   if (range === '1m') return 6;
   if (range === '3m') return 5;
@@ -89,6 +89,10 @@ function evenlySpacedIndices(length: number, count: number): number[] {
 }
 
 function formatAxisDate(date: string, range: RangeKey): string {
+  if (range === '1d') {
+    const timeMatch = date.match(/^\d{4}-\d{2}-\d{2}\s+(\d{2}:\d{2})/);
+    if (timeMatch) return timeMatch[1];
+  }
   const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return date;
   const [, year, month, day] = match;
@@ -99,6 +103,14 @@ function formatAxisDate(date: string, range: RangeKey): string {
     return `${year}/${month}`;
   }
   return year;
+}
+
+function formatPointDate(date: string, range: RangeKey): string {
+  if (range === '1d') {
+    const match = date.match(/^\d{4}-(\d{2})-(\d{2})\s+(\d{2}:\d{2})/);
+    if (match) return `${match[1]}/${match[2]} ${match[3]}`;
+  }
+  return date;
 }
 
 function maxDrawdown(points: MarketHistoryPoint[]): number {
@@ -213,9 +225,13 @@ function pointerSvgX(event: React.PointerEvent<SVGSVGElement>): number {
 export default function MarketHistoryModal({ item, currentQuote, onClose }: Props) {
   const [range, setRange] = useState<RangeKey>('3m');
   const cacheKey = item.history ? `${item.history.source}:${item.history.symbol}` : item.sinaSymbol;
+  const realtimeKey = item.history ? `${cacheKey}:${currentQuote?.symbol ?? ''}` : item.sinaSymbol;
   const [history, setHistory] = useState<MarketHistoryPoint[]>(() => historyCache.get(cacheKey) ?? []);
   const [loading, setLoading] = useState(!historyCache.get(cacheKey)?.length);
   const [error, setError] = useState<string | null>(null);
+  const [realtime, setRealtime] = useState<MarketHistoryPoint[]>([]);
+  const [realtimeLoading, setRealtimeLoading] = useState(false);
+  const [realtimeError, setRealtimeError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
   useEffect(() => {
@@ -265,11 +281,45 @@ export default function MarketHistoryModal({ item, currentQuote, onClose }: Prop
     };
   }, [cacheKey, item.history]);
 
+  useEffect(() => {
+    setSelectedIndex(null);
+  }, [range]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (range !== '1d') return;
+    if (!item.history) {
+      setRealtime([]);
+      setRealtimeError('暂无实时行情');
+      return;
+    }
+
+    setRealtimeLoading(true);
+    setRealtimeError(null);
+    fetchMarketIntraday(item.history, currentQuote?.symbol)
+      .then((data) => {
+        if (cancelled) return;
+        setRealtime(data);
+        setRealtimeError(data.length >= 2 ? null : '暂无实时行情');
+      })
+      .catch(() => {
+        if (!cancelled) setRealtimeError('实时行情加载失败');
+      })
+      .finally(() => {
+        if (!cancelled) setRealtimeLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentQuote?.symbol, item.history, range, realtimeKey]);
+
   const selectedRange = RANGES.find((rangeItem) => rangeItem.key === range) ?? RANGES[2];
+  const realtimeFallback = useMemo(() => selectOneDay(history, currentQuote), [currentQuote, history]);
   const visible = useMemo(() => {
-    if (range === '1d') return selectOneDay(history, currentQuote);
+    if (range === '1d') return realtime.length >= 2 ? realtime : realtimeFallback;
     return selectRange(history, selectedRange.days);
-  }, [currentQuote, history, range, selectedRange.days]);
+  }, [history, range, realtime, realtimeFallback, selectedRange.days]);
 
   const metrics = useMemo(() => {
     if (visible.length < 2) return null;
@@ -299,6 +349,14 @@ export default function MarketHistoryModal({ item, currentQuote, onClose }: Prop
   const tooltipX = activePosition ? Math.min(Math.max(activePosition.x + 10, 64), 492) : 0;
   const tooltipY = activePosition ? Math.min(Math.max(activePosition.y - 58, 8), 144) : 0;
   const up = (metrics?.returnPct ?? 0) >= 0;
+  const displayLoading = range === '1d'
+    ? realtimeLoading && visible.length < 2
+    : loading;
+  const displayError = range === '1d'
+    ? visible.length >= 2
+      ? null
+      : realtimeError ?? error
+    : error;
 
   const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     if (visible.length === 0) return;
@@ -334,9 +392,9 @@ export default function MarketHistoryModal({ item, currentQuote, onClose }: Prop
           ))}
         </div>
 
-        {loading && <div className={styles.state}>历史行情加载中...</div>}
-        {!loading && error && <div className={styles.state}>{error}</div>}
-        {!loading && !error && metrics && (
+        {displayLoading && <div className={styles.state}>{range === '1d' ? '实时行情加载中...' : '历史行情加载中...'}</div>}
+        {!displayLoading && displayError && <div className={styles.state}>{displayError}</div>}
+        {!displayLoading && !displayError && metrics && (
           <>
             <div className={styles.metrics}>
               <div>
@@ -383,7 +441,7 @@ export default function MarketHistoryModal({ item, currentQuote, onClose }: Prop
                     <circle className={styles.focusPoint} cx={activePosition.x} cy={activePosition.y} r="4" />
                     <g transform={`translate(${tooltipX}, ${tooltipY})`}>
                       <rect className={styles.tooltipBox} width="136" height="50" rx="6" />
-                      <text className={styles.tooltipText} x="8" y="16">{activePoint.date}</text>
+                      <text className={styles.tooltipText} x="8" y="16">{formatPointDate(activePoint.date, range)}</text>
                       <text className={styles.tooltipText} x="8" y="31">价格 {formatValue(activePoint.close)}</text>
                       <text className={activeReturn >= 0 ? styles.tooltipUp : styles.tooltipDown} x="8" y="46">
                         区间 {activeReturn >= 0 ? '+' : ''}{activeReturn.toFixed(2)}%

@@ -3,6 +3,8 @@ import type { QuoteData, FundNavData, FxRateData } from '../types';
 import { fetchAllQuotes, fetchFundNavs, fetchSinaFundNavs, fetchFundHistory, fetchFxRates } from '../api';
 import { INDICES, MARKET_ASSETS, FUNDS } from '../constants';
 
+const DISPLAY_FX_CURRENCIES = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
+
 export interface FundEstimate {
   fundCode: string;
   fundName: string;
@@ -44,7 +46,8 @@ export function useQuotes() {
 
       try {
         const fundCodes = FUNDS.map((f) => f.code);
-        const currencies = [...new Set(FUNDS.flatMap((f) => f.holdings.map((h) => h.currency)))];
+        const holdingCurrencies = FUNDS.flatMap((f) => f.holdings.map((h) => h.currency));
+        const currencies = [...new Set([...DISPLAY_FX_CURRENCIES, ...holdingCurrencies])];
         const [quotesData, navsData, historyData, fxRates] = await Promise.all([
           fetchAllQuotes(allSinaSymbols),
           fetchFundNavs(fundCodes),

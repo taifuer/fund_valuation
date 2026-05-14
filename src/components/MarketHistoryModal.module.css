@@ -164,11 +164,11 @@
 }
 
 .lineUp {
-  stroke: #16a34a;
+  stroke: var(--color-up);
 }
 
 .lineDown {
-  stroke: #dc2626;
+  stroke: var(--color-down);
 }
 
 .crosshair {
@@ -199,14 +199,14 @@
 }
 
 .tooltipUp {
-  fill: #86efac;
+  fill: var(--tooltip-up);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
 
 .tooltipDown {
-  fill: #fca5a5;
+  fill: var(--tooltip-down);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
@@ -220,11 +220,11 @@
 }
 
 .up {
-  color: #16a34a !important;
+  color: var(--color-up) !important;
 }
 
 .down {
-  color: #dc2626 !important;
+  color: var(--color-down) !important;
 }
 
 @media (max-width: 640px) {

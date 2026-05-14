@@ -1,6 +1,14 @@
 .app {
   min-height: 100vh;
   background: #f8fafc;
+  --color-up: #dc2626;
+  --color-down: #16a34a;
+  --color-up-bg: #fef2f2;
+  --color-up-border: #fee2e2;
+  --color-down-bg: #f0fdf4;
+  --color-down-border: #dcfce7;
+  --tooltip-up: #fca5a5;
+  --tooltip-down: #86efac;
 }
 
 .error {

@@ -20,9 +20,11 @@ interface Props {
   fxRates: Map<string, FxRateData>;
 }
 
+const FX_ORDER = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
+
 export default function Header({ fxRates }: Props) {
   const [time, setTime] = useState(formatTime());
-  const displayRates = [...fxRates.values()].filter((rate) => rate.currency !== 'CNY');
+  const displayRates = FX_ORDER.map((currency) => fxRates.get(currency)).filter((rate): rate is FxRateData => rate != null);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(formatTime()), 1000);

@@ -36,6 +36,7 @@
 
 .fxRow {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 6px;
   margin-top: 4px;
@@ -65,12 +66,12 @@
 }
 
 .fxUp {
-  color: #16a34a;
+  color: var(--color-up);
   font-weight: 600;
 }
 
 .fxDown {
-  color: #dc2626;
+  color: var(--color-down);
   font-weight: 600;
 }
 
@@ -87,4 +88,14 @@
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.25; }
+}
+
+@media (max-width: 640px) {
+  .brand {
+    align-items: center;
+  }
+
+  .title {
+    font-size: 20px;
+  }
 }

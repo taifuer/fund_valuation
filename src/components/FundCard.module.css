@@ -29,12 +29,29 @@
 .silver { background: linear-gradient(135deg, #94a3b8, #64748b); }
 .bronze { background: linear-gradient(135deg, #d97706, #b45309); }
 
+.rankNumber {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0 0 6px 0;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  left: -1px;
+  line-height: 18px;
+  min-width: 30px;
+  padding: 0 7px;
+  position: absolute;
+  text-align: center;
+  top: -1px;
+}
+
 .main { padding: 10px 14px; }
 
 .topRow {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  padding-left: 26px;
   padding-right: 60px;
   margin-bottom: 6px;
 }
@@ -89,12 +106,12 @@
 
 /* Live estimate box distinct style */
 .estimateBox {
-  background: #f0fdf4;
-  border: 1px solid #dcfce7;
+  background: var(--color-up-bg);
+  border: 1px solid var(--color-up-border);
 }
 .estimateBoxDown {
-  background: #fef2f2;
-  border: 1px solid #fee2e2;
+  background: var(--color-down-bg);
+  border: 1px solid var(--color-down-border);
 }
 
 .estLiveTag {
@@ -127,12 +144,6 @@
   color: #fff;
 }
 
-.coverage {
-  font-size: 10px;
-  color: #64748b;
-  margin-top: 1px;
-}
-
 .fxNavValue {
   font-size: 12px;
   margin-left: 2px;
@@ -145,8 +156,8 @@
   font-weight: 600;
 }
 
-.up { color: #16a34a; }
-.down { color: #dc2626; }
+.up { color: var(--color-up); }
+.down { color: var(--color-down); }
 
 .expanded {
   cursor: default;

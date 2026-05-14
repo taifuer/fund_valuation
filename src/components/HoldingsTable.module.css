@@ -113,8 +113,8 @@
   background: #fef3c7;
 }
 
-.up { color: #16a34a; }
-.down { color: #dc2626; }
+.up { color: var(--color-up); }
+.down { color: var(--color-down); }
 
 .footer {
   padding: 6px 14px;

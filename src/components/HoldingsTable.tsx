@@ -131,7 +131,7 @@ export default function HoldingsTable({
           {computedChange >= 0 ? '+' : ''}{computedChange.toFixed(2)}%
         </span>
         <span style={{ fontSize: 11, color: '#94a3b8' }}>
-          （已配置持仓覆盖 {coveragePct.toFixed(0)}%，USD 持仓已并入 USD/CNY 涨跌）
+          （已配置持仓覆盖 {coveragePct.toFixed(0)}%，外币持仓已并入对应兑 CNY 汇率涨跌）
         </span>
       </div>
     </div>
