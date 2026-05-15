@@ -22,17 +22,25 @@ function formatQuoteDate(date: string): string {
   return match ? `${match[1]}/${match[2]}` : date || '--';
 }
 
-function closeTimeLabel(sinaSymbol: string): string | null {
-  if (sinaSymbol.startsWith('s_')) return '收盘 15:00';
-  if (sinaSymbol.startsWith('gb_')) return '收盘 04:00';
-  if (sinaSymbol.startsWith('hk')) return '收盘 16:10';
-  if (sinaSymbol === 'int_nikkei') return '收盘 14:30';
-  if (sinaSymbol === 'b_KOSPI') return '收盘 14:30';
-  if (sinaSymbol === 'b_TWSE') return '收盘 13:30';
-  if (sinaSymbol === 'hf_HSI') return '收盘 03:00';
-  if (sinaSymbol === 'hf_NK') return '收盘 04:15';
-  if (sinaSymbol.startsWith('hf_')) return '收盘 05:00';
+function closeTime(sinaSymbol: string): string | null {
+  if (sinaSymbol.startsWith('s_')) return '15:00';
+  if (sinaSymbol.startsWith('gb_')) return '04:00';
+  if (sinaSymbol.startsWith('hk')) return '16:10';
+  if (sinaSymbol === 'int_nikkei') return '14:30';
+  if (sinaSymbol === 'b_KOSPI') return '14:30';
+  if (sinaSymbol === 'b_TWSE') return '13:30';
+  if (sinaSymbol === 'hf_HSI') return '03:00';
+  if (sinaSymbol === 'hf_NK') return '04:15';
+  if (sinaSymbol.startsWith('hf_')) return '05:00';
   return null;
+}
+
+function closeTimeLabel(sinaSymbol: string, quoteTime: string): string | null {
+  const time = closeTime(sinaSymbol);
+  if (!time) return null;
+  const dateMatch = quoteTime.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!dateMatch) return time;
+  return `${dateMatch[2]}/${dateMatch[3]} ${time}`;
 }
 
 function Card({
@@ -72,7 +80,7 @@ function Card({
         ? 'stale'
         : 'closed';
   const quoteTimeLabel = displayState === 'closed'
-    ? closeTimeLabel(displayData.symbol) ?? formatQuoteDate(displayData.time)
+    ? closeTimeLabel(displayData.symbol, displayData.time) ?? formatQuoteDate(displayData.time)
     : formatQuoteDate(displayData.time);
 
   return (
