@@ -54,18 +54,19 @@ function selectOneDay(points: MarketHistoryPoint[], currentQuote?: QuoteData): M
     return points.slice(-Math.min(points.length, 2));
   }
 
-  const quoteDate = currentQuote.dateReliable && currentQuote.time ? currentQuote.time : todayDate();
+  const quoteTime = currentQuote.dateReliable && currentQuote.time ? currentQuote.time : todayDate();
+  const quoteDate = quoteTime.slice(0, 10);
   const previousPoint =
     [...points].reverse().find((point) => point.date < quoteDate) ??
     points[points.length - 2];
   const basePoint: MarketHistoryPoint = previousPoint
-    ? { date: previousPoint.date, close: currentQuote.previousClose }
+    ? { date: '前收', close: currentQuote.previousClose }
     : { date: '前收', close: currentQuote.previousClose };
 
   return [
     basePoint,
     {
-      date: quoteDate,
+      date: quoteTime,
       close: currentQuote.price,
     },
   ];

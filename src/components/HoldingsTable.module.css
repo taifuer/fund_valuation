@@ -7,13 +7,13 @@
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  min-width: 760px;
+  min-width: 790px;
 }
 
 .colStock { width: 172px; }
 .colWeight { width: 62px; }
 .colCurrency { width: 54px; }
-.colDate { width: 58px; }
+.colDate { width: 82px; }
 .colPrice { width: 70px; }
 .colChange { width: 72px; }
 .colFx { width: 62px; }

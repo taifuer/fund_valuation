@@ -9,6 +9,12 @@ import type {
 
 type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'crypto' | 'fund' | 'fx';
 
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+
+function apiUrl(path: string): string {
+  return `${API_BASE}${path}`;
+}
+
 function marketType(raw: string): Market {
   if (raw === 'fx_sbtcusd') return 'crypto';
   if (raw.startsWith('fx_')) return 'fx';
@@ -28,42 +34,100 @@ function beijingDate(): string {
   return bj.toISOString().slice(0, 10);
 }
 
+function beijingDatetimeFromTimestamp(timestamp: number): string {
+  const bj = new Date(timestamp + 8 * 60 * 60 * 1000);
+  return bj.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function combineBeijingDateTime(date: string, time: string): string {
+  const normalizedDate = date.replace(/\//g, '-');
+  const normalizedTime = time.length === 5 ? `${time}:00` : time;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate) && /^\d{2}:\d{2}(:\d{2})?$/.test(normalizedTime)) {
+    return `${normalizedDate} ${normalizedTime}`;
+  }
+  return normalizedDate || beijingDate();
+}
+
+function localDatetimeToBeijing(date: string, time: string, utcOffsetHours: number): string {
+  const dateMatch = date.replace(/\//g, '-').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const timeMatch = time.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!dateMatch || !timeMatch) return beijingDate();
+  const utcTime = Date.UTC(
+    Number(dateMatch[1]),
+    Number(dateMatch[2]) - 1,
+    Number(dateMatch[3]),
+    Number(timeMatch[1]) - utcOffsetHours,
+    Number(timeMatch[2]),
+    Number(timeMatch[3] ?? 0),
+  );
+  return beijingDatetimeFromTimestamp(utcTime);
+}
+
+function usDstStartDay(year: number): number {
+  const firstDay = new Date(Date.UTC(year, 2, 1)).getUTCDay();
+  return 1 + ((7 - firstDay) % 7) + 7;
+}
+
+function usDstEndDay(year: number): number {
+  const firstDay = new Date(Date.UTC(year, 10, 1)).getUTCDay();
+  return 1 + ((7 - firstDay) % 7);
+}
+
+function isUsEasternDst(year: number, month: number, day: number): boolean {
+  if (month > 3 && month < 11) return true;
+  if (month < 3 || month > 11) return false;
+  if (month === 3) return day >= usDstStartDay(year);
+  return day < usDstEndDay(year);
+}
+
+function usIntradayToBeijing(datetime: string): string {
+  const match = datetime.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return datetime;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6] ?? 0);
+
+  // Sina US minute data uses Eastern Time during the regular session. If a
+  // normalized backend row is already Beijing time, keep it unchanged.
+  if (hour < 9 || hour > 16) return datetime;
+
+  const easternOffset = isUsEasternDst(year, month, day) ? 4 : 5;
+  const utcTime = Date.UTC(year, month - 1, day, hour + easternOffset, minute, second);
+  return beijingDatetimeFromTimestamp(utcTime);
+}
+
 // Reject dates that differ from Beijing date by more than this many days (stale Sina data)
 function isStale(dateStr: string, maxDiffDays = 2): boolean {
-  if (!dateStr) return true;
-  const d = new Date(dateStr + 'T00:00:00+08:00');
+  const datePart = dateStr.slice(0, 10);
+  if (!datePart) return true;
+  const d = new Date(datePart + 'T00:00:00+08:00');
   const bj = new Date(beijingDate() + 'T00:00:00+08:00');
   const diff = Math.abs(d.getTime() - bj.getTime()) / (1000 * 60 * 60 * 24);
   return diff > maxDiffDays;
 }
 
-// Determine the US trading date from Sina's Beijing-time datetime.
-// US market opens 9:30 AM ET = 21:30 Beijing (EDT). Before open, the last
-// completed session was the previous calendar day.
-function usTradingDate(beijingDatetime: string): string {
-  const parts = beijingDatetime.split(' ');
-  if (!parts[0] || !parts[1]) return beijingDate();
-  const datePart = parts[0];
-  const [hour, minute] = parts[1].split(':').map(Number);
-  // 21:30 Beijing = 9:30 AM ET market open (EDT; 22:30 during EST — 1h window tolerable)
-  if (hour < 21 || (hour === 21 && minute < 30)) {
-    const d = new Date(datePart + 'T12:00:00+08:00');
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
-  }
-  return datePart;
-}
-
-function usExtendedDate(raw: string, fallbackYear: string): string {
-  const match = raw.match(/^([A-Za-z]{3})\s+(\d{1,2})\s+/);
+function usExtendedBeijingDatetime(raw: string, fallbackYear: string): string {
+  const match = raw.match(/^([A-Za-z]{3})\s+(\d{1,2})\s+(\d{1,2}):(\d{2})(AM|PM)\s+(EDT|EST)$/);
   if (!match || !fallbackYear) return beijingDate();
-  const months: Record<string, string> = {
-    Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06',
-    Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12',
+  const months: Record<string, number> = {
+    Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+    Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
   };
   const month = months[match[1]];
-  if (!month) return beijingDate();
-  return `${fallbackYear}-${month}-${match[2].padStart(2, '0')}`;
+  if (month == null) return beijingDate();
+  let hour = Number(match[3]);
+  const minute = Number(match[4]);
+  const ampm = match[5];
+  const timezone = match[6];
+  if (ampm === 'PM' && hour !== 12) hour += 12;
+  if (ampm === 'AM' && hour === 12) hour = 0;
+  const offsetHours = timezone === 'EDT' ? 4 : 5;
+  const utcTime = Date.UTC(Number(fallbackYear), month, Number(match[2]), hour + offsetHours, minute, 0);
+  return beijingDatetimeFromTimestamp(utcTime);
 }
 
 function usExtendedSession(raw: string): 'pre' | 'post' | null {
@@ -102,8 +166,8 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       price = parseFloat(fields[1]) || 0;
       previousClose = parseFloat(fields[26]) || price;
       changePct = parseFloat(fields[2]) || 0;
-      // fields[3] = "2026-04-29 09:41:59" Beijing time → derive US trading date
-      date = usTradingDate(fields[3] || '');
+      // fields[3] is already Beijing time for Sina US quotes.
+      date = fields[3] || beijingDatetimeFromTimestamp(fetchedAt);
       session = 'regular';
       if (fields.length > 29) {
         const extendedPrice = parseFloat(fields[21]) || 0;
@@ -114,14 +178,18 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
           previousClose = price;
           price = extendedPrice;
           changePct = extendedPct;
-          date = usExtendedDate(extendedTime, fields[29] || date.slice(0, 4));
+          date = usExtendedBeijingDatetime(extendedTime, fields[29] || date.slice(0, 4));
           session = 'pre';
         } else if (extendedPrice > 0 && extendedSession === 'post') {
           price = extendedPrice;
           changePct = previousClose ? ((extendedPrice - previousClose) / previousClose) * 100 : 0;
-          date = usExtendedDate(extendedTime, fields[29] || date.slice(0, 4));
+          date = usExtendedBeijingDatetime(extendedTime, fields[29] || date.slice(0, 4));
           session = 'post';
         }
+      }
+      if (!date || isStale(date)) {
+        date = beijingDatetimeFromTimestamp(fetchedAt);
+        dateReliable = false;
       }
       break;
     case 'cn_index':
@@ -129,7 +197,7 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       price = parseFloat(fields[1]) || 0;
       previousClose = price - (parseFloat(fields[2]) || 0);
       changePct = parseFloat(fields[3]) || 0;
-      date = beijingDate();
+      date = beijingDatetimeFromTimestamp(fetchedAt);
       dateReliable = false;
       break;
     case 'intl_index':
@@ -137,15 +205,20 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       price = parseFloat(fields[1]) || 0;
       previousClose = price - (parseFloat(fields[2]) || 0);
       changePct = parseFloat(fields[3]) || 0;
-      // b_KOSPI: fields[6]="2026-04-29"; b_TWSE: fields[5]="2025-09-26"; int_nikkei: no date
-      for (let i = fields.length - 1; i >= 4; i--) {
-        if (/^\d{4}-\d{2}-\d{2}$/.test(fields[i])) {
-          date = fields[i];
-          break;
+      // b_KOSPI has Korea local time; convert it to Beijing time.
+      if (rawSymbol === 'b_KOSPI' && fields[6] && fields[7]) {
+        date = localDatetimeToBeijing(fields[6], fields[7], 9);
+      } else {
+        // b_TWSE may only include date; int_nikkei currently has no date/time in Sina's short quote.
+        for (let i = fields.length - 1; i >= 4; i--) {
+          if (/^\d{4}-\d{2}-\d{2}$/.test(fields[i])) {
+            date = fields[i];
+            break;
+          }
         }
       }
       if (!date || isStale(date)) {
-        date = beijingDate();
+        date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
       break;
@@ -154,10 +227,10 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       price = parseFloat(fields[6]) || 0;
       previousClose = parseFloat(fields[3]) || price;
       changePct = parseFloat(fields[8]) || 0;
-      // fields[17] = "2026/04/29"
-      date = (fields[17] || '').replace(/\//g, '-');
+      // fields[17] = "2026/04/29", fields[18] = "16:10" (Hong Kong time, same as Beijing time)
+      date = combineBeijingDateTime(fields[17] || '', fields[18] || '');
       if (isStale(date)) {
-        date = beijingDate();
+        date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
       break;
@@ -166,9 +239,9 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       price = parseFloat(fields[0]) || 0;
       previousClose = parseFloat(fields[8]) || price;
       changePct = previousClose ? ((price - previousClose) / previousClose) * 100 : 0;
-      date = fields[12] || beijingDate();
+      date = combineBeijingDateTime(fields[12] || '', fields[6] || '');
       if (isStale(date)) {
-        date = beijingDate();
+        date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
       break;
@@ -178,9 +251,12 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       const changeRaw = parseFloat(fields[11]) || 0;
       previousClose = price - changeRaw || price;
       changePct = parseFloat(fields[10]) || 0;
-      date = [...fields].reverse().find((field) => /^\d{4}-\d{2}-\d{2}$/.test(field)) ?? beijingDate();
+      date = combineBeijingDateTime(
+        [...fields].reverse().find((field) => /^\d{4}-\d{2}-\d{2}$/.test(field)) ?? '',
+        fields[0] || '',
+      );
       if (isStale(date)) {
-        date = beijingDate();
+        date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
       break;
@@ -193,12 +269,12 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       changePct = previousClose ? ((price - previousClose) / previousClose) * 100 : 0;
       for (let i = fields.length - 1; i >= Math.max(20, fields.length - 10); i--) {
         if (/^\d{4}-\d{2}-\d{2}$/.test(fields[i])) {
-          date = fields[i];
+          date = combineBeijingDateTime(fields[i], fields[i + 1] || '');
           break;
         }
       }
       if (!date || isStale(date)) {
-        date = beijingDate();
+        date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
       break;
@@ -268,7 +344,7 @@ export async function fetchAllQuotes(sinaSymbols: string[]): Promise<Map<string,
 
   for (let i = 0; i < unique.length; i += chunkSize) {
     const batch = unique.slice(i, i + chunkSize);
-    const url = `/api/sina?list=${batch.join(',')}`;
+    const url = apiUrl(`/api/sina?list=${batch.join(',')}`);
     try {
       const res = await fetch(url);
       if (!res.ok) continue;
@@ -288,7 +364,7 @@ export async function fetchAllQuotes(sinaSymbols: string[]): Promise<Map<string,
 export async function fetchSinaFundNavs(codes: string[]): Promise<Map<string, FundNavData>> {
   const results = new Map<string, FundNavData>();
   const symbols = codes.map((c) => `f_${c}`);
-  const url = `/api/sina?list=${symbols.join(',')}`;
+  const url = apiUrl(`/api/sina?list=${symbols.join(',')}`);
   try {
     const res = await fetch(url);
     if (!res.ok) return results;
@@ -315,7 +391,7 @@ export async function fetchFxRates(currencies: string[]): Promise<Map<string, Fx
   ].filter((symbol): symbol is string => symbol != null);
   if (symbols.length === 0) return results;
 
-  const url = `/api/sina?list=${symbols.join(',')}`;
+  const url = apiUrl(`/api/sina?list=${symbols.join(',')}`);
   try {
     const res = await fetch(url);
     if (!res.ok) return results;
@@ -360,7 +436,20 @@ interface SinaFuturesKlineRow {
   close?: string | number;
 }
 
+interface NormalizedMarketPointRow {
+  date?: string;
+  day?: string;
+  d?: string;
+  close?: string | number;
+  c?: string | number;
+}
+
 type MarketHistorySource = MarketHistoryConfig['source'];
+
+const US_INTRADAY_FUTURES_FALLBACK: Record<string, string> = {
+  '.INX': 'ES',
+  '.DJI': 'YM',
+};
 
 function parseSinaJsonpArray<T>(text: string): T[] {
   const match = text.match(/=\((.*)\);?\s*$/s);
@@ -373,11 +462,20 @@ function parseSinaJsonpArray<T>(text: string): T[] {
   }
 }
 
+function parseJsonArray<T>(text: string): T[] {
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed as T[] : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchFundHistory(
   codes: string[],
 ): Promise<Map<string, { navDate: string; nav: number; officialChange: number }>> {
   const results = new Map<string, { navDate: string; nav: number; officialChange: number }>();
-  const url = `/api/fundhistory?codes=${codes.join(',')}`;
+  const url = apiUrl(`/api/fundhistory?codes=${codes.join(',')}`);
   try {
     const res = await fetch(url);
     if (!res.ok) return results;
@@ -411,7 +509,7 @@ export async function fetchFundHistorySeries(
 
   try {
     for (let pageIndex = 1; pageIndex <= maxPages; pageIndex += 1) {
-      const url = `/api/fundhistory?codes=${code}&pageSize=${pageSize}&pageIndex=${pageIndex}`;
+      const url = apiUrl(`/api/fundhistory?codes=${code}&pageSize=${pageSize}&pageIndex=${pageIndex}`);
       const res = await fetch(url);
       if (!res.ok) break;
       const json = await res.json();
@@ -453,9 +551,42 @@ function latestIntradaySession(points: MarketHistoryPoint[]): MarketHistoryPoint
   if (valid.length === 0) return [];
 
   const latestDate = valid[valid.length - 1].date.slice(0, 10);
+  if (isStale(latestDate, 5)) return [];
   return [...new Map(
     valid
       .filter((point) => point.date.slice(0, 10) === latestDate)
+      .map((point) => [point.date, point]),
+  ).values()];
+}
+
+function previousDate(date: string): string {
+  const d = new Date(`${date}T12:00:00+08:00`);
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function latestUsIntradaySession(points: MarketHistoryPoint[]): MarketHistoryPoint[] {
+  const valid = points
+    .filter((point) => (
+      /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?$/.test(point.date) &&
+      Number.isFinite(point.close) &&
+      point.close > 0
+    ))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (valid.length === 0) return [];
+
+  const latest = valid[valid.length - 1].date;
+  const latestDate = latest.slice(0, 10);
+  if (isStale(latestDate, 5)) return [];
+  const latestHour = Number(latest.slice(11, 13));
+  const startDate = latestHour <= 5 ? previousDate(latestDate) : latestDate;
+  const start = `${startDate} 20:00:00`;
+  const endDate = latestHour <= 5 ? latestDate : startDate;
+  const end = latestHour <= 5 ? `${endDate} 06:00:00` : `${endDate} 23:59:59`;
+
+  return [...new Map(
+    valid
+      .filter((point) => point.date >= start && point.date <= end)
       .map((point) => [point.date, point]),
   ).values()];
 }
@@ -470,18 +601,71 @@ function intradaySource(
   return config;
 }
 
+async function fetchResolvedMarketIntraday(
+  resolved: { source: MarketHistorySource; symbol: string },
+): Promise<MarketHistoryPoint[]> {
+  const params = new URLSearchParams({
+    source: resolved.source,
+    symbol: resolved.symbol,
+  });
+  const res = await fetch(apiUrl(`/api/marketintraday?${params.toString()}`));
+  if (!res.ok) return [];
+  const text = await res.text();
+  let points: MarketHistoryPoint[] = [];
+  const normalizedRows = parseJsonArray<NormalizedMarketPointRow>(text);
+
+  if (normalizedRows.length > 0) {
+    points = normalizedRows.map((row) => ({
+      date: resolved.source === 'sina-us'
+        ? usIntradayToBeijing(row.date ?? row.day ?? row.d ?? '')
+        : row.date ?? row.day ?? row.d ?? '',
+      close: parseClose(row.close ?? row.c),
+    }));
+  } else if (resolved.source === 'sina-cn') {
+    const rows = JSON.parse(text) as SinaCnKlineRow[];
+    points = (Array.isArray(rows) ? rows : []).map((row) => ({
+      date: row.day ?? '',
+      close: parseClose(row.close),
+    }));
+  } else if (resolved.source === 'sina-us') {
+    const rows = parseSinaJsonpArray<SinaUsKlineRow>(text);
+    points = rows.map((row) => ({
+      date: usIntradayToBeijing(row.d ?? ''),
+      close: parseClose(row.c),
+    }));
+  } else if (resolved.source === 'sina-futures') {
+    const json = JSON.parse(text);
+    const rows = Array.isArray(json?.minLine_1d) ? json.minLine_1d as unknown[][] : [];
+    points = rows.map((row) => {
+      const isHeadRow = row.length >= 10;
+      return {
+        date: String(isHeadRow ? row[9] : row[5] ?? ''),
+        close: parseClose(isHeadRow ? row[5] : row[1]),
+      };
+    });
+  }
+
+  return resolved.source === 'sina-us' ? latestUsIntradaySession(points) : latestIntradaySession(points);
+}
+
 export async function fetchMarketHistory(config: MarketHistoryConfig): Promise<MarketHistoryPoint[]> {
   try {
     const params = new URLSearchParams({
       source: config.source,
       symbol: config.symbol,
     });
-    const res = await fetch(`/api/markethistory?${params.toString()}`);
+    const res = await fetch(apiUrl(`/api/markethistory?${params.toString()}`));
     if (!res.ok) return [];
     const text = await res.text();
     let points: MarketHistoryPoint[] = [];
+    const normalizedRows = parseJsonArray<NormalizedMarketPointRow>(text);
 
-    if (config.source === 'sina-cn') {
+    if (normalizedRows.length > 0) {
+      points = normalizedRows.map((row) => ({
+        date: row.date ?? row.day ?? row.d ?? '',
+        close: parseClose(row.close ?? row.c),
+      }));
+    } else if (config.source === 'sina-cn') {
       const rows = JSON.parse(text) as SinaCnKlineRow[];
       points = (Array.isArray(rows) ? rows : []).map((row) => ({
         date: row.day ?? '',
@@ -521,40 +705,17 @@ export async function fetchMarketIntraday(
 ): Promise<MarketHistoryPoint[]> {
   const resolved = intradaySource(config, currentSymbol);
   try {
-    const params = new URLSearchParams({
-      source: resolved.source,
-      symbol: resolved.symbol,
-    });
-    const res = await fetch(`/api/marketintraday?${params.toString()}`);
-    if (!res.ok) return [];
-    const text = await res.text();
-    let points: MarketHistoryPoint[] = [];
+    const primary = await fetchResolvedMarketIntraday(resolved);
+    if (primary.length >= 2) return primary;
 
-    if (resolved.source === 'sina-cn') {
-      const rows = JSON.parse(text) as SinaCnKlineRow[];
-      points = (Array.isArray(rows) ? rows : []).map((row) => ({
-        date: row.day ?? '',
-        close: parseClose(row.close),
-      }));
-    } else if (resolved.source === 'sina-us') {
-      const rows = parseSinaJsonpArray<SinaUsKlineRow>(text);
-      points = rows.map((row) => ({
-        date: row.d ?? '',
-        close: parseClose(row.c),
-      }));
-    } else if (resolved.source === 'sina-futures') {
-      const json = JSON.parse(text);
-      const rows = Array.isArray(json?.minLine_1d) ? json.minLine_1d as unknown[][] : [];
-      points = rows.map((row) => {
-        const isHeadRow = row.length >= 10;
-        return {
-          date: String(isHeadRow ? row[9] : row[5] ?? ''),
-          close: parseClose(isHeadRow ? row[5] : row[1]),
-        };
-      });
+    const fallbackSymbol = resolved.source === 'sina-us'
+      ? US_INTRADAY_FUTURES_FALLBACK[resolved.symbol]
+      : undefined;
+    if (fallbackSymbol) {
+      return fetchResolvedMarketIntraday({ source: 'sina-futures', symbol: fallbackSymbol });
     }
 
-    return latestIntradaySession(points);
+    return primary;
   } catch {
     return [];
   }
@@ -562,7 +723,7 @@ export async function fetchMarketIntraday(
 
 export async function fetchFundNavs(codes: string[]): Promise<Map<string, FundNavData>> {
   const results = new Map<string, FundNavData>();
-  const url = `/api/fundnav?codes=${codes.join(',')}`;
+  const url = apiUrl(`/api/fundnav?codes=${codes.join(',')}`);
   try {
     const res = await fetch(url);
     if (!res.ok) return results;

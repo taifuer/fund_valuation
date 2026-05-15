@@ -6,7 +6,7 @@ export interface QuoteData {
   change: number;
   changePercent: number;
   session?: 'regular' | 'pre' | 'post';
-  time: string; // 行情更新时间
+  time: string; // 行情更新时间（北京时间）
   dateReliable: boolean;
   fetchedAt: number;
 }

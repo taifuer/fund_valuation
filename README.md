@@ -23,18 +23,23 @@
 | 框架 | React 18 + TypeScript |
 | 构建 | Vite 5 |
 | 样式 | CSS Modules |
-| 数据源 | 新浪财经（实时行情）+ 东方财富/天天基金（基金净值） |
-| 架构 | 纯前端 + Vite 服务端代理（解决跨域） |
+| 数据源 | 新浪财经（实时行情/历史行情）+ 东方财富/天天基金（基金净值） |
+| 后端 | Flask + SQLite |
+| 架构 | React 前端 + Python 本地数据后端（抓取、缓存、持久化） |
 
 ## 数据流
 
 ```
-浏览器 ──→ Vite Dev Server（代理）
-              ├── /api/sina        ──→ 新浪财经（指数/股票/资产行情）
-              ├── /api/fundnav     ──→ 天天基金（净值估算）
-              ├── /api/fundhistory ──→ 东方财富（历史净值）
-              ├── /api/markethistory ─→ 新浪财经（指数/资产历史行情）
-              └── /api/marketintraday → 新浪财经（指数/资产分钟行情）
+浏览器 ──→ Vite Dev Server ──→ Python 后端
+                                ├── /api/sina           ──→ 新浪财经（指数/股票/资产行情）
+                                ├── /api/fundnav        ──→ 天天基金（净值估算）
+                                ├── /api/fundhistory    ──→ 东方财富（历史净值）
+                                ├── /api/markethistory  ──→ 新浪财经（指数/资产历史行情）
+                                └── /api/marketintraday ──→ 新浪财经（指数/资产分钟行情）
+
+Flask 后端会把上游原始响应保存到 `data/raw/`，并把基金历史净值、指数/资产日 K 和分钟线写入 `data/fund_valuation.db`。
+历史接口默认优先读取 SQLite；只有数据库缺页/缺符号，或显式追加 `refresh=1` 时，后端才会请求上游补抓并写库。
+也可以通过独立脚本预先增量回填历史数据，避免前端首次点击图表时再等待上游接口。
 ```
 
 基金 T 日实时估算净值的计算方式：
@@ -50,7 +55,9 @@ fund_valuation/
 ├── index.html
 ├── package.json
 ├── vite.config.ts                 # Vite 配置
-├── vite-sina-proxy.ts             # 服务端数据代理
+├── backend/
+│   ├── server.py                  # Flask 数据后端（抓取 + SQLite 缓存）
+│   └── backfill.py                # 历史数据增量回填脚本
 ├── tsconfig.json
 └── src/
     ├── types.ts                   # 类型定义
@@ -81,12 +88,29 @@ cd fund_valuation
 
 # 2. 安装依赖
 npm install
+npm run backend:setup
 
-# 3. 启动开发服务器
+# 3. 启动 Flask 数据后端
+npm run backend
+
+# 4. 可选：预先增量回填基金净值和指数/资产日 K
+npm run backend:backfill
+
+# 5. 另开终端启动前端开发服务器
 npm run dev
 
-# 4. 浏览器打开
+# 6. 浏览器打开
 open http://localhost:5173
+```
+
+历史数据回填脚本默认读取 `src/constants.ts` 中配置的基金、指数和资产，写入 `data/fund_valuation.db`。常用参数：
+
+```bash
+npm run backend:backfill                         # 增量更新全部可配置历史数据
+npm run backend:backfill -- --full               # 从第一页持续拉取到上限，用于初始化或修复缺口
+npm run backend:backfill -- --skip-markets       # 只更新基金官方历史净值
+npm run backend:backfill -- --skip-funds         # 只更新指数/资产日 K
+npm run backend:backfill -- --use-cache          # 优先复用 response_cache 中已有上游响应
 ```
 
 ## 构建部署
@@ -96,7 +120,7 @@ npm run build     # 产物输出到 dist/
 npm run preview   # 预览生产构建
 ```
 
-> 生产部署时，需要配置反向代理将 `/api/sina`、`/api/fundnav`、`/api/fundhistory`、`/api/markethistory`、`/api/marketintraday` 转发至对应上游。可参考 `vite-sina-proxy.ts` 中的代理逻辑。
+> 开发环境下，Vite 会把 `/api/*` 代理到 `http://127.0.0.1:8000`。生产部署时，可以让前端同域反代到 Python 后端，或设置 `VITE_API_BASE_URL` 指向后端地址后再构建。
 
 ## 演示
 
@@ -128,7 +152,7 @@ npm run preview   # 预览生产构建
 
 ## 数据局限
 
-- **公开接口稳定性**：本项目使用公开行情接口，接口格式、访问频率、跨域策略和可用性可能变化；生产部署需要自行配置反向代理和缓存策略。
+- **公开接口稳定性**：本项目使用公开行情接口，接口格式、访问频率、跨域策略和可用性可能变化；Flask 后端会缓存原始响应和结构化历史数据，历史接口优先读 SQLite，但仍不能保证上游长期稳定。
 - **实时行情延迟**：新浪财经行情可能存在延迟、暂停更新或字段缺失。非交易时段通常显示最近收盘价，美股盘前/盘后行情只在接口返回有效扩展交易价格时参与展示和估算。
 - **期货替代现货**：现货闭市时展示的期货价格只作为方向参考。期货合约与现货指数存在基差、汇率、利率、分红和换月影响，不能等同于现货指数涨跌。
 - **历史 K 线覆盖**：不同市场历史数据长度不一致。A 股新浪日 K 当前可获取的条数有限，因此 5年/全部区间可能不足完整 5 年；恒生指数和日经225使用对应期货历史，不是现货指数历史；实时分钟线受上游市场和接口影响，可能只返回最近一个可用交易日。

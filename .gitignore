@@ -1,8 +1,14 @@
 # Dependencies
 node_modules
+__pycache__
+*.pyc
+.venv
 
 # Build output
 dist
+
+# Local backend storage
+data
 
 # Claude
 .claude

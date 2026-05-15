@@ -3,6 +3,7 @@
 ## Project Structure & Module Organization
 
 This is a Vite 5 + React 18 + TypeScript app for estimating QDII fund net values from live market data.
+It uses a local Flask backend to fetch upstream public data and persist raw responses plus historical series to SQLite.
 
 - `src/main.tsx` mounts the app, and `src/App.tsx` owns dashboard composition and sorting.
 - `src/components/` contains reusable UI pieces such as `Header`, `IndexCards`, `FundCard`, and `HoldingsTable`; keep each component's CSS in its adjacent `*.module.css`.
@@ -10,13 +11,17 @@ This is a Vite 5 + React 18 + TypeScript app for estimating QDII fund net values
 - `src/api.ts` handles upstream data fetching and parsing.
 - `src/constants.ts` stores index and fund holding configuration.
 - `src/marketHours.ts` contains market session logic in Beijing time.
-- `vite-sina-proxy.ts` defines the dev proxy for `/api/sina`, `/api/fundnav`, and `/api/fundhistory`.
+- `backend/server.py` defines the local Flask data backend for `/api/sina`, `/api/fundnav`, `/api/fundhistory`, `/api/markethistory`, and `/api/marketintraday`.
+- `data/` is local runtime storage for SQLite and raw upstream responses; it is intentionally git-ignored.
 - `demo/` stores screenshots used by the README; update them when visible dashboard output changes.
 
 ## Build, Test, and Development Commands
 
 - `npm install` installs dependencies from `package-lock.json`.
-- `npm run dev` starts Vite, usually at `http://localhost:5173`, with proxy support for market data APIs.
+- `npm run backend:setup` creates `.venv` and installs Python backend dependencies from `requirements.txt`.
+- `npm run backend` starts the Flask data backend at `http://127.0.0.1:8000`.
+- `npm run backend:backfill` incrementally fetches configured fund NAV history and index/asset daily history into SQLite.
+- `npm run dev` starts Vite, usually at `http://localhost:5173`, and proxies `/api/*` to the Python backend.
 - `npm run build` runs `tsc` and produces the production bundle in `dist/`.
 - `npm run preview` serves the production build locally for final inspection.
 
@@ -44,4 +49,4 @@ Pull requests should include a concise summary, verification performed, and scre
 
 ## Security & Configuration Tips
 
-Do not hard-code secrets or private API keys. This project relies on public market data endpoints through a local Vite proxy; route new upstreams through the proxy and document production reverse-proxy needs.
+Do not hard-code secrets or private API keys. This project relies on public market data endpoints through the local Python backend; route new upstreams through `backend/server.py` and document production reverse-proxy needs.
