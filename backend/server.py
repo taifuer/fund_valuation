@@ -512,14 +512,14 @@ def fund_nav() -> Response:
 @app.get("/api/fundhistory")
 def fund_history() -> Response:
     codes = require_arg("codes").split(",")
-    page_size = clamp_int(request.args.get("pageSize", "2"), 2, 200, 2)
+    page_size = clamp_int(request.args.get("pageSize", "2"), 2, 5000, 2)
     page_index = max(clamp_int(request.args.get("pageIndex", "1"), 1, 100000, 1), 1)
     refresh = should_refresh()
     results: dict[str, Any] = {}
     for code in codes:
         if not refresh:
             cached_rows = read_fund_history_from_db(code, page_size, page_index)
-            if len(cached_rows) >= page_size:
+            if len(cached_rows) >= page_size or (page_size > 200 and cached_rows):
                 results[code] = cached_rows
                 continue
 
@@ -544,7 +544,8 @@ def fund_history() -> Response:
         if status >= 400:
             continue
         parsed = parse_jsonp_call(decode_body(body), "jQuery")
-        rows = parsed.get("Data", {}).get("LSJZList") if isinstance(parsed, dict) else None
+        data = parsed.get("Data") if isinstance(parsed, dict) else None
+        rows = data.get("LSJZList") if isinstance(data, dict) else None
         if isinstance(rows, list):
             results[code] = rows
             store_fund_history(code, rows)

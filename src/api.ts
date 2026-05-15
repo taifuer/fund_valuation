@@ -501,25 +501,12 @@ export async function fetchFundHistorySeries(
   code: string,
   targetSize = 3000,
 ): Promise<FundHistoryPoint[]> {
-  // East Money caps this endpoint at 20 rows even when a larger pageSize is requested.
-  const pageSize = 20;
-  const maxPages = Math.ceil(targetSize / pageSize);
-  const rows: FundHistoryRow[] = [];
-  let previousFirstDate = '';
-
   try {
-    for (let pageIndex = 1; pageIndex <= maxPages; pageIndex += 1) {
-      const url = apiUrl(`/api/fundhistory?codes=${code}&pageSize=${pageSize}&pageIndex=${pageIndex}`);
-      const res = await fetch(url);
-      if (!res.ok) break;
-      const json = await res.json();
-      const pageRows: FundHistoryRow[] | undefined = json[code];
-      if (!pageRows || pageRows.length === 0) break;
-      if (pageRows[0]?.FSRQ === previousFirstDate) break;
-      previousFirstDate = pageRows[0]?.FSRQ ?? '';
-      rows.push(...pageRows);
-      if (rows.length >= targetSize) break;
-    }
+    const url = apiUrl(`/api/fundhistory?codes=${code}&pageSize=${targetSize}&pageIndex=1`);
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const json = await res.json();
+    const rows: FundHistoryRow[] = json[code] ?? [];
 
     const uniqueRows = [...new Map(rows.map((row) => [row.FSRQ, row])).values()];
     return uniqueRows
