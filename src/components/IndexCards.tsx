@@ -22,6 +22,19 @@ function formatQuoteDate(date: string): string {
   return match ? `${match[1]}/${match[2]}` : date || '--';
 }
 
+function closeTimeLabel(sinaSymbol: string): string | null {
+  if (sinaSymbol.startsWith('s_')) return '收盘 15:00';
+  if (sinaSymbol.startsWith('gb_')) return '收盘 04:00';
+  if (sinaSymbol.startsWith('hk')) return '收盘 16:10';
+  if (sinaSymbol === 'int_nikkei') return '收盘 14:30';
+  if (sinaSymbol === 'b_KOSPI') return '收盘 14:30';
+  if (sinaSymbol === 'b_TWSE') return '收盘 13:30';
+  if (sinaSymbol === 'hf_HSI') return '收盘 03:00';
+  if (sinaSymbol === 'hf_NK') return '收盘 04:15';
+  if (sinaSymbol.startsWith('hf_')) return '收盘 05:00';
+  return null;
+}
+
 function Card({
   idx,
   data,
@@ -58,6 +71,9 @@ function Card({
       : state === 'live'
         ? 'stale'
         : 'closed';
+  const quoteTimeLabel = displayState === 'closed'
+    ? closeTimeLabel(displayData.symbol) ?? formatQuoteDate(displayData.time)
+    : formatQuoteDate(displayData.time);
 
   return (
     <button
@@ -91,7 +107,7 @@ function Card({
         {up ? '+' : ''}{displayData.changePercent.toFixed(2)}%
       </div>
       <span className={`${styles.quoteDate} ${displayData.dateReliable ? '' : styles.quoteDateEstimated}`}>
-        {formatQuoteDate(displayData.time)}
+        {quoteTimeLabel}
       </span>
     </button>
   );
