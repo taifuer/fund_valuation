@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Fund } from '../types';
+import type { Fund, QuoteData } from '../types';
 import type { FundEstimate } from '../hooks/useQuotes';
 import HoldingsTable from './HoldingsTable';
 import FundHistoryChart from './FundHistoryChart';
@@ -26,6 +26,51 @@ function formatDate(yyyymmdd: string): string {
   const m = yyyymmdd.match(/^\d{4}-(\d{2})-(\d{2})$/);
   if (m) return `${m[1]}/${m[2]}`;
   return yyyymmdd;
+}
+
+function formatQuoteDate(date: string): string {
+  const datetimeMatch = date.match(/^\d{4}-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+  if (datetimeMatch) return `${datetimeMatch[1]}/${datetimeMatch[2]} ${datetimeMatch[3]}:${datetimeMatch[4]}`;
+  return formatDate(date);
+}
+
+function closeTime(sinaSymbol: string): string | null {
+  if (sinaSymbol.startsWith('s_')) return '15:00';
+  if (sinaSymbol.startsWith('gb_')) return '04:00';
+  if (sinaSymbol.startsWith('hk')) return '16:10';
+  if (sinaSymbol.startsWith('kr')) return '14:30';
+  if (sinaSymbol.startsWith('sh') || sinaSymbol.startsWith('sz')) return '15:00';
+  if (sinaSymbol === 'int_nikkei') return '14:30';
+  if (sinaSymbol === 'b_KOSPI') return '14:30';
+  if (sinaSymbol === 'b_TWSE') return '13:30';
+  if (sinaSymbol === 'hf_HSI') return '03:00';
+  if (sinaSymbol === 'hf_NK') return '04:15';
+  if (sinaSymbol.startsWith('hf_')) return '05:00';
+  return null;
+}
+
+function quoteTimeCandidate(quote: QuoteData, closed: boolean): { label: string; sort: string } | null {
+  if (closed) {
+    const time = closeTime(quote.symbol);
+    const dateMatch = quote.time.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (time && dateMatch) {
+      return {
+        label: `${dateMatch[2]}/${dateMatch[3]} ${time}`,
+        sort: `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]} ${time}:00`,
+      };
+    }
+  }
+
+  const label = formatQuoteDate(quote.time);
+  return label ? { label, sort: quote.time || String(quote.fetchedAt) } : null;
+}
+
+function estimateTimeLabel(quotes: QuoteData[], closed: boolean): string | null {
+  const candidates = quotes
+    .map((quote) => quoteTimeCandidate(quote, closed))
+    .filter((item): item is { label: string; sort: string } => item != null)
+    .sort((a, b) => b.sort.localeCompare(a.sort));
+  return candidates[0]?.label ?? null;
 }
 
 export default function FundCard({ fund, estimate, rank, rankLabel, loading }: Props) {
@@ -85,6 +130,7 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
     : estimateState === 'PARTIAL'
       ? styles.estLiveTagPartial
       : styles.estLiveTagClosed;
+  const timeLabel = estimateTimeLabel(estimate.holdingsQuotes, estimateState === 'CLOSED');
 
   return (
     <div className={styles.card} onClick={() => setExpanded(!expanded)}>
@@ -124,14 +170,19 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
                 </span>
               )}
             </div>
-            <div className={`${styles.navBoxChange} ${localUp ? styles.up : styles.down}`}>
-              {estimatedNAVLocal !== null
-                ? `${localUp ? '+' : ''}${computedChangeLocal.toFixed(2)}%`
-                : '数据不足'}
-              {estimatedNAV !== null && (
-                <span className={`${styles.fxChange} ${up ? styles.up : styles.down}`}>
-                  （含汇率 {up ? '+' : ''}{computedChange.toFixed(2)}%）
-                </span>
+            <div className={styles.estimateMetaRow}>
+              <div className={`${styles.navBoxChange} ${localUp ? styles.up : styles.down}`}>
+                {estimatedNAVLocal !== null
+                  ? `${localUp ? '+' : ''}${computedChangeLocal.toFixed(2)}%`
+                  : '数据不足'}
+                {estimatedNAV !== null && (
+                  <span className={`${styles.fxChange} ${up ? styles.up : styles.down}`}>
+                    （含汇率 {up ? '+' : ''}{computedChange.toFixed(2)}%）
+                  </span>
+                )}
+              </div>
+              {timeLabel && (
+                <span className={styles.estimateTime}>{timeLabel}</span>
               )}
             </div>
           </div>
