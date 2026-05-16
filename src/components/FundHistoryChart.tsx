@@ -7,7 +7,7 @@ interface Props {
   fundCode: string;
 }
 
-type RangeKey = '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | '5y' | 'all';
+type RangeKey = '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | '5y' | 'ytd' | 'all';
 type TextAnchor = 'start' | 'middle' | 'end';
 
 const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
@@ -18,6 +18,7 @@ const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
   { key: '1y', label: '1年', days: 365 },
   { key: '3y', label: '3年', days: 365 * 3 },
   { key: '5y', label: '5年', days: 365 * 5 },
+  { key: 'ytd', label: '今年', days: null },
   { key: 'all', label: '成立来', days: null },
 ];
 
@@ -32,7 +33,7 @@ function formatAxisDate(date: string, range: RangeKey): string {
   const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return date;
   const [, year, month, day] = match;
-  if (range === '1w' || range === '1m' || range === '3m' || range === '6m') {
+  if (range === '1w' || range === '1m' || range === '3m' || range === '6m' || range === 'ytd') {
     return `${month}/${day}`;
   }
   if (range === '1y') {
@@ -71,6 +72,16 @@ function selectRange(points: FundHistoryPoint[], days: number | null): FundHisto
   if (firstAfterCutoff <= 0) return points;
   const startIndex = points[firstAfterCutoff].date === cutoff ? firstAfterCutoff : firstAfterCutoff - 1;
   const sliced = points.slice(startIndex);
+  return sliced.length >= 2 ? sliced : points.slice(-2);
+}
+
+function selectYearToDate(points: FundHistoryPoint[]): FundHistoryPoint[] {
+  if (points.length <= 2) return points;
+  const latest = points[points.length - 1];
+  const yearStart = `${latest.date.slice(0, 4)}-01-01`;
+  const firstThisYear = points.findIndex((point) => point.date >= yearStart);
+  if (firstThisYear <= 0) return points;
+  const sliced = points.slice(firstThisYear);
   return sliced.length >= 2 ? sliced : points.slice(-2);
 }
 
@@ -219,8 +230,9 @@ export default function FundHistoryChart({ fundCode }: Props) {
 
   const selectedRange = RANGES.find((item) => item.key === range) ?? RANGES[2];
   const visible = useMemo(() => {
+    if (range === 'ytd') return selectYearToDate(history);
     return selectRange(history, selectedRange.days);
-  }, [history, selectedRange.days]);
+  }, [history, range, selectedRange.days]);
 
   const metrics = useMemo(() => {
     if (visible.length < 2) return null;
