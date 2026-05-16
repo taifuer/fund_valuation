@@ -1,6 +1,7 @@
 import type {
   QuoteData,
   FundNavData,
+  FundPurchaseData,
   FundHistoryPoint,
   FxRateData,
   MarketHistoryConfig,
@@ -492,6 +493,23 @@ export async function fetchFundHistory(
         nav,
         officialChange: Number(officialChange.toFixed(2)),
       });
+    }
+  } catch { /* skip */ }
+  return results;
+}
+
+export async function fetchFundPurchaseStatuses(codes: string[]): Promise<Map<string, FundPurchaseData>> {
+  const results = new Map<string, FundPurchaseData>();
+  if (codes.length === 0) return results;
+
+  const url = apiUrl(`/api/fundpurchase?codes=${codes.join(',')}`);
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return results;
+    const json = await res.json();
+    for (const code of codes) {
+      const raw: FundPurchaseData | undefined = json[code];
+      if (raw) results.set(code, raw);
     }
   } catch { /* skip */ }
   return results;

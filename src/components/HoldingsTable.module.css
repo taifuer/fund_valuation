@@ -129,3 +129,11 @@
   font-weight: 700;
   font-size: 12px;
 }
+
+.note {
+  border-top: 1px solid #f8fafc;
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 14px 8px;
+}

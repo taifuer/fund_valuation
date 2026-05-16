@@ -6,7 +6,7 @@ export interface QuoteData {
   change: number;
   changePercent: number;
   session?: 'regular' | 'pre' | 'post';
-  time: string; // 行情更新时间（北京时间）
+  time: string; // 行情更新时间
   dateReliable: boolean;
   fetchedAt: number;
 }
@@ -23,6 +23,14 @@ export interface Fund {
   symbol: string;
   name: string;
   code: string; // Chinese fund code for NAV fetch
+  profile?: {
+    inceptionDate: string;
+    assetScale: string;
+    scaleDate: string;
+    managementFee: string;
+    custodianFee: string;
+    salesServiceFee: string;
+  };
   holdings: Holding[];
 }
 
@@ -34,6 +42,20 @@ export interface FundNavData {
   officialChange: number; // T-1 官方涨跌幅 (%)
   estimatedNav: number; // 实时估算净值
   estimatedChange: number; // 平台估算涨跌幅 (%)
+}
+
+export interface FundPurchaseData {
+  code: string;
+  name: string;
+  fundType: string;
+  navDate: string;
+  purchaseStatus: string;
+  redeemStatus: string;
+  nextOpenDate: string;
+  minPurchase: string;
+  dailyLimit: string;
+  feeRate: string;
+  fetchedAt: number;
 }
 
 export interface FundHistoryPoint {

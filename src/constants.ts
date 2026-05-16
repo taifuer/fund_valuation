@@ -13,6 +13,21 @@ const hk = (symbol: string, name: string, weight: number): Holding => ({
 const kr = (symbol: string, name: string, weight: number): Holding => ({
   symbol, name, sinaSymbol: `kr${symbol}`, weight, currency: 'KRW',
 });
+const profile = (
+  inceptionDate: string,
+  assetScale: string,
+  scaleDate: string,
+  managementFee: string,
+  custodianFee: string,
+  salesServiceFee: string,
+): Fund['profile'] => ({
+  inceptionDate,
+  assetScale,
+  scaleDate,
+  managementFee,
+  custodianFee,
+  salesServiceFee,
+});
 
 export const INDICES: IndexConfig[] = [
   // A股
@@ -43,6 +58,7 @@ export const FUNDS: Fund[] = [
   // ──── 纳斯达克/美股科技 ────
   {
     symbol: '017436', name: '华宝纳斯达克精选', code: '017436',
+    profile: profile('2023-03-02', '39.51亿元', '2026-03-31', '1.20%', '0.20%', '0.00%'),
     holdings: [
       us('NFLX', 'Netflix', 0.0932), us('NVDA', 'NVIDIA', 0.0928),
       us('AAPL', 'Apple', 0.0776), us('MSFT', 'Microsoft', 0.075),
@@ -53,6 +69,7 @@ export const FUNDS: Fund[] = [
   },
   {
     symbol: '017091', name: '景顺长城纳斯达克科技', code: '017091',
+    profile: profile('2022-12-09', '23.05亿元', '2026-03-31', '0.80%', '0.20%', '0.00%'),
     holdings: [
       us('NVDA', 'NVIDIA', 0.1269), us('AAPL', 'Apple', 0.1231),
       us('MSFT', 'Microsoft', 0.1212), us('AVGO', 'Broadcom', 0.0725),
@@ -63,6 +80,7 @@ export const FUNDS: Fund[] = [
   },
   {
     symbol: '022184', name: '富国全球科技互联网', code: '022184',
+    profile: profile('2024-09-18', '8.34亿元', '2026-03-31', '1.20%', '0.20%', '0.40%'),
     holdings: [
       us('TSM', '台积电', 0.1006), us('NVDA', 'NVIDIA', 0.0980),
       us('GOOGL', 'Alphabet A', 0.0856), hk('09899', '网易云音乐', 0.0817),
@@ -73,6 +91,7 @@ export const FUNDS: Fund[] = [
   },
   {
     symbol: '161128', name: '易方达标普信息科技', code: '161128',
+    profile: profile('2016-12-13', '33.29亿元', '2026-03-31', '0.80%', '0.20%', '0.00%'),
     holdings: [
       us('AAPL', 'Apple', 0.16), us('MSFT', 'Microsoft', 0.15),
       us('NVDA', 'NVIDIA', 0.14), us('AVGO', 'Broadcom', 0.06),
@@ -84,6 +103,7 @@ export const FUNDS: Fund[] = [
   // ──── 全球科技 ────
   {
     symbol: '006555', name: '浦银安盛全球智能科技', code: '006555',
+    profile: profile('2019-01-29', '10.73亿元', '2026-03-31', '1.20%', '0.20%', '0.00%'),
     holdings: [
       us('NVDA', 'NVIDIA', 0.0811), us('GOOG', 'Alphabet', 0.0787),
       us('TSM', '台积电', 0.0745), us('AVGO', 'Broadcom', 0.0731),
@@ -94,6 +114,7 @@ export const FUNDS: Fund[] = [
   },
   {
     symbol: '006373', name: '国富全球科技互联', code: '006373',
+    profile: profile('2018-11-20', '29.89亿元', '2026-03-31', '1.20%', '0.20%', '0.00%'),
     holdings: [
       us('NVDA', 'NVIDIA', 0.09), us('MSFT', 'Microsoft', 0.08),
       us('AAPL', 'Apple', 0.07), us('GOOGL', 'Alphabet', 0.07),
@@ -104,6 +125,7 @@ export const FUNDS: Fund[] = [
   },
   {
     symbol: '270023', name: '广发全球精选', code: '270023',
+    profile: profile('2010-08-18', '112.68亿元', '2026-03-31', '1.20%', '0.20%', '0.00%'),
     holdings: [
       us('ASML', '阿斯麦', 0.0521), us('GOOG', 'Alphabet', 0.0494),
       us('NVDA', 'NVIDIA', 0.0447), us('AAPL', 'Apple', 0.0407),
@@ -114,6 +136,7 @@ export const FUNDS: Fund[] = [
   },
   {
     symbol: '001668', name: '汇添富全球移动互联', code: '001668',
+    profile: profile('2017-01-25', '14.91亿元', '2026-03-31', '1.20%', '0.20%', '0.00%'),
     holdings: [
       us('NVDA', 'NVIDIA', 0.0896), us('GOOGL', 'Alphabet', 0.0814),
       us('MSFT', 'Microsoft', 0.05), us('AMZN', 'Amazon', 0.0484),
@@ -124,6 +147,7 @@ export const FUNDS: Fund[] = [
   },
   {
     symbol: '000043', name: '嘉实美国成长', code: '000043',
+    profile: profile('2013-06-14', '43.44亿元', '2026-03-31', '1.20%', '0.20%', '--'),
     holdings: [
       us('AAPL', 'Apple', 0.0968), us('NVDA', 'NVIDIA', 0.0867),
       us('MSFT', 'Microsoft', 0.0714), us('AMZN', 'Amazon', 0.0664),
@@ -134,6 +158,7 @@ export const FUNDS: Fund[] = [
   },
   {
     symbol: '008253', name: '华宝致远混合', code: '008253',
+    profile: profile('2019-11-27', '2.26亿元', '2026-03-31', '1.20%', '0.20%', '0.00%'),
     holdings: [
       us('NVDA', 'NVIDIA', 0.08), us('AAPL', 'Apple', 0.07),
       us('MSFT', 'Microsoft', 0.07), us('GOOGL', 'Alphabet', 0.06),
@@ -145,6 +170,7 @@ export const FUNDS: Fund[] = [
   // ──── 全球成长/产业升级 ────
   {
     symbol: '012920', name: '易方达全球成长精选', code: '012920',
+    profile: profile('2022-01-11', '37.05亿元', '2026-03-31', '1.20%', '0.20%', '0.00%'),
     holdings: [
       us('TSM', '台积电', 0.0888), us('LITE', 'Lumentum', 0.0868),
       cn('sz300502', '新易盛', 0.0602), us('GLW', 'Corning', 0.0467),
@@ -155,6 +181,7 @@ export const FUNDS: Fund[] = [
   },
   {
     symbol: '017730', name: '嘉实全球产业升级', code: '017730',
+    profile: profile('2023-02-09', '9.22亿元', '2026-03-31', '1.20%', '0.20%', '0.00%'),
     holdings: [
       us('NVDA', 'NVIDIA', 0.09), us('AVGO', 'Broadcom', 0.08),
       us('TSM', '台积电', 0.07), us('ASML', '阿斯麦', 0.06),
@@ -165,6 +192,7 @@ export const FUNDS: Fund[] = [
   },
   {
     symbol: '016664', name: '天弘全球高端制造', code: '016664',
+    profile: profile('2023-04-26', '5.61亿元', '2026-03-31', '1.20%', '0.20%', '0.00%'),
     holdings: [
       us('NVDA', 'NVIDIA', 0.09), us('TSM', '台积电', 0.08),
       us('ASML', '阿斯麦', 0.07), us('AVGO', 'Broadcom', 0.07),
@@ -176,6 +204,7 @@ export const FUNDS: Fund[] = [
   // ──── 海外科技/数字经济 ────
   {
     symbol: '501312', name: '华宝海外科技', code: '501312',
+    profile: profile('2023-04-11', '7.99亿元', '2026-03-31', '1.00%', '0.20%', '0.00%'),
     holdings: [
       us('NVDA', 'NVIDIA', 0.09), us('AAPL', 'Apple', 0.08),
       us('MSFT', 'Microsoft', 0.08), us('AMZN', 'Amazon', 0.06),
@@ -186,6 +215,7 @@ export const FUNDS: Fund[] = [
   },
   {
     symbol: '005698', name: '华夏全球科技先锋', code: '005698',
+    profile: profile('2018-04-17', '33.00亿元', '2026-03-31', '1.20%', '0.20%', '0.00%'),
     holdings: [
       us('CIEN', 'Ciena', 0.0556), us('TSM', '台积电', 0.0487),
       us('LITE', 'Lumentum', 0.0472), us('COHR', 'Coherent', 0.0459),
@@ -196,6 +226,7 @@ export const FUNDS: Fund[] = [
   },
   {
     symbol: '016701', name: '银华海外数字经济', code: '016701',
+    profile: profile('2023-03-15', '11.46亿元', '2026-03-31', '1.20%', '0.20%', '0.00%'),
     holdings: [
       us('NVDA', 'NVIDIA', 0.09), us('MSFT', 'Microsoft', 0.08),
       us('AAPL', 'Apple', 0.07), us('GOOGL', 'Alphabet', 0.07),
@@ -207,6 +238,7 @@ export const FUNDS: Fund[] = [
   // ──── 新兴市场/其他 ────
   {
     symbol: '539002', name: '建信新兴市场混合', code: '539002',
+    profile: profile('2011-06-21', '11.20亿元', '2026-03-31', '1.20%', '0.20%', '0.00%'),
     holdings: [
       us('TSM', '台积电', 0.08), us('BABA', '阿里巴巴', 0.06),
       us('NVDA', 'NVIDIA', 0.05), us('SE', 'Sea Limited', 0.04),

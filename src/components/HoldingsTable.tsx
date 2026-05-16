@@ -8,6 +8,7 @@ interface Props {
   computedChange: number;
   quoteCoverage: number;
   totalConfiguredWeight: number;
+  missingQuoteCount: number;
   currencyChanges: Record<string, number>;
 }
 
@@ -24,6 +25,7 @@ export default function HoldingsTable({
   computedChange,
   quoteCoverage,
   totalConfiguredWeight,
+  missingQuoteCount,
   currencyChanges,
 }: Props) {
   const quoteMap = new Map(quotes.map((q) => [q.symbol, q]));
@@ -136,6 +138,11 @@ export default function HoldingsTable({
           （已配置持仓覆盖 {coveragePct.toFixed(0)}%，外币持仓已并入对应兑 CNY 汇率涨跌）
         </span>
       </div>
+      {missingQuoteCount > 0 && (
+        <div className={styles.note}>
+          当前有 {missingQuoteCount} 项持仓未获取到行情，T日持仓估算未包含这些持仓的实时涨跌。
+        </div>
+      )}
     </div>
   );
 }

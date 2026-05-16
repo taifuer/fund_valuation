@@ -59,6 +59,20 @@ def ensure_storage() -> None:
               PRIMARY KEY (code, date)
             );
 
+            CREATE TABLE IF NOT EXISTS fund_purchase_status (
+              code TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              fund_type TEXT NOT NULL,
+              nav_date TEXT NOT NULL,
+              purchase_status TEXT NOT NULL,
+              redeem_status TEXT NOT NULL,
+              next_open_date TEXT NOT NULL,
+              min_purchase TEXT NOT NULL,
+              daily_limit TEXT NOT NULL,
+              fee_rate TEXT NOT NULL,
+              fetched_at INTEGER NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS market_history (
               source TEXT NOT NULL,
               symbol TEXT NOT NULL,
@@ -232,6 +246,85 @@ def store_fund_history(code: str, rows: list[dict[str, Any]]) -> None:
         )
 
 
+def purchase_status_date(raw_date: str, show_days: list[Any]) -> str:
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", raw_date):
+        return raw_date
+    match = re.match(r"^(\d{2})-(\d{2})$", raw_date)
+    if not match:
+        return raw_date
+    for day in show_days:
+        day_text = str(day)
+        if day_text.endswith(raw_date):
+            return day_text
+    year = datetime.now(ZoneInfo("Asia/Shanghai")).year
+    return f"{year}-{match.group(1)}-{match.group(2)}"
+
+
+def parse_purchase_status_text(text: str) -> tuple[list[list[Any]], list[Any]]:
+    match = re.search(r"var\s+\w+\s*=\s*(\{.*\})\s*;?\s*$", text, re.S)
+    if not match:
+        return [], []
+    object_text = re.sub(r"(\{|,)\s*([A-Za-z_]\w*)\s*:", r'\1"\2":', match.group(1))
+    try:
+        parsed = json.loads(object_text)
+    except json.JSONDecodeError:
+        return [], []
+    datas = parsed.get("datas") if isinstance(parsed, dict) else None
+    show_days = parsed.get("showday") if isinstance(parsed, dict) else None
+    return (datas if isinstance(datas, list) else [], show_days if isinstance(show_days, list) else [])
+
+
+def store_purchase_status(text: str) -> None:
+    rows, show_days = parse_purchase_status_text(text)
+    points = []
+    fetched_at = now_ms()
+    for row in rows:
+        if not isinstance(row, list) or len(row) < 13:
+            continue
+        code = str(row[0] or "")
+        if not re.match(r"^\d{6}$", code):
+            continue
+        points.append(
+            (
+                code,
+                str(row[1] or ""),
+                str(row[2] or ""),
+                purchase_status_date(str(row[4] or ""), show_days),
+                str(row[5] or ""),
+                str(row[6] or ""),
+                str(row[7] or ""),
+                str(row[8] or ""),
+                str(row[9] or ""),
+                str(row[12] or ""),
+                fetched_at,
+            )
+        )
+    if not points:
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.executemany(
+            """
+            INSERT INTO fund_purchase_status(
+              code, name, fund_type, nav_date, purchase_status, redeem_status,
+              next_open_date, min_purchase, daily_limit, fee_rate, fetched_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(code) DO UPDATE SET
+              name = excluded.name,
+              fund_type = excluded.fund_type,
+              nav_date = excluded.nav_date,
+              purchase_status = excluded.purchase_status,
+              redeem_status = excluded.redeem_status,
+              next_open_date = excluded.next_open_date,
+              min_purchase = excluded.min_purchase,
+              daily_limit = excluded.daily_limit,
+              fee_rate = excluded.fee_rate,
+              fetched_at = excluded.fetched_at
+            """,
+            points,
+        )
+
+
 def store_market_history(source: str, symbol: str, text: str) -> None:
     rows: list[dict[str, Any]] = []
     if source == "sina-cn":
@@ -340,6 +433,54 @@ def read_fund_history_from_db(code: str, page_size: int, page_index: int) -> lis
         }
         for date, nav, change_percent in rows
     ]
+
+
+def read_purchase_status_from_db(codes: list[str], max_age_seconds: int) -> dict[str, dict[str, Any]]:
+    if not codes:
+        return {}
+    placeholders = ",".join("?" for _ in codes)
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT code, name, fund_type, nav_date, purchase_status, redeem_status,
+                   next_open_date, min_purchase, daily_limit, fee_rate, fetched_at
+            FROM fund_purchase_status
+            WHERE code IN ({placeholders})
+            """,
+            tuple(codes),
+        ).fetchall()
+    min_fetched_at = now_ms() - max_age_seconds * 1000
+    results: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        (
+            code,
+            name,
+            fund_type,
+            nav_date,
+            purchase_status,
+            redeem_status,
+            next_open_date,
+            min_purchase,
+            daily_limit,
+            fee_rate,
+            fetched_at,
+        ) = row
+        if int(fetched_at) < min_fetched_at:
+            continue
+        results[str(code)] = {
+            "code": str(code),
+            "name": str(name),
+            "fundType": str(fund_type),
+            "navDate": str(nav_date),
+            "purchaseStatus": str(purchase_status),
+            "redeemStatus": str(redeem_status),
+            "nextOpenDate": str(next_open_date),
+            "minPurchase": str(min_purchase),
+            "dailyLimit": str(daily_limit),
+            "feeRate": str(fee_rate),
+            "fetchedAt": int(fetched_at),
+        }
+    return results
 
 
 def read_market_history_from_db(source: str, symbol: str) -> list[dict[str, float | str]]:
@@ -550,6 +691,42 @@ def fund_history() -> Response:
             results[code] = rows
             store_fund_history(code, rows)
     return json_response(results)
+
+
+@app.get("/api/fundpurchase")
+def fund_purchase() -> Response:
+    codes = [code for code in require_arg("codes").split(",") if code]
+    ttl_seconds = 6 * 60 * 60
+    refresh = should_refresh()
+
+    if not refresh:
+        cached_results = read_purchase_status_from_db(codes, ttl_seconds)
+        if len(cached_results) >= len(set(codes)):
+            return json_response(cached_results)
+
+    query = urlencode(
+        {
+            "t": "8",
+            "page": "1,30000",
+            "js": "reData",
+            "sort": "fcode,asc",
+            "_": int(time.time() * 1000),
+        }
+    )
+    url = f"http://fund.eastmoney.com/Data/Fund_JJJZ_Data.aspx?{query}"
+    status, _, body = fetch_upstream(
+        url,
+        referer="https://fund.eastmoney.com/Fund_sgzt.html",
+        content_type="text/plain; charset=utf-8",
+        cache_key="fundpurchase:all",
+        kind="fundpurchase",
+        ttl_seconds=ttl_seconds,
+        force_refresh=refresh,
+    )
+    if status < 400:
+        store_purchase_status(decode_body(body))
+
+    return json_response(read_purchase_status_from_db(codes, ttl_seconds))
 
 
 def market_history_url(source: str, symbol: str) -> tuple[str, str]:
