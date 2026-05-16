@@ -124,6 +124,47 @@
   font-weight: 500;
 }
 
+.fundProfile {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  padding-left: 2px;
+}
+
+.profilePill {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  color: #475569;
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 600;
+  gap: 4px;
+  line-height: 18px;
+  padding: 0 6px;
+}
+
+.profilePill em {
+  color: #64748b;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.profilePill small {
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.profileWarning {
+  background: #fef3c7;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
 /* Live estimate box distinct style */
 .estimateBox {
   background: var(--color-up-bg);

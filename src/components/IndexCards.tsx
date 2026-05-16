@@ -22,6 +22,22 @@ function formatQuoteDate(date: string): string {
   return match ? `${match[1]}/${match[2]}` : date || '--';
 }
 
+function beijingTimestamp(date: string): number | null {
+  const match = date.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return null;
+  const timestamp = new Date(
+    `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6] ?? '00'}+08:00`,
+  ).getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function quoteTimeFresh(data: QuoteData): boolean {
+  if (data.symbol !== 'fx_sbtcusd') return true;
+  const timestamp = beijingTimestamp(data.time);
+  if (timestamp == null) return false;
+  return Math.abs(Date.now() - timestamp) <= 10 * 60 * 1000;
+}
+
 function closeTime(sinaSymbol: string): string | null {
   if (sinaSymbol.startsWith('s_')) return '15:00';
   if (sinaSymbol.startsWith('gb_')) return '04:00';
@@ -71,7 +87,7 @@ function Card({
   const useFutures = state !== 'live' && futuresData && futuresState === 'live' && futuresFresh;
   const displayData = useFutures ? futuresData : data;
   const up = displayData.change >= 0;
-  const fresh = Date.now() - displayData.fetchedAt < 90_000;
+  const fresh = Date.now() - displayData.fetchedAt < 90_000 && quoteTimeFresh(displayData);
   const displayState = useFutures
     ? 'futuresLive'
     : state === 'live' && fresh

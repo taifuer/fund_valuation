@@ -23,6 +23,14 @@ export interface Fund {
   symbol: string;
   name: string;
   code: string; // Chinese fund code for NAV fetch
+  profile?: {
+    inceptionDate: string;
+    assetScale: string;
+    scaleDate: string;
+    managementFee: string;
+    custodianFee: string;
+    salesServiceFee: string;
+  };
   holdings: Holding[];
 }
 

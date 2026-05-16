@@ -28,6 +28,13 @@ function formatDate(yyyymmdd: string): string {
   return yyyymmdd;
 }
 
+function formatChineseDate(yyyymmdd: string): string {
+  if (!yyyymmdd) return '';
+  const m = yyyymmdd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return yyyymmdd;
+  return `${Number(m[1])}年${Number(m[2])}月${Number(m[3])}日`;
+}
+
 function formatQuoteDate(date: string): string {
   const datetimeMatch = date.match(/^\d{4}-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
   if (datetimeMatch) return `${datetimeMatch[1]}/${datetimeMatch[2]} ${datetimeMatch[3]}:${datetimeMatch[4]}`;
@@ -131,6 +138,7 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
       ? styles.estLiveTagPartial
       : styles.estLiveTagClosed;
   const timeLabel = estimateTimeLabel(estimate.holdingsQuotes, estimateState === 'CLOSED');
+  const profile = fund.profile;
 
   return (
     <div className={styles.card} onClick={() => setExpanded(!expanded)}>
@@ -187,6 +195,22 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
             </div>
           </div>
         </div>
+        {profile && (
+          <div className={styles.fundProfile}>
+            <span className={styles.profilePill}>
+              <em>成立</em>{formatChineseDate(profile.inceptionDate)}
+            </span>
+            <span className={styles.profilePill}>
+              <em>规模</em>{profile.assetScale}<small>截至 {formatChineseDate(profile.scaleDate)}</small>
+            </span>
+            <span className={styles.profilePill}>
+              <em>费率</em>管理 {profile.managementFee}<small>托管 {profile.custodianFee} / 销售 {profile.salesServiceFee}</small>
+            </span>
+            {missingQuoteCount > 0 && (
+              <span className={`${styles.profilePill} ${styles.profileWarning}`}>缺 {missingQuoteCount} 项行情</span>
+            )}
+          </div>
+        )}
       </div>
 
       {expanded && (
