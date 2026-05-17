@@ -64,6 +64,24 @@ export interface FundHistoryPoint {
   changePercent: number;
 }
 
+export type FundReturnRangeKey = '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | 'ytd';
+
+export interface FundRangeReturn {
+  key: FundReturnRangeKey;
+  label: string;
+  returnPercent: number;
+  startDate: string;
+  endDate: string;
+  startNav: number;
+  endNav: number;
+}
+
+export interface FundReturnSummary {
+  code: string;
+  asOf: string;
+  ranges: Partial<Record<FundReturnRangeKey, FundRangeReturn>>;
+}
+
 export interface MarketHistoryPoint {
   date: string;
   close: number;

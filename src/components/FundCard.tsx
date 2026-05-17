@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Fund, QuoteData } from '../types';
+import type { Fund, FundRangeReturn, FundReturnRangeKey, FundReturnSummary, QuoteData } from '../types';
 import type { FundEstimate } from '../hooks/useQuotes';
 import HoldingsTable from './HoldingsTable';
 import FundHistoryChart from './FundHistoryChart';
@@ -19,6 +19,8 @@ const RANK_BADGE: Record<number, { label: string; cls: string }> = {
   2: { label: 'TOP 2', cls: 'silver' },
   3: { label: 'TOP 3', cls: 'bronze' },
 };
+
+const FUND_RETURN_RANGES: FundReturnRangeKey[] = ['1w', '1m', '3m', '6m', '1y', '3y', 'ytd'];
 
 // Format YYYY-MM-DD → MM/DD
 function formatDate(yyyymmdd: string): string {
@@ -94,6 +96,36 @@ function estimateTimeLabel(quotes: QuoteData[], closed: boolean): string | null 
   return candidates[0]?.label ?? null;
 }
 
+function FundReturnBar({
+  summary,
+  ranges,
+}: {
+  summary: FundReturnSummary | null;
+  ranges: FundReturnRangeKey[];
+}) {
+  const items = ranges
+    .map((key) => summary?.ranges[key])
+    .filter((item): item is FundRangeReturn => item != null);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className={styles.returnBar}>
+      {items.map((item) => {
+        const up = item.returnPercent >= 0;
+        return (
+          <span key={item.key} className={styles.returnItem}>
+            <em>{item.label}</em>
+            <strong className={up ? styles.up : styles.down}>
+              {up ? '+' : ''}{item.returnPercent.toFixed(2)}%
+            </strong>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function FundCard({ fund, estimate, rank, rankLabel, loading }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'holdings' | 'history'>('holdings');
@@ -121,6 +153,7 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
   const {
     officialNAV,
     purchaseStatus,
+    rangeReturns,
     computedChangeLocal,
     estimatedNAVLocal,
     computedChange,
@@ -234,6 +267,7 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
             )}
           </div>
         )}
+        <FundReturnBar summary={rangeReturns} ranges={FUND_RETURN_RANGES} />
       </div>
 
       {expanded && (

@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import type { QuoteData, FundNavData, FxRateData, FundPurchaseData } from '../types';
+import type { QuoteData, FundNavData, FxRateData, FundPurchaseData, FundReturnSummary } from '../types';
 import {
   fetchAllQuotes,
   fetchFundNavs,
   fetchSinaFundNavs,
   fetchFundHistory,
   fetchFundPurchaseStatuses,
+  fetchFundReturnSummaries,
   fetchFxRates,
 } from '../api';
 import { INDICES, MARKET_ASSETS, FUNDS } from '../constants';
@@ -17,6 +18,7 @@ export interface FundEstimate {
   fundName: string;
   officialNAV: FundNavData | null;
   purchaseStatus: FundPurchaseData | null;
+  rangeReturns: FundReturnSummary | null;
   computedChangeLocal: number;
   estimatedNAVLocal: number | null;
   computedChange: number;
@@ -56,11 +58,12 @@ export function useQuotes() {
         const fundCodes = FUNDS.map((f) => f.code);
         const holdingCurrencies = FUNDS.flatMap((f) => f.holdings.map((h) => h.currency));
         const currencies = [...new Set([...DISPLAY_FX_CURRENCIES, ...holdingCurrencies])];
-        const [quotesData, navsData, historyData, purchaseStatuses, fxRates] = await Promise.all([
+        const [quotesData, navsData, historyData, purchaseStatuses, returnSummaries, fxRates] = await Promise.all([
           fetchAllQuotes(allSinaSymbols),
           fetchFundNavs(fundCodes),
           fetchFundHistory(fundCodes),
           fetchFundPurchaseStatuses(fundCodes),
+          fetchFundReturnSummaries(fundCodes),
           fetchFxRates(currencies),
         ]);
 
@@ -146,6 +149,7 @@ export function useQuotes() {
             fundName: fund.name,
             officialNAV,
             purchaseStatus: purchaseStatuses.get(fund.code) ?? null,
+            rangeReturns: returnSummaries.get(fund.code) ?? null,
             computedChangeLocal,
             estimatedNAVLocal,
             computedChange,

@@ -435,6 +435,87 @@ def read_fund_history_from_db(code: str, page_size: int, page_index: int) -> lis
     ]
 
 
+FUND_RETURN_RANGES: dict[str, tuple[str, int | None]] = {
+    "1w": ("近1周", 7),
+    "1m": ("近1月", 30),
+    "3m": ("近3月", 90),
+    "6m": ("近半年", 182),
+    "1y": ("近1年", 365),
+    "3y": ("近3年", 365 * 3),
+    "ytd": ("今年", None),
+}
+
+
+def read_fund_return_summary_from_db(code: str) -> dict[str, Any] | None:
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            """
+            SELECT date, nav
+            FROM fund_nav_history
+            WHERE code = ?
+            ORDER BY date ASC
+            """,
+            (code,),
+        ).fetchall()
+    points = [(str(date), float(nav)) for date, nav in rows if float(nav) > 0]
+    if len(points) < 2:
+        return None
+
+    latest_date, latest_nav = points[-1]
+    try:
+        latest_day = datetime.fromisoformat(latest_date).date()
+    except ValueError:
+        return None
+
+    def point_on_or_before(target: str) -> tuple[str, float] | None:
+        candidate = None
+        for item in points:
+            if item[0] <= target:
+                candidate = item
+            else:
+                break
+        return candidate
+
+    def first_point_on_or_after(target: str) -> tuple[str, float] | None:
+        for item in points:
+            if item[0] >= target:
+                return item
+        return None
+
+    ranges: dict[str, Any] = {}
+    for key, (label, days) in FUND_RETURN_RANGES.items():
+        if days is None:
+            year_start = f"{latest_day.year}-01-01"
+            start = point_on_or_before(year_start)
+            if start is None or start[0] == latest_date:
+                start = first_point_on_or_after(year_start)
+        else:
+            target = (latest_day - timedelta(days=days)).isoformat()
+            start = point_on_or_before(target)
+
+        if start is None:
+            continue
+        start_date, start_nav = start
+        if start_date == latest_date or start_nav <= 0:
+            continue
+        return_percent = ((latest_nav - start_nav) / start_nav) * 100
+        ranges[key] = {
+            "key": key,
+            "label": label,
+            "returnPercent": round(return_percent, 2),
+            "startDate": start_date,
+            "endDate": latest_date,
+            "startNav": round(start_nav, 4),
+            "endNav": round(latest_nav, 4),
+        }
+
+    return {
+        "code": code,
+        "asOf": latest_date,
+        "ranges": ranges,
+    }
+
+
 def read_purchase_status_from_db(codes: list[str], max_age_seconds: int) -> dict[str, dict[str, Any]]:
     if not codes:
         return {}
@@ -690,6 +771,17 @@ def fund_history() -> Response:
         if isinstance(rows, list):
             results[code] = rows
             store_fund_history(code, rows)
+    return json_response(results)
+
+
+@app.get("/api/fundreturns")
+def fund_returns() -> Response:
+    codes = [code for code in require_arg("codes").split(",") if code]
+    results: dict[str, Any] = {}
+    for code in codes:
+        summary = read_fund_return_summary_from_db(code)
+        if summary:
+            results[code] = summary
     return json_response(results)
 
 

@@ -3,6 +3,7 @@ import type {
   FundNavData,
   FundPurchaseData,
   FundHistoryPoint,
+  FundReturnSummary,
   FxRateData,
   MarketHistoryConfig,
   MarketHistoryPoint,
@@ -509,6 +510,22 @@ export async function fetchFundPurchaseStatuses(codes: string[]): Promise<Map<st
     const json = await res.json();
     for (const code of codes) {
       const raw: FundPurchaseData | undefined = json[code];
+      if (raw) results.set(code, raw);
+    }
+  } catch { /* skip */ }
+  return results;
+}
+
+export async function fetchFundReturnSummaries(codes: string[]): Promise<Map<string, FundReturnSummary>> {
+  const results = new Map<string, FundReturnSummary>();
+  if (codes.length === 0) return results;
+
+  try {
+    const res = await fetch(apiUrl(`/api/fundreturns?codes=${codes.join(',')}`));
+    if (!res.ok) return results;
+    const json = await res.json();
+    for (const code of codes) {
+      const raw: FundReturnSummary | undefined = json[code];
       if (raw) results.set(code, raw);
     }
   } catch { /* skip */ }

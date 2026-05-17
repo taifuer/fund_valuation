@@ -183,6 +183,39 @@
   color: #991b1b;
 }
 
+.returnBar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  padding-left: 2px;
+}
+
+.returnItem {
+  align-items: baseline;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  display: inline-flex;
+  gap: 4px;
+  line-height: 18px;
+  padding: 0 6px;
+}
+
+.returnItem em {
+  color: #64748b;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.returnItem strong {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
 /* Live estimate box distinct style */
 .estimateBox {
   background: var(--color-up-bg);
