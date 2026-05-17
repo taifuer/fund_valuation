@@ -43,7 +43,7 @@ export default function Header({ fxRates }: Props) {
       <div className={styles.meta}>
         <div className={styles.datetime}>
           <span className={styles.live} />
-          {time}
+          {time}（北京时间）
         </div>
         {displayRates.length > 0 && (
           <div className={styles.fxRow}>
