@@ -9,7 +9,7 @@ import {
   fetchFundReturnSummaries,
   fetchFxRates,
 } from '../api';
-import { INDICES, MARKET_ASSETS, FUNDS } from '../constants';
+import { INDICES, MARKET_ASSETS, ETF_ASSETS, FUNDS } from '../constants';
 
 const DISPLAY_FX_CURRENCIES = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
 
@@ -48,11 +48,12 @@ export function useQuotes() {
 
       const indexSymbols = INDICES.map((i) => i.sinaSymbol);
       const assetSymbols = MARKET_ASSETS.map((i) => i.sinaSymbol);
+      const etfSymbols = ETF_ASSETS.map((i) => i.sinaSymbol);
       const futuresSymbols = INDICES.flatMap((i) => i.futures?.sinaSymbol ?? []);
       const holdingSymbols = FUNDS.flatMap((f) =>
         f.holdings.map((h) => h.sinaSymbol),
       );
-      const allSinaSymbols = [...new Set([...indexSymbols, ...futuresSymbols, ...assetSymbols, ...holdingSymbols])];
+      const allSinaSymbols = [...new Set([...indexSymbols, ...futuresSymbols, ...assetSymbols, ...etfSymbols, ...holdingSymbols])];
 
       try {
         const fundCodes = FUNDS.map((f) => f.code);

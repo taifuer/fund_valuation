@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { QuoteData, IndexConfig } from '../types';
-import { INDICES, MARKET_ASSETS } from '../constants';
+import { INDICES, MARKET_ASSETS, ETF_ASSETS } from '../constants';
 import { getMarketState } from '../marketHours';
 import MarketHistoryModal from './MarketHistoryModal';
 import styles from './IndexCards.module.css';
@@ -13,6 +13,31 @@ interface Props {
 interface SelectedHistory {
   item: IndexConfig;
   quote: QuoteData;
+}
+
+const COLLAPSED_GROUPS_KEY = 'fund_valuation:collapsed_market_groups';
+
+const GROUPS = [
+  { title: 'A股', symbols: ['s_sh000001', 's_sz399006', 's_sh000300', 's_sh000905'], cols: 'grid4' },
+  { title: '美股', symbols: ['gb_ixic', 'gb_ndx', 'gb_inx', 'gb_dji'], cols: 'grid4' },
+  { title: '亚太', symbols: ['hkHSI', 'int_nikkei', 'b_KOSPI', 'b_TWSE'], cols: 'grid4' },
+  { title: '资产', symbols: ['hf_GC', 'hf_SI', 'hf_CL', 'fx_sbtcusd'], cols: 'grid4' },
+  { title: 'ETF', symbols: ['sz159695', 'sh512480', 'sh561380', 'sz159770', 'sz159755', 'sz159206', 'sh510170', 'sh512890'], cols: 'grid4' },
+] as const;
+
+function readCollapsedGroups(): Record<string, boolean> {
+  try {
+    const raw = window.localStorage.getItem(COLLAPSED_GROUPS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeCollapsedGroups(value: Record<string, boolean>) {
+  try {
+    window.localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify(value));
+  } catch { /* skip */ }
 }
 
 function formatQuoteDate(date: string): string {
@@ -139,34 +164,48 @@ function Card({
 
 export default function IndexCards({ quotes, loading }: Props) {
   const [selectedHistory, setSelectedHistory] = useState<SelectedHistory | null>(null);
-  const groups = [
-    { title: 'A股', symbols: ['s_sh000001', 's_sz399006', 's_sh000300', 's_sh000905'], cols: 'grid4' },
-    { title: '美股', symbols: ['gb_ixic', 'gb_ndx', 'gb_inx', 'gb_dji'], cols: 'grid4' },
-    { title: '亚太', symbols: ['hkHSI', 'int_nikkei', 'b_KOSPI', 'b_TWSE'], cols: 'grid4' },
-    { title: '资产', symbols: ['hf_GC', 'hf_SI', 'hf_CL', 'fx_sbtcusd'], cols: 'grid4' },
-  ];
-  const cards = [...INDICES, ...MARKET_ASSETS];
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(readCollapsedGroups);
+  const cards = [...INDICES, ...MARKET_ASSETS, ...ETF_ASSETS];
+
+  function toggleGroup(title: string) {
+    setCollapsedGroups((prev) => {
+      const next = { ...prev, [title]: !prev[title] };
+      writeCollapsedGroups(next);
+      return next;
+    });
+  }
 
   return (
     <div className={styles.container}>
-      {groups.map((g) => (
+      {GROUPS.map((g) => (
         <div key={g.title}>
-          <div className={styles.sectionTitle}>{g.title}</div>
-          <div className={`${styles.grid} ${styles[g.cols]}`}>
-            {g.symbols.map((sym) => {
-              const idx = cards.find((i) => i.sinaSymbol === sym)!;
-              return (
-                <Card
-                  key={sym}
-                  idx={idx}
-                  data={quotes.get(sym)}
-                  futuresData={idx.futures ? quotes.get(idx.futures.sinaSymbol) : undefined}
-                  loading={loading}
-                  onOpenHistory={idx.history ? (quote) => setSelectedHistory({ item: idx, quote }) : undefined}
-                />
-              );
-            })}
-          </div>
+          <button
+            type="button"
+            className={styles.sectionToggle}
+            aria-expanded={!collapsedGroups[g.title]}
+            onClick={() => toggleGroup(g.title)}
+          >
+            <span className={styles.toggleIcon}>{collapsedGroups[g.title] ? '+' : '-'}</span>
+            <span>{g.title}</span>
+            <span className={styles.groupCount}>· {g.symbols.length}</span>
+          </button>
+          {!collapsedGroups[g.title] && (
+            <div className={`${styles.grid} ${styles[g.cols]}`}>
+              {g.symbols.map((sym) => {
+                const idx = cards.find((i) => i.sinaSymbol === sym)!;
+                return (
+                  <Card
+                    key={sym}
+                    idx={idx}
+                    data={quotes.get(sym)}
+                    futuresData={idx.futures ? quotes.get(idx.futures.sinaSymbol) : undefined}
+                    loading={loading}
+                    onOpenHistory={idx.history ? (quote) => setSelectedHistory({ item: idx, quote }) : undefined}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
       ))}
       {selectedHistory && (

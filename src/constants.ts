@@ -54,6 +54,17 @@ export const MARKET_ASSETS: IndexConfig[] = [
   { symbol: 'BTC', name: '比特币', sinaSymbol: 'fx_sbtcusd' },
 ];
 
+export const ETF_ASSETS: IndexConfig[] = [
+  { symbol: '159695', name: '通信ETF', sinaSymbol: 'sz159695', history: { source: 'sina-cn', symbol: 'sz159695' } },
+  { symbol: '512480', name: '半导体ETF', sinaSymbol: 'sh512480', history: { source: 'sina-cn', symbol: 'sh512480' } },
+  { symbol: '561380', name: '电网设备ETF', sinaSymbol: 'sh561380', history: { source: 'sina-cn', symbol: 'sh561380' } },
+  { symbol: '159770', name: '机器人ETF', sinaSymbol: 'sz159770', history: { source: 'sina-cn', symbol: 'sz159770' } },
+  { symbol: '159755', name: '电池ETF', sinaSymbol: 'sz159755', history: { source: 'sina-cn', symbol: 'sz159755' } },
+  { symbol: '159206', name: '卫星ETF', sinaSymbol: 'sz159206', history: { source: 'sina-cn', symbol: 'sz159206' } },
+  { symbol: '510170', name: '大宗商品ETF', sinaSymbol: 'sh510170', history: { source: 'sina-cn', symbol: 'sh510170' } },
+  { symbol: '512890', name: '红利低波ETF', sinaSymbol: 'sh512890', history: { source: 'sina-cn', symbol: 'sh512890' } },
+];
+
 export const FUNDS: Fund[] = [
   // ──── 纳斯达克/美股科技 ────
   {

@@ -4,16 +4,46 @@
   padding: 0 16px;
 }
 
-.sectionTitle {
+.sectionToggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: #64748b;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
   font-size: 13px;
   font-weight: 600;
-  color: #64748b;
+  gap: 5px;
   margin: 14px 0 6px;
-  padding-left: 4px;
+  padding: 0 4px;
 }
 
-.sectionTitle:first-child {
+.sectionToggle:first-child {
   margin-top: 4px;
+}
+
+.sectionToggle:hover {
+  color: #334155;
+}
+
+.toggleIcon {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  color: #64748b;
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  width: 16px;
+}
+
+.groupCount {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .grid {
