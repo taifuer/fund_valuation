@@ -116,7 +116,7 @@ function FundReturnBar({
         return (
           <span key={item.key} className={styles.returnItem}>
             <em>{item.label}</em>
-            <strong className={up ? styles.up : styles.down}>
+            <strong className={up ? styles.returnUp : styles.returnDown}>
               {up ? '+' : ''}{item.returnPercent.toFixed(2)}%
             </strong>
           </span>

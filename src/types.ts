@@ -87,6 +87,17 @@ export interface MarketHistoryPoint {
   close: number;
 }
 
+export interface MarketReturnSummary {
+  source: MarketHistoryConfig['source'];
+  symbol: string;
+  label: string;
+  returnPercent: number;
+  startDate: string;
+  endDate: string;
+  startClose: number;
+  endClose: number;
+}
+
 export interface MarketHistoryConfig {
   source: 'sina-cn' | 'sina-us' | 'sina-futures';
   symbol: string;

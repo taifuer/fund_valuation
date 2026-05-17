@@ -216,6 +216,14 @@
   font-weight: 700;
 }
 
+.returnUp {
+  color: #475569;
+}
+
+.returnDown {
+  color: #64748b;
+}
+
 /* Live estimate box distinct style */
 .estimateBox {
   background: var(--color-up-bg);

@@ -578,6 +578,53 @@ def read_market_history_from_db(source: str, symbol: str) -> list[dict[str, floa
     return [{"date": str(date), "close": float(close)} for date, close in rows]
 
 
+def read_market_ytd_return_from_db(source: str, symbol: str) -> dict[str, Any] | None:
+    rows = read_market_history_from_db(source, symbol)
+    points = [
+        (str(row["date"]), float(row["close"]))
+        for row in rows
+        if float(row["close"]) > 0
+    ]
+    if len(points) < 2:
+        return None
+
+    latest_date, latest_close = points[-1]
+    try:
+        latest_day = datetime.fromisoformat(latest_date).date()
+    except ValueError:
+        return None
+
+    year_start = f"{latest_day.year}-01-01"
+    start: tuple[str, float] | None = None
+    for point in points:
+        if point[0] <= year_start:
+            start = point
+        else:
+            break
+
+    if start is None or start[0] == latest_date:
+        for point in points:
+            if point[0] >= year_start:
+                start = point
+                break
+
+    if start is None or start[0] == latest_date or start[1] <= 0:
+        return None
+
+    start_date, start_close = start
+    return_percent = ((latest_close - start_close) / start_close) * 100
+    return {
+        "source": source,
+        "symbol": symbol,
+        "label": "今年",
+        "returnPercent": round(return_percent, 2),
+        "startDate": start_date,
+        "endDate": latest_date,
+        "startClose": round(start_close, 4),
+        "endClose": round(latest_close, 4),
+    }
+
+
 def read_market_intraday_from_db(source: str, symbol: str) -> list[dict[str, float | str]]:
     with sqlite3.connect(DB_PATH) as conn:
         latest = conn.execute(
@@ -864,6 +911,21 @@ def market_history() -> Response:
         except Exception:
             pass
     return bytes_response(body, status=status, content_type=content_type)
+
+
+@app.get("/api/marketreturns")
+def market_returns() -> Response:
+    items = request.args.get("items", "")
+    results: dict[str, Any] = {}
+    for item in [part for part in items.split(",") if part]:
+        pieces = item.split(":", 1)
+        if len(pieces) != 2:
+            continue
+        source, symbol = pieces
+        summary = read_market_ytd_return_from_db(source, symbol)
+        if summary:
+            results[item] = summary
+    return json_response(results)
 
 
 def market_intraday_url(source: str, symbol: str) -> tuple[str, str]:

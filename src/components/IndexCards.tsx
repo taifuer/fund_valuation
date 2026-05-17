@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import type { QuoteData, IndexConfig } from '../types';
+import { useEffect, useMemo, useState } from 'react';
+import type { QuoteData, IndexConfig, MarketReturnSummary } from '../types';
 import { INDICES, MARKET_ASSETS, ETF_ASSETS } from '../constants';
+import { fetchMarketReturnSummaries } from '../api';
 import { getMarketState } from '../marketHours';
 import MarketHistoryModal from './MarketHistoryModal';
 import styles from './IndexCards.module.css';
@@ -88,12 +89,14 @@ function Card({
   idx,
   data,
   futuresData,
+  ytdReturn,
   loading,
   onOpenHistory,
 }: {
   idx: IndexConfig;
   data?: QuoteData;
   futuresData?: QuoteData;
+  ytdReturn?: MarketReturnSummary;
   loading: boolean;
   onOpenHistory?: (quote: QuoteData) => void;
 }) {
@@ -155,6 +158,11 @@ function Card({
       <div className={`${styles.change} ${up ? styles.up : styles.down}`}>
         {up ? '+' : ''}{displayData.changePercent.toFixed(2)}%
       </div>
+      {ytdReturn && (
+        <span className={styles.ytdReturn}>
+          今年 {ytdReturn.returnPercent >= 0 ? '+' : ''}{ytdReturn.returnPercent.toFixed(1)}%
+        </span>
+      )}
       <span className={`${styles.quoteDate} ${displayData.dateReliable ? '' : styles.quoteDateEstimated}`}>
         {quoteTimeLabel}
       </span>
@@ -165,7 +173,19 @@ function Card({
 export default function IndexCards({ quotes, loading }: Props) {
   const [selectedHistory, setSelectedHistory] = useState<SelectedHistory | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(readCollapsedGroups);
-  const cards = [...INDICES, ...MARKET_ASSETS, ...ETF_ASSETS];
+  const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
+  const cards = useMemo(() => [...INDICES, ...MARKET_ASSETS, ...ETF_ASSETS], []);
+
+  useEffect(() => {
+    const configs = cards.map((item) => item.history).filter((item): item is NonNullable<IndexConfig['history']> => item != null);
+    let cancelled = false;
+    fetchMarketReturnSummaries(configs).then((data) => {
+      if (!cancelled) setMarketReturns(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [cards]);
 
   function toggleGroup(title: string) {
     setCollapsedGroups((prev) => {
@@ -199,6 +219,7 @@ export default function IndexCards({ quotes, loading }: Props) {
                     idx={idx}
                     data={quotes.get(sym)}
                     futuresData={idx.futures ? quotes.get(idx.futures.sinaSymbol) : undefined}
+                    ytdReturn={idx.history ? marketReturns.get(`${idx.history.source}:${idx.history.symbol}`) : undefined}
                     loading={loading}
                     onOpenHistory={idx.history ? (quote) => setSelectedHistory({ item: idx, quote }) : undefined}
                   />

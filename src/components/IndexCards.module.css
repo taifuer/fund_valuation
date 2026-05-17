@@ -118,8 +118,19 @@
   pointer-events: none;
 }
 
+.ytdReturn {
+  bottom: 3px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 500;
+  left: 6px;
+  line-height: 14px;
+  pointer-events: none;
+  position: absolute;
+}
+
 .quoteDateEstimated {
-  color: #94a3b8;
+  color: #64748b;
 }
 
 .state {

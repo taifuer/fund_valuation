@@ -7,6 +7,7 @@ import type {
   FxRateData,
   MarketHistoryConfig,
   MarketHistoryPoint,
+  MarketReturnSummary,
 } from './types';
 
 type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'crypto' | 'fund' | 'fx';
@@ -719,6 +720,28 @@ export async function fetchMarketHistory(config: MarketHistoryConfig): Promise<M
   } catch {
     return [];
   }
+}
+
+export async function fetchMarketReturnSummaries(
+  configs: MarketHistoryConfig[],
+): Promise<Map<string, MarketReturnSummary>> {
+  const results = new Map<string, MarketReturnSummary>();
+  const unique = [...new Map(configs.map((config) => [`${config.source}:${config.symbol}`, config])).values()];
+  if (unique.length === 0) return results;
+
+  try {
+    const items = unique.map((config) => `${config.source}:${config.symbol}`).join(',');
+    const res = await fetch(apiUrl(`/api/marketreturns?items=${encodeURIComponent(items)}`));
+    if (!res.ok) return results;
+    const json = await res.json();
+    for (const config of unique) {
+      const key = `${config.source}:${config.symbol}`;
+      const raw: MarketReturnSummary | undefined = json[key];
+      if (raw) results.set(key, raw);
+    }
+  } catch { /* skip */ }
+
+  return results;
 }
 
 export async function fetchMarketIntraday(
