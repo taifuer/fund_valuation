@@ -80,8 +80,9 @@ function selectYearToDate(points: FundHistoryPoint[]): FundHistoryPoint[] {
   const latest = points[points.length - 1];
   const yearStart = `${latest.date.slice(0, 4)}-01-01`;
   const firstThisYear = points.findIndex((point) => point.date >= yearStart);
-  if (firstThisYear <= 0) return points;
-  const sliced = points.slice(firstThisYear);
+  if (firstThisYear < 0) return points;
+  const startIndex = firstThisYear > 0 ? firstThisYear - 1 : firstThisYear;
+  const sliced = points.slice(startIndex);
   return sliced.length >= 2 ? sliced : points.slice(-2);
 }
 
