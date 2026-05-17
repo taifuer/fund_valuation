@@ -206,9 +206,6 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
             <span className={styles.profilePill}>
               <em>费率</em>管理 {profile.managementFee}<small>托管 {profile.custodianFee} / 销售 {profile.salesServiceFee}</small>
             </span>
-            {missingQuoteCount > 0 && (
-              <span className={`${styles.profilePill} ${styles.profileWarning}`}>缺 {missingQuoteCount} 项行情</span>
-            )}
           </div>
         )}
       </div>
@@ -238,6 +235,7 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
               computedChange={computedChange}
               quoteCoverage={quoteCoverage}
               totalConfiguredWeight={totalConfiguredWeight}
+              missingQuoteCount={missingQuoteCount}
               currencyChanges={currencyChanges}
             />
           ) : (
