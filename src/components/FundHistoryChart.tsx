@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { fetchFundHistorySeries } from '../api';
+import { useMemo, useState } from 'react';
 import type { FundHistoryPoint } from '../types';
+import { useFundHistory } from '../hooks/useFundHistory';
 import styles from './FundHistoryChart.module.css';
 
 interface Props {
@@ -21,13 +21,6 @@ const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
   { key: 'ytd', label: '今年', days: null },
   { key: 'all', label: '成立来', days: null },
 ];
-
-const historyCache = new Map<string, FundHistoryPoint[]>();
-
-function formatDate(date: string): string {
-  const match = date.match(/^\d{4}-(\d{2})-(\d{2})$/);
-  return match ? `${match[1]}/${match[2]}` : date;
-}
 
 function formatAxisDate(date: string, range: RangeKey): string {
   const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -191,43 +184,8 @@ function pointerSvgX(event: React.PointerEvent<SVGSVGElement>): number {
 
 export default function FundHistoryChart({ fundCode }: Props) {
   const [range, setRange] = useState<RangeKey>('3m');
-  const [history, setHistory] = useState<FundHistoryPoint[]>(() => historyCache.get(fundCode) ?? []);
-  const [loading, setLoading] = useState(!historyCache.get(fundCode)?.length);
-  const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const cached = historyCache.get(fundCode);
-    if (cached && cached.length > 0) {
-      setHistory(cached);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    fetchFundHistorySeries(fundCode)
-      .then((data) => {
-        if (cancelled) return;
-        if (data.length > 0) {
-          historyCache.set(fundCode, data);
-        }
-        setHistory(data);
-        setError(data.length > 0 ? null : '暂无历史净值');
-      })
-      .catch(() => {
-        if (!cancelled) setError('历史净值加载失败');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [fundCode]);
+  const { history, loading, error } = useFundHistory(fundCode);
 
   const selectedRange = RANGES.find((item) => item.key === range) ?? RANGES[2];
   const visible = useMemo(() => {

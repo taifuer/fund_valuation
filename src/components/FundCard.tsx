@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Fund, QuoteData } from '../types';
 import type { FundEstimate } from '../hooks/useQuotes';
 import HoldingsTable from './HoldingsTable';
+import FundNavTable from './FundNavTable';
 import FundHistoryChart from './FundHistoryChart';
 import { getMarketState } from '../marketHours';
 import styles from './FundCard.module.css';
@@ -82,7 +83,7 @@ function estimateTimeLabel(quotes: QuoteData[], closed: boolean): string | null 
 
 export default function FundCard({ fund, estimate, rank, rankLabel, loading }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState<'holdings' | 'history'>('holdings');
+  const [activeTab, setActiveTab] = useState<'holdings' | 'nav' | 'trend'>('holdings');
   const badge = RANK_BADGE[rank];
   const badgeLabel = rankLabel ?? badge?.label;
 
@@ -222,13 +223,20 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
             </button>
             <button
               type="button"
-              className={`${styles.tabButton} ${activeTab === 'history' ? styles.tabButtonActive : ''}`}
-              onClick={() => setActiveTab('history')}
+              className={`${styles.tabButton} ${activeTab === 'nav' ? styles.tabButtonActive : ''}`}
+              onClick={() => setActiveTab('nav')}
             >
-              历史
+              净值
+            </button>
+            <button
+              type="button"
+              className={`${styles.tabButton} ${activeTab === 'trend' ? styles.tabButtonActive : ''}`}
+              onClick={() => setActiveTab('trend')}
+            >
+              走势
             </button>
           </div>
-          {activeTab === 'holdings' ? (
+          {activeTab === 'holdings' && (
             <HoldingsTable
               holdings={fund.holdings}
               quotes={estimate.holdingsQuotes}
@@ -238,7 +246,11 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
               missingQuoteCount={missingQuoteCount}
               currencyChanges={currencyChanges}
             />
-          ) : (
+          )}
+          {activeTab === 'nav' && (
+            <FundNavTable fundCode={fund.code} />
+          )}
+          {activeTab === 'trend' && (
             <FundHistoryChart fundCode={fund.code} />
           )}
         </div>
