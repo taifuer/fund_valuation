@@ -85,15 +85,21 @@ export function useQuotes() {
 
         // Merge official NAV history. The fundnav endpoint may lag behind
         // East Money history, so prefer history when it has a newer NAV date.
+        // If fundnav is newer than the local history cache, calculate the
+        // official daily change against the latest cached history point.
         for (const [code, hist] of historyData) {
           const existing = navsData.get(code);
           if (existing) {
             const historyIsNewer = hist.navDate && (!existing.navDate || hist.navDate > existing.navDate);
+            const fundNavIsNewer = existing.navDate && hist.navDate && existing.navDate > hist.navDate;
+            const officialChange = fundNavIsNewer && existing.nav > 0 && hist.nav > 0
+              ? Number((((existing.nav - hist.nav) / hist.nav) * 100).toFixed(2))
+              : hist.officialChange;
             navsData.set(code, {
               ...existing,
               navDate: historyIsNewer ? hist.navDate : existing.navDate,
               nav: historyIsNewer ? hist.nav : existing.nav,
-              officialChange: hist.officialChange,
+              officialChange,
             });
           }
         }
