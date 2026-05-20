@@ -809,6 +809,7 @@ def fund_history() -> Response:
             cache_key=f"fundhistory:{code}:{page_index}:{page_size}",
             kind="fundhistory",
             ttl_seconds=120,
+            force_refresh=refresh,
         )
         if status >= 400:
             continue
@@ -904,6 +905,7 @@ def market_history() -> Response:
         cache_key=f"markethistory:{source}:{symbol}",
         kind="markethistory",
         ttl_seconds=300,
+        force_refresh=should_refresh(),
     )
     if status < 400:
         try:

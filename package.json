@@ -8,6 +8,8 @@
     "backend": ".venv/bin/python -m backend.server",
     "backend:backfill": ".venv/bin/python -m backend.backfill",
     "dev": "vite",
+    "test": "npm run test:backend",
+    "test:backend": ".venv/bin/python -m unittest discover -s backend/tests",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },

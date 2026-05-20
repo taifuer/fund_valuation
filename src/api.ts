@@ -538,7 +538,7 @@ export async function fetchFundHistorySeries(
   targetSize = 3000,
 ): Promise<FundHistoryPoint[]> {
   try {
-    const url = apiUrl(`/api/fundhistory?codes=${code}&pageSize=${targetSize}&pageIndex=1`);
+    const url = apiUrl(`/api/fundhistory?codes=${code}&pageSize=${targetSize}&pageIndex=1&refresh=1`);
     const res = await fetch(url);
     if (!res.ok) return [];
     const json = await res.json();
@@ -676,6 +676,7 @@ export async function fetchMarketHistory(config: MarketHistoryConfig): Promise<M
     const params = new URLSearchParams({
       source: config.source,
       symbol: config.symbol,
+      refresh: '1',
     });
     const res = await fetch(apiUrl(`/api/markethistory?${params.toString()}`));
     if (!res.ok) return [];
