@@ -162,6 +162,9 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
   let date = '';
   let dateReliable = true;
   let session: QuoteData['session'];
+  let regularPrice: number | undefined;
+  let regularChangePercent: number | undefined;
+  let regularTime: string | undefined;
 
   switch (mkt) {
     case 'us':
@@ -172,6 +175,9 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       // fields[3] is already Beijing time for Sina US quotes.
       date = fields[3] || beijingDatetimeFromTimestamp(fetchedAt);
       session = 'regular';
+      regularPrice = price;
+      regularChangePercent = changePct;
+      regularTime = date;
       if (fields.length > 29) {
         const extendedPrice = parseFloat(fields[21]) || 0;
         const extendedPct = parseFloat(fields[22]) || 0;
@@ -294,6 +300,9 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       previousClose: Number(previousClose.toFixed(2)),
       change: Number(change.toFixed(2)),
       changePercent: Number(changePct.toFixed(2)),
+      regularPrice: regularPrice == null ? undefined : Number(regularPrice.toFixed(2)),
+      regularChangePercent: regularChangePercent == null ? undefined : Number(regularChangePercent.toFixed(2)),
+      regularTime,
       time: date,
       dateReliable,
       session,
@@ -327,6 +336,7 @@ function parseSinaFx(line: string, fetchedAt: number): FxRateData | null {
   const fields = match[2].split(',');
   if (pair === 'USDCNY' || pair === 'EURCNY' || pair === 'JPYCNY' || pair === 'KRWCNY' || pair === 'HKDCNY') {
     const date = [...fields].reverse().find((field) => /^\d{4}-\d{2}-\d{2}$/.test(field)) ?? beijingDate();
+    const time = fields.find((field) => /^\d{2}:\d{2}:\d{2}$/.test(field)) ?? '';
     const currency = pair.slice(0, 3);
     return {
       currency,
@@ -334,6 +344,8 @@ function parseSinaFx(line: string, fetchedAt: number): FxRateData | null {
       rate: parseFloat(fields[1]) || 0,
       changePercent: parseFloat(fields[10]) || 0,
       date,
+      time: time || undefined,
+      datetime: time ? `${date} ${time}` : date,
       fetchedAt,
     };
   }
@@ -381,9 +393,10 @@ export async function fetchSinaFundNavs(codes: string[]): Promise<Map<string, Fu
 }
 
 export async function fetchFxRates(currencies: string[]): Promise<Map<string, FxRateData>> {
+  const today = beijingDate();
   const results = new Map<string, FxRateData>([[
     'CNY',
-    { currency: 'CNY', pair: 'CNY/CNY', rate: 1, changePercent: 0, date: beijingDate(), fetchedAt: Date.now() },
+    { currency: 'CNY', pair: 'CNY/CNY', rate: 1, changePercent: 0, date: today, time: '00:00:00', datetime: `${today} 00:00:00`, fetchedAt: Date.now() },
   ]]);
   const symbols = [
     currencies.includes('USD') ? 'fx_susdcny' : null,

@@ -4,7 +4,6 @@ import type { FundEstimate } from '../hooks/useQuotes';
 import HoldingsTable from './HoldingsTable';
 import FundNavTable from './FundNavTable';
 import FundHistoryChart from './FundHistoryChart';
-import { getMarketState } from '../marketHours';
 import styles from './FundCard.module.css';
 
 interface Props {
@@ -162,23 +161,12 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
     quoteCoverage,
     totalConfiguredWeight,
     missingQuoteCount,
-    lastUpdated,
+    estimateState,
     currencyChanges,
   } = estimate;
   const up = computedChange >= 0;
   const localUp = computedChangeLocal >= 0;
   const estBoxCls = up ? styles.estimateBox : styles.estimateBoxDown;
-  const hasLiveHolding = fund.holdings.some((h) => getMarketState(h.sinaSymbol) === 'live');
-  const fresh = lastUpdated != null && Date.now() - lastUpdated < 90_000;
-  const hasPreHolding = estimate.holdingsQuotes.some((q) => q.session === 'pre');
-  const hasPostHolding = estimate.holdingsQuotes.some((q) => q.session === 'post');
-  const estimateState = fresh && hasPreHolding
-    ? 'PRE'
-    : fresh && hasPostHolding
-      ? 'POST'
-      : hasLiveHolding && fresh
-    ? (missingQuoteCount > 0 ? 'PARTIAL' : 'LIVE')
-    : 'CLOSED';
   const tagCls = estimateState === 'LIVE'
     ? styles.estLiveTagUp
     : estimateState === 'PRE' || estimateState === 'POST'
