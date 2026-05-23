@@ -5,6 +5,9 @@ export interface QuoteData {
   previousClose: number;
   change: number;
   changePercent: number;
+  regularPrice?: number;
+  regularChangePercent?: number;
+  regularTime?: string;
   session?: 'regular' | 'pre' | 'post';
   time: string; // 行情更新时间
   dateReliable: boolean;
@@ -66,6 +69,8 @@ export interface FxRateData {
   rate: number;
   changePercent: number;
   date: string;
+  time?: string;
+  datetime?: string;
   fetchedAt: number;
 }
 

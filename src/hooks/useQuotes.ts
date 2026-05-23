@@ -2,8 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import type { QuoteData, FundNavData, FxRateData } from '../types';
 import { fetchAllQuotes, fetchFundNavs, fetchSinaFundNavs, fetchFundHistory, fetchFxRates } from '../api';
 import { INDICES, MARKET_ASSETS, FUNDS } from '../constants';
+import { getMarketState } from '../marketHours';
 
 const DISPLAY_FX_CURRENCIES = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
+type EstimateState = 'LIVE' | 'PRE' | 'POST' | 'PARTIAL' | 'CLOSED';
 
 export interface FundEstimate {
   fundCode: string;
@@ -18,7 +20,78 @@ export interface FundEstimate {
   quoteCoverage: number;
   missingQuoteCount: number;
   lastUpdated: number | null;
+  estimateState: EstimateState;
   currencyChanges: Record<string, number>;
+}
+
+function usMarketClock(now = new Date()): { weekday: string; minutes: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    hour12: false,
+  }).formatToParts(now);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  return {
+    weekday: value('weekday'),
+    minutes: Number(value('hour')) * 60 + Number(value('minute')),
+  };
+}
+
+function isWeekday(weekday: string): boolean {
+  return weekday !== 'Sat' && weekday !== 'Sun';
+}
+
+function shouldUseUsExtendedForFundEstimate(quote: QuoteData, now = new Date()): boolean {
+  if (!quote.symbol.startsWith('gb_')) return true;
+  if (quote.session === 'pre') {
+    const local = usMarketClock(now);
+    return isWeekday(local.weekday) && local.minutes >= 4 * 60 && local.minutes < 9 * 60 + 30;
+  }
+  if (quote.session === 'post') {
+    const local = usMarketClock(now);
+    return isWeekday(local.weekday) && local.minutes >= 16 * 60 && local.minutes <= 20 * 60 + 15;
+  }
+  return true;
+}
+
+function fundQuoteChangePercent(quote: QuoteData, now = new Date()): number {
+  if ((quote.session === 'pre' || quote.session === 'post') && !shouldUseUsExtendedForFundEstimate(quote, now)) {
+    return quote.regularChangePercent ?? quote.changePercent;
+  }
+  return quote.changePercent;
+}
+
+function fundQuoteSession(quote: QuoteData, now = new Date()): QuoteData['session'] {
+  if ((quote.session === 'pre' || quote.session === 'post') && !shouldUseUsExtendedForFundEstimate(quote, now)) {
+    return 'regular';
+  }
+  return quote.session;
+}
+
+function normalizeFundQuote(quote: QuoteData, now = new Date()): QuoteData {
+  if ((quote.session === 'pre' || quote.session === 'post') && !shouldUseUsExtendedForFundEstimate(quote, now)) {
+    const regularPrice = quote.regularPrice ?? quote.price;
+    const regularChangePercent = quote.regularChangePercent ?? quote.changePercent;
+    return {
+      ...quote,
+      price: regularPrice,
+      changePercent: regularChangePercent,
+      change: Number((regularPrice - quote.previousClose).toFixed(2)),
+      session: 'regular',
+      time: quote.regularTime ?? quote.time,
+    };
+  }
+  return quote;
+}
+
+function normalizeFundFxRate(rate: FxRateData): FxRateData {
+  // Sina FX does not provide a separate regular/pre/post split. Keep a dedicated
+  // valuation path so fund estimates can diverge from header display if the FX
+  // source is later switched to official or settled valuation rates.
+  return rate;
 }
 
 export function useQuotes() {
@@ -89,11 +162,17 @@ export function useQuotes() {
         setQuotes(quotesData);
         setFxRates(fxRates);
 
+        const now = new Date();
+        const fundFxRates = new Map(
+          [...fxRates].map(([currency, rate]) => [currency, normalizeFundFxRate(rate)]),
+        );
+
         const estimates: FundEstimate[] = FUNDS.map((fund) => {
           const officialNAV = navsData.get(fund.code) ?? null;
-          const holdingsQuotes = fund.holdings
+          const rawHoldingsQuotes = fund.holdings
             .map((h) => quotesData.get(h.sinaSymbol))
             .filter((q): q is QuoteData => q != null);
+          const holdingsQuotes = rawHoldingsQuotes.map((q) => normalizeFundQuote(q, now));
           const totalConfiguredWeight = fund.holdings.reduce((sum, h) => sum + h.weight, 0);
           const quoteCoverage = fund.holdings.reduce((sum, h) => {
             return quotesData.has(h.sinaSymbol) ? sum + h.weight : sum;
@@ -102,25 +181,37 @@ export function useQuotes() {
           const lastUpdated = holdingsQuotes.length > 0
             ? Math.max(...holdingsQuotes.map((q) => q.fetchedAt))
             : null;
+          const fundQuotes = new Map(holdingsQuotes.map((q) => [q.symbol, q]));
 
           const computedChangeLocal =
             holdingsQuotes.length > 0
               ? fund.holdings.reduce((sum, h) => {
-                  const q = quotesData.get(h.sinaSymbol);
-                  return q ? sum + q.changePercent * h.weight : sum;
+                  const q = fundQuotes.get(h.sinaSymbol);
+                  return q ? sum + fundQuoteChangePercent(q, now) * h.weight : sum;
                 }, 0)
               : 0;
 
           const computedChange =
             holdingsQuotes.length > 0
               ? fund.holdings.reduce((sum, h) => {
-                  const q = quotesData.get(h.sinaSymbol);
+                  const q = fundQuotes.get(h.sinaSymbol);
                   if (!q) return sum;
-                  const fxChange = fxRates.get(h.currency)?.changePercent ?? 0;
-                  const rmbChange = ((1 + q.changePercent / 100) * (1 + fxChange / 100) - 1) * 100;
+                  const fxChange = fundFxRates.get(h.currency)?.changePercent ?? 0;
+                  const quoteChange = fundQuoteChangePercent(q, now);
+                  const rmbChange = ((1 + quoteChange / 100) * (1 + fxChange / 100) - 1) * 100;
                   return sum + rmbChange * h.weight;
                 }, 0)
               : 0;
+          const hasLiveHolding = fund.holdings.some((h) => getMarketState(h.sinaSymbol, now) === 'live');
+          const fresh = lastUpdated != null && now.getTime() - lastUpdated < 90_000;
+          const effectiveSessions = holdingsQuotes.map((q) => fundQuoteSession(q, now));
+          const estimateState: EstimateState = fresh && effectiveSessions.some((session) => session === 'pre')
+            ? 'PRE'
+            : fresh && effectiveSessions.some((session) => session === 'post')
+              ? 'POST'
+              : hasLiveHolding && fresh
+                ? (missingQuoteCount > 0 ? 'PARTIAL' : 'LIVE')
+                : 'CLOSED';
 
           const estimatedNAVLocal =
             officialNAV && officialNAV.nav > 0
@@ -145,8 +236,9 @@ export function useQuotes() {
             quoteCoverage,
             missingQuoteCount,
             lastUpdated,
+            estimateState,
             currencyChanges: Object.fromEntries(
-              [...fxRates].map(([currency, rate]) => [currency, rate.changePercent]),
+              [...fundFxRates].map(([currency, rate]) => [currency, rate.changePercent]),
             ),
           };
         });
