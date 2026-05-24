@@ -12,7 +12,6 @@ interface Props {
 
 interface SelectedHistory {
   item: IndexConfig;
-  quote: QuoteData;
 }
 
 function formatQuoteDate(date: string): string {
@@ -70,7 +69,7 @@ function Card({
   data?: QuoteData;
   futuresData?: QuoteData;
   loading: boolean;
-  onOpenHistory?: (quote: QuoteData) => void;
+  onOpenHistory?: () => void;
 }) {
   if (loading || !data) {
     return (
@@ -103,7 +102,7 @@ function Card({
     <button
       type="button"
       className={`${styles.card} ${idx.history ? styles.cardClickable : ''}`}
-      onClick={() => onOpenHistory?.(displayData)}
+      onClick={() => onOpenHistory?.()}
       disabled={!idx.history}
     >
       <span
@@ -162,7 +161,7 @@ export default function IndexCards({ quotes, loading }: Props) {
                   data={quotes.get(sym)}
                   futuresData={idx.futures ? quotes.get(idx.futures.sinaSymbol) : undefined}
                   loading={loading}
-                  onOpenHistory={idx.history ? (quote) => setSelectedHistory({ item: idx, quote }) : undefined}
+                  onOpenHistory={idx.history ? () => setSelectedHistory({ item: idx }) : undefined}
                 />
               );
             })}
@@ -172,7 +171,6 @@ export default function IndexCards({ quotes, loading }: Props) {
       {selectedHistory && (
         <MarketHistoryModal
           item={selectedHistory.item}
-          currentQuote={selectedHistory.quote}
           onClose={() => setSelectedHistory(null)}
         />
       )}

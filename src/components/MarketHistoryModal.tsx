@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchMarketHistory } from '../api';
-import type { IndexConfig, MarketHistoryPoint, QuoteData } from '../types';
+import type { IndexConfig, MarketHistoryPoint } from '../types';
 import styles from './MarketHistoryModal.module.css';
 
 interface Props {
   item: IndexConfig;
-  currentQuote?: QuoteData;
   onClose: () => void;
 }
 
