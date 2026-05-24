@@ -1,5 +1,6 @@
 import type {
   QuoteData,
+  Fund,
   FundNavData,
   Holding,
   FundPurchaseData,
@@ -536,6 +537,22 @@ export async function fetchFundPurchaseStatuses(codes: string[]): Promise<Map<st
     for (const code of codes) {
       const raw: FundPurchaseData | undefined = json[code];
       if (raw) results.set(code, raw);
+    }
+  } catch { /* skip */ }
+  return results;
+}
+
+export async function fetchFundProfiles(codes: string[]): Promise<Map<string, NonNullable<Fund['profile']>>> {
+  const results = new Map<string, NonNullable<Fund['profile']>>();
+  if (codes.length === 0) return results;
+
+  try {
+    const res = await fetch(apiUrl(`/api/fundprofiles?codes=${codes.join(',')}`));
+    if (!res.ok) return results;
+    const json = await res.json();
+    for (const code of codes) {
+      const raw: Fund['profile'] | undefined = json[code];
+      if (raw?.inceptionDate) results.set(code, raw);
     }
   } catch { /* skip */ }
   return results;

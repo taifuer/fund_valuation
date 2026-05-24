@@ -6,6 +6,7 @@ import {
   fetchSinaFundNavs,
   fetchFundHistory,
   fetchFundHoldings,
+  fetchFundProfiles,
   fetchFundPurchaseStatuses,
   fetchFundReturnSummaries,
   fetchFxRates,
@@ -129,11 +130,20 @@ export function useQuotes(funds: Fund[] = FUNDS) {
       const dynamicHoldingCodes = funds
         .filter((f) => f.holdings.length === 0)
         .map((f) => f.code);
-      const dynamicHoldings = await fetchFundHoldings(dynamicHoldingCodes);
+      const dynamicProfileCodes = funds
+        .filter((f) => !f.profile)
+        .map((f) => f.code);
+      const [dynamicHoldings, dynamicProfiles] = await Promise.all([
+        fetchFundHoldings(dynamicHoldingCodes),
+        fetchFundProfiles(dynamicProfileCodes),
+      ]);
       const effectiveFunds = funds.map((fund) => {
-        if (fund.holdings.length > 0) return fund;
+        const profile = fund.profile ?? dynamicProfiles.get(fund.code);
+        if (fund.holdings.length > 0) return profile && !fund.profile ? { ...fund, profile } : fund;
         const holdings = dynamicHoldings.get(fund.code) ?? [];
-        return holdings.length > 0 ? { ...fund, holdings } : fund;
+        return holdings.length > 0 || (profile && !fund.profile)
+          ? { ...fund, holdings: holdings.length > 0 ? holdings : fund.holdings, profile }
+          : fund;
       });
 
       const holdingSymbols = effectiveFunds.flatMap((f) =>

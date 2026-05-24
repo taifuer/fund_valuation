@@ -94,6 +94,40 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(cached_after_refresh[2], b"new")
         self.assertEqual(len(calls), 2)
 
+    def test_sina_proxy_decodes_gb18030_fund_name(self) -> None:
+        upstream_body = 'var hq_str_f_118001="易方达亚洲精选股票(QDII),1.693,1.693,1.673,2026-05-21,22.6875";'.encode("gb18030")
+
+        with patch.object(server, "fetch_upstream", return_value=(200, "text/plain; charset=utf-8", upstream_body)):
+            response = server.app.test_client().get("/api/sina?list=f_118001")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("charset=utf-8", response.content_type)
+        self.assertIn("易方达亚洲精选股票(QDII)", response.get_data(as_text=True))
+        self.assertNotIn("�", response.get_data(as_text=True))
+
+    def test_fund_profiles_parses_basic_profile(self) -> None:
+        upstream_body = """
+        <table class="info w790">
+          <tr><th>基金代码</th><td>118001（前端）</td><th>基金类型</th><td>QDII-普通股票</td></tr>
+          <tr><th>发行日期</th><td>2009年12月07日</td><th>成立日期/规模</th><td>2010年01月21日 / 5.921亿份</td></tr>
+          <tr><th>净资产规模</th><td>31.69亿元（截止至：2026年03月31日）</td><th>份额规模</th><td>22.6875亿份</td></tr>
+          <tr><th>管理费率</th><td>1.20%（每年）</td><th>托管费率</th><td>0.20%（每年）</td></tr>
+          <tr><th>销售服务费率</th><td>---（每年）</td><th>最高认购费率</th><td>1.50%（前端）</td></tr>
+        </table>
+        """.encode()
+
+        with patch.object(server, "fetch_upstream", return_value=(200, "text/html; charset=utf-8", upstream_body)):
+            response = server.app.test_client().get("/api/fundprofiles?codes=118001")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["118001"]["inceptionDate"], "2010-01-21")
+        self.assertEqual(payload["118001"]["assetScale"], "31.69亿元")
+        self.assertEqual(payload["118001"]["scaleDate"], "2026-03-31")
+        self.assertEqual(payload["118001"]["managementFee"], "1.20%")
+        self.assertEqual(payload["118001"]["custodianFee"], "0.20%")
+        self.assertEqual(payload["118001"]["salesServiceFee"], "0.00%")
+
     def test_fund_history_without_refresh_reads_sqlite(self) -> None:
         server.store_fund_history(
             "016664",
@@ -159,6 +193,37 @@ class ServerDataRefreshTests(unittest.TestCase):
             [row["FSRQ"] for row in payload["016664"]],
             ["2026-05-19", "2026-05-18", "2026-05-15", "2026-05-14", "2026-05-13"],
         )
+
+    def test_fund_history_refresh_fetches_multiple_capped_pages(self) -> None:
+        page_rows = {
+            1: [
+                {"FSRQ": "2026-05-21", "DWJZ": "1.6930", "JZZZL": "1.20"},
+                {"FSRQ": "2026-05-20", "DWJZ": "1.6730", "JZZZL": "0.72"},
+            ],
+            2: [
+                {"FSRQ": "2026-05-19", "DWJZ": "1.6610", "JZZZL": "-1.37"},
+                {"FSRQ": "2026-05-18", "DWJZ": "1.6840", "JZZZL": "0.00"},
+            ],
+            3: [
+                {"FSRQ": "2026-05-15", "DWJZ": "1.6840", "JZZZL": "-3.77"},
+            ],
+        }
+
+        def fake_fetch_upstream(*_args: object, **kwargs: object) -> tuple[int, str, bytes]:
+            cache_key = str(kwargs.get("cache_key") or "")
+            page_index = int(cache_key.split(":")[2])
+            rows = page_rows.get(page_index, [])
+            body = json_body = f'jQuery({{"Data":{{"TotalCount":5,"LSJZList":{rows!r}}}}});'
+            return 200, "text/plain; charset=utf-8", json_body.replace("'", '"').encode()
+
+        with patch.object(server, "fetch_upstream", side_effect=fake_fetch_upstream):
+            response = server.app.test_client().get("/api/fundhistory?codes=118001&pageSize=5&pageIndex=1&refresh=1")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(len(payload["118001"]), 5)
+        self.assertEqual(payload["118001"][0]["FSRQ"], "2026-05-21")
+        self.assertEqual(server.read_fund_history_from_db("118001", 10, 1)[-1]["FSRQ"], "2026-05-15")
 
     def test_fund_history_refresh_falls_back_to_sqlite_on_upstream_error(self) -> None:
         server.store_fund_history(

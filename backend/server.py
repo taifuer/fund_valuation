@@ -261,6 +261,162 @@ def store_fund_history(code: str, rows: list[dict[str, Any]]) -> None:
         )
 
 
+def parse_fund_history_api(text: str) -> tuple[list[dict[str, Any]], int | None]:
+    parsed = parse_jsonp_call(text, "jQuery")
+    data = parsed.get("Data") if isinstance(parsed, dict) else None
+    rows = data.get("LSJZList") if isinstance(data, dict) else None
+    raw_total = data.get("TotalCount") if isinstance(data, dict) else None
+    if raw_total is None and isinstance(parsed, dict):
+        raw_total = parsed.get("TotalCount")
+    try:
+        total_count = int(raw_total) if raw_total is not None else None
+    except (TypeError, ValueError):
+        total_count = None
+    return (rows if isinstance(rows, list) else []), total_count
+
+
+def parse_fund_history_legacy(text: str) -> tuple[list[dict[str, Any]], int | None]:
+    content_match = re.search(r'content:"(.*?)",records:(\d+)', text, re.S)
+    if not content_match:
+        return [], None
+
+    content = js_string_unescape(content_match.group(1))
+    try:
+        total_count = int(content_match.group(2))
+    except ValueError:
+        total_count = None
+
+    rows: list[dict[str, Any]] = []
+    for row_html in re.findall(r"<tr>(.*?)</tr>", content, re.S):
+        cells = [strip_tags(cell) for cell in re.findall(r"<td[^>]*>(.*?)</td>", row_html, re.S)]
+        if len(cells) < 6 or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", cells[0]):
+            continue
+        rows.append(
+            {
+                "FSRQ": cells[0],
+                "DWJZ": cells[1],
+                "LJJZ": cells[2] if len(cells) > 2 else "",
+                "JZZZL": cells[3].replace("%", ""),
+                "SGZT": cells[4],
+                "SHZT": cells[5],
+                "FHFCZ": cells[6] if len(cells) > 6 else "",
+            }
+        )
+    return rows, total_count
+
+
+def normalize_cn_date(value: str) -> str:
+    value = strip_tags(value)
+    match = re.search(r"(\d{4})[年/-](\d{1,2})[月/-](\d{1,2})", value)
+    if not match:
+        return value
+    year, month, day = match.groups()
+    return f"{year}-{int(month):02d}-{int(day):02d}"
+
+
+def normalize_fee(value: str) -> str:
+    value = strip_tags(value)
+    if not value or value.startswith("---"):
+        return "0.00%"
+    match = re.search(r"[\d.]+%", value)
+    return match.group(0) if match else value
+
+
+def parse_fund_profile(text: str) -> dict[str, str] | None:
+    table_match = re.search(r"<table[^>]*class=\"info w790\"[^>]*>(.*?)</table>", text, re.S)
+    if not table_match:
+        return None
+
+    fields: dict[str, str] = {}
+    rows = re.findall(r"<tr>(.*?)</tr>", table_match.group(1), re.S)
+    for row in rows:
+        cells = re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row, re.S)
+        for index in range(0, len(cells) - 1, 2):
+            key = strip_tags(cells[index])
+            value = strip_tags(cells[index + 1])
+            if key:
+                fields[key] = value
+
+    inception_text = fields.get("成立日期/规模", "")
+    asset_text = fields.get("净资产规模", "")
+    scale_match = re.search(r"(.+?)（截止至：(.+?)）", asset_text)
+    return {
+        "inceptionDate": normalize_cn_date(inception_text),
+        "assetScale": strip_tags(scale_match.group(1)) if scale_match else asset_text,
+        "scaleDate": normalize_cn_date(scale_match.group(2)) if scale_match else "",
+        "managementFee": normalize_fee(fields.get("管理费率", "")),
+        "custodianFee": normalize_fee(fields.get("托管费率", "")),
+        "salesServiceFee": normalize_fee(fields.get("销售服务费率", "")),
+    }
+
+
+def fetch_fund_history_page(code: str, page_index: int, page_size: int, *, refresh: bool) -> tuple[list[dict[str, Any]], int | None]:
+    query = urlencode(
+        {
+            "callback": "jQuery",
+            "fundCode": code,
+            "pageIndex": page_index,
+            "pageSize": page_size,
+            "_": int(time.time() * 1000),
+        }
+    )
+    url = f"https://api.fund.eastmoney.com/f10/lsjz?{query}"
+    status, _, body = fetch_upstream(
+        url,
+        referer="https://fund.eastmoney.com/",
+        content_type="text/plain; charset=utf-8",
+        cache_key=f"fundhistory:{code}:{page_index}:{page_size}",
+        kind="fundhistory",
+        ttl_seconds=120,
+        force_refresh=refresh,
+    )
+    if status < 400:
+        rows, total_count = parse_fund_history_api(decode_body(body))
+        if rows:
+            return rows, total_count
+
+    legacy_query = urlencode({"type": "lsjz", "code": code, "page": page_index, "per": page_size})
+    legacy_url = f"https://fundf10.eastmoney.com/F10DataApi.aspx?{legacy_query}"
+    status, _, body = fetch_upstream(
+        legacy_url,
+        referer=f"https://fundf10.eastmoney.com/jjjz_{quote(code)}.html",
+        content_type="text/plain; charset=utf-8",
+        cache_key=f"fundhistory-legacy:{code}:{page_index}:{page_size}",
+        kind="fundhistory",
+        ttl_seconds=120,
+        force_refresh=refresh,
+    )
+    if status >= 400:
+        return [], None
+    return parse_fund_history_legacy(decode_body(body))
+
+
+def fetch_and_store_fund_history(code: str, target_count: int, *, refresh: bool) -> None:
+    fetched_rows = 0
+    total_count: int | None = None
+    # East Money may cap a page to 20 rows even when pageSize is larger.
+    # Continue paging until SQLite has enough rows for the requested view.
+    max_pages = min(max((target_count // 20) + 5, 1), 260)
+    for page_index in range(1, max_pages + 1):
+        rows, total_count = fetch_fund_history_page(code, page_index, target_count, refresh=refresh)
+        if not rows:
+            break
+        store_fund_history(code, rows)
+        fetched_rows += len(rows)
+        if fetched_rows >= target_count:
+            break
+        if total_count is not None and fetched_rows >= total_count:
+            break
+        if total_count is None and len(rows) >= target_count:
+            break
+
+
+def count_fund_history_rows(code: str) -> int:
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT COUNT(*) FROM fund_nav_history WHERE code = ?", (code,)).fetchone()
+    return int(row[0] if row else 0)
+
+
 def strip_tags(value: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", value)).strip()
 
@@ -899,6 +1055,12 @@ def bytes_response(body: bytes, *, status: int = 200, content_type: str = "appli
     return response
 
 
+def text_response(text: str, *, status: int = 200, content_type: str = "text/plain; charset=utf-8") -> Response:
+    response = Response(text, status=status, content_type=content_type)
+    response.headers["Cache-Control"] = "public, max-age=30"
+    return response
+
+
 def json_response(payload: Any, *, status: int = 200) -> Response:
     return app.response_class(
         json.dumps(payload, ensure_ascii=False),
@@ -940,7 +1102,8 @@ def sina() -> Response:
         kind="sina",
         ttl_seconds=30,
     )
-    return bytes_response(body, status=status, content_type=content_type)
+    del content_type
+    return text_response(decode_body(body), status=status)
 
 
 @app.get("/api/fundnav")
@@ -1021,36 +1184,10 @@ def fund_history() -> Response:
                 results[code] = cached_rows
                 continue
 
-        query = urlencode(
-            {
-                "callback": "jQuery",
-                "fundCode": code,
-                "pageIndex": page_index,
-                "pageSize": page_size,
-                "_": int(time.time() * 1000),
-            }
-        )
-        url = f"https://api.fund.eastmoney.com/f10/lsjz?{query}"
-        status, _, body = fetch_upstream(
-            url,
-            referer="https://fund.eastmoney.com/",
-            content_type="text/plain; charset=utf-8",
-            cache_key=f"fundhistory:{code}:{page_index}:{page_size}",
-            kind="fundhistory",
-            ttl_seconds=120,
-            force_refresh=refresh,
-        )
-        if status >= 400:
-            if cached_rows:
-                results[code] = cached_rows
-            continue
-        parsed = parse_jsonp_call(decode_body(body), "jQuery")
-        data = parsed.get("Data") if isinstance(parsed, dict) else None
-        rows = data.get("LSJZList") if isinstance(data, dict) else None
-        if isinstance(rows, list) and rows:
-            store_fund_history(code, rows)
-            merged_rows = read_fund_history_from_db(code, page_size, page_index)
-            results[code] = merged_rows if len(merged_rows) > len(rows) else rows
+        fetch_and_store_fund_history(code, page_size * page_index, refresh=refresh)
+        merged_rows = read_fund_history_from_db(code, page_size, page_index)
+        if merged_rows:
+            results[code] = merged_rows
         elif cached_rows:
             results[code] = cached_rows
     return json_response(results)
@@ -1062,8 +1199,38 @@ def fund_returns() -> Response:
     results: dict[str, Any] = {}
     for code in codes:
         summary = read_fund_return_summary_from_db(code)
+        ranges = summary.get("ranges", {}) if isinstance(summary, dict) else {}
+        if not summary or "1y" not in ranges or "3y" not in ranges:
+            before = count_fund_history_rows(code)
+            fetch_and_store_fund_history(code, 900, refresh=False)
+            if count_fund_history_rows(code) > before or not summary:
+                summary = read_fund_return_summary_from_db(code)
         if summary:
             results[code] = summary
+    return json_response(results)
+
+
+@app.get("/api/fundprofiles")
+def fund_profiles() -> Response:
+    codes = [code for code in require_arg("codes").split(",") if code]
+    results: dict[str, Any] = {}
+    refresh = should_refresh()
+    for code in codes:
+        url = f"https://fundf10.eastmoney.com/jbgk_{quote(code)}.html"
+        status, _, body = fetch_upstream(
+            url,
+            referer="https://fundf10.eastmoney.com/",
+            content_type="text/html; charset=utf-8",
+            cache_key=f"fundprofile:{code}",
+            kind="fundprofile",
+            ttl_seconds=6 * 60 * 60,
+            force_refresh=refresh,
+        )
+        if status >= 400:
+            continue
+        profile = parse_fund_profile(decode_body(body))
+        if profile and profile.get("inceptionDate"):
+            results[code] = profile
     return json_response(results)
 
 

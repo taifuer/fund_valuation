@@ -246,17 +246,21 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading, onR
             </div>
           </div>
         </div>
-        {profile && (
+        {(profile || purchaseStatus) && (
           <div className={styles.fundProfile}>
-            <span className={styles.profilePill}>
-              <em>成立</em>{formatChineseDate(profile.inceptionDate)}
-            </span>
-            <span className={styles.profilePill}>
-              <em>规模</em>{profile.assetScale}<small>截至 {formatChineseDate(profile.scaleDate)}</small>
-            </span>
-            <span className={styles.profilePill}>
-              <em>费率</em>管理 {profile.managementFee}<small>托管 {profile.custodianFee} / 销售 {profile.salesServiceFee}</small>
-            </span>
+            {profile && (
+              <>
+                <span className={styles.profilePill}>
+                  <em>成立</em>{formatChineseDate(profile.inceptionDate)}
+                </span>
+                <span className={styles.profilePill}>
+                  <em>规模</em>{profile.assetScale}<small>截至 {formatChineseDate(profile.scaleDate)}</small>
+                </span>
+                <span className={styles.profilePill}>
+                  <em>费率</em>管理 {profile.managementFee}<small>托管 {profile.custodianFee} / 销售 {profile.salesServiceFee}</small>
+                </span>
+              </>
+            )}
             {purchaseStatus && (
               <>
                 <span className={`${styles.profilePill} ${styles[purchaseStatusClass(purchaseStatus.purchaseStatus)]}`}>
