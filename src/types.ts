@@ -20,6 +20,9 @@ export interface Holding {
   sinaSymbol: string; // sina format: gb_AAPL, sz300502, etc.
   weight: number;
   currency: 'CNY' | 'USD' | 'EUR' | 'JPY' | 'KRW' | 'HKD';
+  market?: string;
+  reportDate?: string;
+  quoteSupported?: boolean;
 }
 
 export interface Fund {

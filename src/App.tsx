@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useQuotes, FundEstimate } from './hooks/useQuotes';
+import { fetchFundNavs, fetchSinaFundNavs } from './api';
 import { FUNDS } from './constants';
+import type { Fund } from './types';
 import Header from './components/Header';
 import IndexCards from './components/IndexCards';
 import FundCard from './components/FundCard';
@@ -10,6 +12,17 @@ type SortMode = 'estimate' | 'official';
 type SortDirection = 'desc' | 'asc';
 
 const FUND_SECTION_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_section';
+const FUND_MANAGER_KEY = 'fund_valuation:managed_funds';
+
+interface ManagedFundSettings {
+  hiddenDefaultCodes: string[];
+  customFunds: Array<{ code: string; name: string }>;
+}
+
+const EMPTY_MANAGED_SETTINGS: ManagedFundSettings = {
+  hiddenDefaultCodes: [],
+  customFunds: [],
+};
 
 function readCollapsedFlag(key: string): boolean {
   try {
@@ -25,18 +38,70 @@ function writeCollapsedFlag(key: string, value: boolean) {
   } catch { /* skip */ }
 }
 
+function readManagedFundSettings(): ManagedFundSettings {
+  try {
+    const raw = window.localStorage.getItem(FUND_MANAGER_KEY);
+    if (!raw) return EMPTY_MANAGED_SETTINGS;
+    const parsed = JSON.parse(raw) as Partial<ManagedFundSettings>;
+    return {
+      hiddenDefaultCodes: Array.isArray(parsed.hiddenDefaultCodes)
+        ? parsed.hiddenDefaultCodes.filter((code) => /^\d{6}$/.test(code))
+        : [],
+      customFunds: Array.isArray(parsed.customFunds)
+        ? parsed.customFunds
+            .map((fund) => ({
+              code: String(fund.code ?? '').trim(),
+              name: String(fund.name ?? '').trim(),
+            }))
+            .filter((fund) => /^\d{6}$/.test(fund.code) && fund.name)
+        : [],
+    };
+  } catch {
+    return EMPTY_MANAGED_SETTINGS;
+  }
+}
+
+function writeManagedFundSettings(settings: ManagedFundSettings) {
+  try {
+    window.localStorage.setItem(FUND_MANAGER_KEY, JSON.stringify(settings));
+  } catch { /* skip */ }
+}
+
+function toCustomFund(fund: { code: string; name: string }): Fund {
+  return {
+    symbol: fund.code,
+    code: fund.code,
+    name: fund.name,
+    holdings: [],
+  };
+}
+
 function sortValue(estimate: FundEstimate, mode: SortMode): number | null {
   if (mode === 'official') {
     return estimate.officialNAV?.officialChange ?? null;
   }
+  if (estimate.estimatedNAVLocal === null) return null;
   return estimate.computedChange;
 }
 
 export default function App() {
-  const { quotes, fundEstimates, fxRates, loading, error } = useQuotes();
+  const [managedFunds, setManagedFunds] = useState<ManagedFundSettings>(() => readManagedFundSettings());
+  const funds = useMemo(() => {
+    const hidden = new Set(managedFunds.hiddenDefaultCodes);
+    const defaultFunds = FUNDS.filter((fund) => !hidden.has(fund.code));
+    const defaultCodes = new Set(FUNDS.map((fund) => fund.code));
+    const customFunds = managedFunds.customFunds
+      .filter((fund) => !defaultCodes.has(fund.code))
+      .map(toCustomFund);
+    return [...defaultFunds, ...customFunds];
+  }, [managedFunds]);
+  const { quotes, fundEstimates, fxRates, loading, error } = useQuotes(funds);
   const [sortMode, setSortMode] = useState<SortMode>('estimate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [fundCollapsed, setFundCollapsed] = useState(() => readCollapsedFlag(FUND_SECTION_COLLAPSED_KEY));
+  const [fundSearchQuery, setFundSearchQuery] = useState('');
+  const [addingFund, setAddingFund] = useState(false);
+  const [fundManageMessage, setFundManageMessage] = useState('');
 
   const sortedEstimates = useMemo(() => {
     const sorted = [...fundEstimates].sort((a, b) => {
@@ -51,6 +116,119 @@ export default function App() {
   }, [fundEstimates, sortMode, sortDirection]);
 
   const sortLabel = sortMode === 'official' ? '按 T-1 已出净值排序' : '按实时估算涨跌排序';
+
+  function updateManagedFunds(next: ManagedFundSettings) {
+    const normalized = {
+      hiddenDefaultCodes: [...new Set(next.hiddenDefaultCodes)],
+      customFunds: [...new Map(next.customFunds.map((fund) => [fund.code, fund])).values()],
+    };
+    setManagedFunds(normalized);
+    writeManagedFundSettings(normalized);
+  }
+
+  function restoreDefaultFund(defaultFund: Fund) {
+    if (!managedFunds.hiddenDefaultCodes.includes(defaultFund.code)) {
+      setFundManageMessage(`${defaultFund.name} 已在列表中`);
+      return;
+    }
+    updateManagedFunds({
+      ...managedFunds,
+      hiddenDefaultCodes: managedFunds.hiddenDefaultCodes.filter((item) => item !== defaultFund.code),
+    });
+    setFundSearchQuery('');
+    setFundManageMessage(`已恢复 ${defaultFund.name}`);
+  }
+
+  async function lookupFundName(code: string): Promise<string | null> {
+    const navs = await fetchFundNavs([code]);
+    const navName = navs.get(code)?.name?.trim();
+    if (navName) return navName;
+
+    const sinaNavs = await fetchSinaFundNavs([code]);
+    return sinaNavs.get(code)?.name?.trim() || null;
+  }
+
+  async function addFund() {
+    const query = fundSearchQuery.trim();
+    if (!query) {
+      setFundManageMessage('请输入基金代码或基金名称');
+      return;
+    }
+
+    const defaultMatches = FUNDS.filter((fund) => (
+      fund.code === query ||
+      fund.name === query ||
+      fund.name.toLowerCase().includes(query.toLowerCase())
+    ));
+    const exactDefaultFund = defaultMatches.find((fund) => fund.code === query || fund.name === query);
+    if (!/^\d{6}$/.test(query) && defaultMatches.length > 1 && !exactDefaultFund) {
+      setFundManageMessage('匹配到多个默认基金，请输入更完整名称或 6 位代码');
+      return;
+    }
+
+    const defaultFund = exactDefaultFund ?? defaultMatches[0];
+    if (defaultFund) {
+      restoreDefaultFund(defaultFund);
+      return;
+    }
+
+    const existingCustomFund = managedFunds.customFunds.find((fund) => (
+      fund.code === query ||
+      fund.name === query ||
+      fund.name.toLowerCase() === query.toLowerCase()
+    ));
+    if (existingCustomFund) {
+      setFundManageMessage('该基金已在自定义列表中');
+      return;
+    }
+
+    if (!/^\d{6}$/.test(query)) {
+      setFundManageMessage('新增基金请先输入 6 位基金代码；名称仅用于匹配默认基金');
+      return;
+    }
+
+    setAddingFund(true);
+    setFundManageMessage('正在校验基金代码...');
+    try {
+      const displayName = await lookupFundName(query);
+      if (!displayName) {
+        setFundManageMessage('未找到该基金，请确认 6 位基金代码');
+        return;
+      }
+      updateManagedFunds({
+        ...managedFunds,
+        customFunds: [...managedFunds.customFunds, { code: query, name: displayName }],
+      });
+      setFundSearchQuery('');
+      setFundManageMessage(`已添加 ${displayName}`);
+    } catch {
+      setFundManageMessage('基金代码校验失败，请稍后重试');
+    } finally {
+      setAddingFund(false);
+    }
+  }
+
+  function removeFund(fund: Fund) {
+    const isDefaultFund = FUNDS.some((item) => item.code === fund.code);
+    if (isDefaultFund) {
+      updateManagedFunds({
+        ...managedFunds,
+        hiddenDefaultCodes: [...managedFunds.hiddenDefaultCodes, fund.code],
+      });
+    } else {
+      updateManagedFunds({
+        ...managedFunds,
+        customFunds: managedFunds.customFunds.filter((item) => item.code !== fund.code),
+      });
+    }
+    setFundManageMessage(`已删除 ${fund.name}`);
+  }
+
+  function restoreDefaultFunds() {
+    updateManagedFunds(EMPTY_MANAGED_SETTINGS);
+    setFundSearchQuery('');
+    setFundManageMessage('已恢复默认 17 只基金');
+  }
 
   function toggleFundSection() {
     setFundCollapsed((prev) => {
@@ -75,7 +253,7 @@ export default function App() {
           >
             <span className={styles.toggleIcon}>{fundCollapsed ? '+' : '-'}</span>
             <span>QDII 主动基金</span>
-            <span className={styles.count}> · {FUNDS.length}只{fundCollapsed ? '' : ` · ${sortLabel}`}</span>
+            <span className={styles.count}> · {funds.length}只{fundCollapsed ? '' : ` · ${sortLabel}`}</span>
           </button>
           {!fundCollapsed && (
             <div className={styles.sortControls}>
@@ -114,8 +292,35 @@ export default function App() {
             </div>
           )}
         </div>
+        {!fundCollapsed && (
+          <div className={styles.fundManager}>
+            <div className={styles.addFundForm}>
+              <input
+                className={styles.fundSearchInput}
+                placeholder="基金代码或基金名称"
+                value={fundSearchQuery}
+                onChange={(event) => {
+                  setFundSearchQuery(event.target.value);
+                  if (fundManageMessage) setFundManageMessage('');
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !addingFund) {
+                    addFund();
+                  }
+                }}
+              />
+              <button type="button" className={styles.managerButtonPrimary} onClick={addFund} disabled={addingFund}>
+                {addingFund ? '校验中' : '添加'}
+              </button>
+              <button type="button" className={styles.managerButton} onClick={restoreDefaultFunds} disabled={addingFund}>
+                恢复默认
+              </button>
+            </div>
+            {fundManageMessage && <div className={styles.managerMessage}>{fundManageMessage}</div>}
+          </div>
+        )}
         {!fundCollapsed && sortedEstimates.map((est) => {
-          const fund = FUNDS.find((f) => f.code === est.fundCode)!;
+          const fund = est.fund;
           return (
             <FundCard
               key={fund.code}
@@ -124,6 +329,7 @@ export default function App() {
               rank={est.rank}
               rankLabel={sortDirection === 'desc' ? `TOP ${est.rank}` : `LOW ${est.rank}`}
               loading={loading}
+              onRemove={removeFund}
             />
           );
         })}

@@ -116,6 +116,93 @@
   color: #fff;
 }
 
+.fundManager {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin: 0 0 8px;
+}
+
+.addFundForm {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fundSearchInput {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  color: #0f172a;
+  font-size: 12px;
+  height: 30px;
+  line-height: 30px;
+  outline: none;
+  padding: 0 9px;
+}
+
+.fundSearchInput {
+  flex: 1 1 260px;
+  min-width: 180px;
+}
+
+.fundSearchInput:focus {
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.16);
+}
+
+.managerButton,
+.managerButtonPrimary {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 700;
+  height: 30px;
+  padding: 0 10px;
+}
+
+.managerButton {
+  background: #fff;
+  color: #64748b;
+}
+
+.managerButton:hover {
+  background: #f8fafc;
+  color: #334155;
+}
+
+.managerButtonPrimary {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #fff;
+}
+
+.managerButtonPrimary:hover {
+  background: #1e293b;
+}
+
+.managerButton:disabled,
+.managerButtonPrimary:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.managerMessage {
+  color: #94a3b8;
+  flex: 0 1 auto;
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .footer {
   color: #94a3b8;
   font-size: 11px;
@@ -146,5 +233,23 @@
 
   .sortControls {
     flex-wrap: wrap;
+  }
+
+  .fundManager,
+  .addFundForm {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .fundSearchInput,
+  .managerButton,
+  .managerButtonPrimary {
+    flex: none;
+    width: 100%;
+  }
+
+  .managerMessage {
+    text-align: left;
+    white-space: normal;
   }
 }

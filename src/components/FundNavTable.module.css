@@ -76,8 +76,9 @@
   align-items: center;
   display: flex;
   gap: 8px;
-  justify-content: flex-end;
-  margin-top: 8px;
+  justify-content: center;
+  margin-top: 10px;
+  padding-bottom: 2px;
 }
 
 .pagination button {
@@ -117,9 +118,5 @@
     align-items: flex-start;
     flex-direction: column;
     gap: 4px;
-  }
-
-  .pagination {
-    justify-content: center;
   }
 }

@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import type { QuoteData, FundNavData, FxRateData, FundPurchaseData, FundReturnSummary } from '../types';
+import type { QuoteData, FundNavData, FxRateData, Fund, FundPurchaseData, FundReturnSummary } from '../types';
 import {
   fetchAllQuotes,
   fetchFundNavs,
   fetchSinaFundNavs,
   fetchFundHistory,
+  fetchFundHoldings,
   fetchFundPurchaseStatuses,
   fetchFundReturnSummaries,
   fetchFxRates,
@@ -18,6 +19,7 @@ type EstimateState = 'LIVE' | 'PRE' | 'POST' | 'PARTIAL' | 'CLOSED';
 export interface FundEstimate {
   fundCode: string;
   fundName: string;
+  fund: Fund;
   officialNAV: FundNavData | null;
   purchaseStatus: FundPurchaseData | null;
   rangeReturns: FundReturnSummary | null;
@@ -104,7 +106,7 @@ function normalizeFundFxRate(rate: FxRateData): FxRateData {
   return rate;
 }
 
-export function useQuotes() {
+export function useQuotes(funds: Fund[] = FUNDS) {
   const [quotes, setQuotes] = useState<Map<string, QuoteData>>(new Map());
   const [fundEstimates, setFundEstimates] = useState<FundEstimate[]>([]);
   const [fxRates, setFxRates] = useState<Map<string, FxRateData>>(new Map());
@@ -123,14 +125,25 @@ export function useQuotes() {
       const assetSymbols = MARKET_ASSETS.map((i) => i.sinaSymbol);
       const etfSymbols = ETF_ASSETS.map((i) => i.sinaSymbol);
       const futuresSymbols = INDICES.flatMap((i) => i.futures?.sinaSymbol ?? []);
-      const holdingSymbols = FUNDS.flatMap((f) =>
+
+      const dynamicHoldingCodes = funds
+        .filter((f) => f.holdings.length === 0)
+        .map((f) => f.code);
+      const dynamicHoldings = await fetchFundHoldings(dynamicHoldingCodes);
+      const effectiveFunds = funds.map((fund) => {
+        if (fund.holdings.length > 0) return fund;
+        const holdings = dynamicHoldings.get(fund.code) ?? [];
+        return holdings.length > 0 ? { ...fund, holdings } : fund;
+      });
+
+      const holdingSymbols = effectiveFunds.flatMap((f) =>
         f.holdings.map((h) => h.sinaSymbol),
-      );
+      ).filter(Boolean);
       const allSinaSymbols = [...new Set([...indexSymbols, ...futuresSymbols, ...assetSymbols, ...etfSymbols, ...holdingSymbols])];
 
       try {
-        const fundCodes = FUNDS.map((f) => f.code);
-        const holdingCurrencies = FUNDS.flatMap((f) => f.holdings.map((h) => h.currency));
+        const fundCodes = effectiveFunds.map((f) => f.code);
+        const holdingCurrencies = effectiveFunds.flatMap((f) => f.holdings.map((h) => h.currency));
         const currencies = [...new Set([...DISPLAY_FX_CURRENCIES, ...holdingCurrencies])];
         const [quotesData, navsData, historyData, purchaseStatuses, returnSummaries, fxRates] = await Promise.all([
           fetchAllQuotes(allSinaSymbols),
@@ -186,8 +199,9 @@ export function useQuotes() {
           [...fxRates].map(([currency, rate]) => [currency, normalizeFundFxRate(rate)]),
         );
 
-        const estimates: FundEstimate[] = FUNDS.map((fund) => {
+        const estimates: FundEstimate[] = effectiveFunds.map((fund) => {
           const officialNAV = navsData.get(fund.code) ?? null;
+          const hasConfiguredHoldings = fund.holdings.length > 0;
           const rawHoldingsQuotes = fund.holdings
             .map((h) => quotesData.get(h.sinaSymbol))
             .filter((q): q is QuoteData => q != null);
@@ -233,18 +247,19 @@ export function useQuotes() {
                 : 'CLOSED';
 
           const estimatedNAVLocal =
-            officialNAV && officialNAV.nav > 0
+            hasConfiguredHoldings && officialNAV && officialNAV.nav > 0
               ? officialNAV.nav * (1 + computedChangeLocal / 100)
               : null;
 
           const estimatedNAV =
-            officialNAV && officialNAV.nav > 0
+            hasConfiguredHoldings && officialNAV && officialNAV.nav > 0
               ? officialNAV.nav * (1 + computedChange / 100)
               : null;
 
           return {
             fundCode: fund.code,
             fundName: fund.name,
+            fund,
             officialNAV,
             purchaseStatus: purchaseStatuses.get(fund.code) ?? null,
             rangeReturns: returnSummaries.get(fund.code) ?? null,
@@ -282,7 +297,7 @@ export function useQuotes() {
       mountedRef.current = false;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [funds]);
 
   return { quotes, fundEstimates, fxRates, loading, error };
 }

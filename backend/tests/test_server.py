@@ -37,6 +37,7 @@ class ServerDataRefreshTests(unittest.TestCase):
                 """
                 DELETE FROM response_cache;
                 DELETE FROM fund_nav_history;
+                DELETE FROM fund_holdings;
                 DELETE FROM fund_purchase_status;
                 DELETE FROM market_history;
                 DELETE FROM market_intraday;
@@ -133,6 +134,186 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(payload["016664"][0]["FSRQ"], "2026-05-19")
         self.assertEqual(server.read_fund_history_from_db("016664", 1, 1)[0]["FSRQ"], "2026-05-19")
 
+    def test_fund_history_refresh_merges_upstream_rows_with_sqlite(self) -> None:
+        server.store_fund_history(
+            "016664",
+            [
+                {"FSRQ": "2026-05-15", "DWJZ": "3.1194", "JZZZL": "-4.73"},
+                {"FSRQ": "2026-05-14", "DWJZ": "3.2742", "JZZZL": "-1.22"},
+                {"FSRQ": "2026-05-13", "DWJZ": "3.3147", "JZZZL": "0.91"},
+            ],
+        )
+        upstream_body = (
+            'jQuery({"Data":{"LSJZList":['
+            '{"FSRQ":"2026-05-19","DWJZ":"3.0848","JZZZL":"-0.83"},'
+            '{"FSRQ":"2026-05-18","DWJZ":"3.1106","JZZZL":"-0.28"}'
+            ']}});'
+        ).encode()
+
+        with patch.object(server, "fetch_upstream", return_value=(200, "text/plain; charset=utf-8", upstream_body)):
+            response = server.app.test_client().get("/api/fundhistory?codes=016664&pageSize=5&pageIndex=1&refresh=1")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(
+            [row["FSRQ"] for row in payload["016664"]],
+            ["2026-05-19", "2026-05-18", "2026-05-15", "2026-05-14", "2026-05-13"],
+        )
+
+    def test_fund_history_refresh_falls_back_to_sqlite_on_upstream_error(self) -> None:
+        server.store_fund_history(
+            "016664",
+            [
+                {"FSRQ": "2026-05-15", "DWJZ": "3.1194", "JZZZL": "-4.73"},
+                {"FSRQ": "2026-05-14", "DWJZ": "3.2742", "JZZZL": "-1.22"},
+            ],
+        )
+
+        def fake_fetch_upstream(*_args: object, **kwargs: object) -> tuple[int, str, bytes]:
+            self.assertIs(kwargs.get("force_refresh"), True)
+            return 502, "text/plain; charset=utf-8", b""
+
+        with patch.object(server, "fetch_upstream", side_effect=fake_fetch_upstream):
+            response = server.app.test_client().get("/api/fundhistory?codes=016664&pageSize=3000&pageIndex=1&refresh=1")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(len(payload["016664"]), 2)
+        self.assertEqual(payload["016664"][0]["FSRQ"], "2026-05-15")
+
+    def test_fund_history_refresh_falls_back_to_sqlite_on_empty_upstream_rows(self) -> None:
+        server.store_fund_history(
+            "016664",
+            [
+                {"FSRQ": "2026-05-15", "DWJZ": "3.1194", "JZZZL": "-4.73"},
+                {"FSRQ": "2026-05-14", "DWJZ": "3.2742", "JZZZL": "-1.22"},
+            ],
+        )
+        upstream_body = b'jQuery({"Data":{"LSJZList":[]}});'
+
+        with patch.object(server, "fetch_upstream", return_value=(200, "text/plain; charset=utf-8", upstream_body)):
+            response = server.app.test_client().get("/api/fundhistory?codes=016664&pageSize=3000&pageIndex=1&refresh=1")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(len(payload["016664"]), 2)
+        self.assertEqual(payload["016664"][0]["FSRQ"], "2026-05-15")
+
+    def test_fund_history_refresh_without_sqlite_cache_returns_empty_payload(self) -> None:
+        with patch.object(server, "fetch_upstream", return_value=(502, "text/plain; charset=utf-8", b"")):
+            response = server.app.test_client().get("/api/fundhistory?codes=016664&pageSize=3000&pageIndex=1&refresh=1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {})
+
+    def test_fund_history_paginates_sqlite_rows(self) -> None:
+        server.store_fund_history(
+            "016664",
+            [
+                {"FSRQ": "2026-05-15", "DWJZ": "3.1194", "JZZZL": "-4.73"},
+                {"FSRQ": "2026-05-14", "DWJZ": "3.2742", "JZZZL": "-1.22"},
+                {"FSRQ": "2026-05-13", "DWJZ": "3.3147", "JZZZL": "0.91"},
+                {"FSRQ": "2026-05-12", "DWJZ": "3.2848", "JZZZL": "-0.18"},
+            ],
+        )
+
+        with patch.object(server, "fetch_upstream", side_effect=AssertionError("unexpected upstream fetch")):
+            response = server.app.test_client().get("/api/fundhistory?codes=016664&pageSize=2&pageIndex=2")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual([row["FSRQ"] for row in payload["016664"]], ["2026-05-13", "2026-05-12"])
+
+    def test_fund_holdings_refresh_parses_and_stores_top_holdings(self) -> None:
+        upstream_body = (
+            'var apidata={ content:"<div><label class=\'right\'>截止至：<font class=\'px12\'>2026-03-31</font></label>'
+            '<table><tbody>'
+            '<tr><td>1</td><td class=\'toc\'><a href=\'//quote.eastmoney.com/unify/r/105.TSM\'>TSM</a></td>'
+            '<td class=\'toc\'><a>台积电</a></td><td>--</td><td>--</td><td></td><td>4.89%</td></tr>'
+            '<tr><td>2</td><td class=\'toc\'><a href=\'//quote.eastmoney.com/unify/r/116.09988\'>09988</a></td>'
+            '<td class=\'toc\'><a>阿里巴巴-W</a></td><td>--</td><td>--</td><td></td><td>5.03%</td></tr>'
+            '<tr><td>3</td><td class=\'toc\'><span>005930</span></td>'
+            '<td class=\'toc\'><span>三星电子</span></td><td>--</td><td>--</td><td></td><td>5.28%</td></tr>'
+            '<tr><td>4</td><td class=\'toc\'><span>2330</span></td>'
+            '<td class=\'toc\'><span>台积电</span></td><td>--</td><td>--</td><td></td><td>5.48%</td></tr>'
+            '</tbody></table></div>",arryear:[2026],curyear:2026};'
+        ).encode()
+
+        with patch.object(server, "fetch_upstream", return_value=(200, "text/plain; charset=utf-8", upstream_body)):
+            response = server.app.test_client().get("/api/fundholdings?codes=457001&refresh=1")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        rows = payload["457001"]
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(rows[0]["sinaSymbol"], "gb_tsm")
+        self.assertEqual(rows[0]["currency"], "USD")
+        self.assertEqual(rows[1]["sinaSymbol"], "hk09988")
+        self.assertEqual(rows[1]["currency"], "HKD")
+        self.assertEqual(rows[2]["sinaSymbol"], "kr005930")
+        self.assertEqual(rows[2]["currency"], "KRW")
+        self.assertEqual(rows[3]["market"], "tw")
+        self.assertEqual(rows[3]["sinaSymbol"], "")
+
+        cached = server.read_fund_holdings_from_db("457001")
+        self.assertEqual(len(cached), 4)
+        self.assertEqual(cached[0]["reportDate"], "2026-03-31")
+
+    def test_fund_holdings_without_refresh_reads_sqlite(self) -> None:
+        server.store_fund_holdings(
+            "457001",
+            [{
+                "reportDate": "2026-03-31",
+                "rank": 1,
+                "stockCode": "TSM",
+                "name": "台积电",
+                "weight": 0.0489,
+                "market": "us",
+                "sinaSymbol": "gb_tsm",
+                "currency": "USD",
+            }],
+        )
+
+        with patch.object(server, "fetch_upstream", side_effect=AssertionError("unexpected upstream fetch")):
+            response = server.app.test_client().get("/api/fundholdings?codes=457001")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["457001"][0]["sinaSymbol"], "gb_tsm")
+
+    def test_fund_holdings_refresh_falls_back_to_sqlite_on_empty_upstream(self) -> None:
+        server.store_fund_holdings(
+            "457001",
+            [{
+                "reportDate": "2026-03-31",
+                "rank": 1,
+                "stockCode": "TSM",
+                "name": "台积电",
+                "weight": 0.0489,
+                "market": "us",
+                "sinaSymbol": "gb_tsm",
+                "currency": "USD",
+            }],
+        )
+
+        with patch.object(server, "fetch_upstream", return_value=(200, "text/plain; charset=utf-8", b"var apidata={ content:\"\",arryear:[]};")):
+            response = server.app.test_client().get("/api/fundholdings?codes=457001&refresh=1")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["457001"][0]["sinaSymbol"], "gb_tsm")
+
+    def test_market_history_without_refresh_reads_sqlite(self) -> None:
+        server.store_market_history("sina-us", ".INX", 'var _=([{"d":"2026-05-14","c":"7501.24"}]);')
+
+        with patch.object(server, "fetch_upstream", side_effect=AssertionError("unexpected upstream fetch")):
+            response = server.app.test_client().get("/api/markethistory?source=sina-us&symbol=.INX")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[0]["date"], "2026-05-14")
+        self.assertEqual(payload[0]["close"], 7501.24)
+
     def test_market_history_refresh_fetches_latest_and_updates_sqlite(self) -> None:
         server.store_market_history("sina-us", ".INX", 'var _=([{"d":"2026-05-14","c":"7501.24"}]);')
         upstream_body = b'var _=([{"d":"2026-05-19","c":"7353.61"}]);'
@@ -148,6 +329,35 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertIn("2026-05-19", response.get_data(as_text=True))
         rows = server.read_market_history_from_db("sina-us", ".INX")
         self.assertEqual(rows[-1]["date"], "2026-05-19")
+
+    def test_market_history_refresh_falls_back_to_sqlite_on_upstream_error(self) -> None:
+        server.store_market_history("sina-us", ".INX", 'var _=([{"d":"2026-05-14","c":"7501.24"}]);')
+
+        with patch.object(server, "fetch_upstream", return_value=(503, "text/plain; charset=utf-8", b"unavailable")):
+            response = server.app.test_client().get("/api/markethistory?source=sina-us&symbol=.INX&refresh=1")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[0]["date"], "2026-05-14")
+        self.assertEqual(payload[0]["close"], 7501.24)
+
+    def test_market_history_refresh_falls_back_to_sqlite_on_malformed_upstream_body(self) -> None:
+        server.store_market_history("sina-us", ".INX", 'var _=([{"d":"2026-05-14","c":"7501.24"}]);')
+
+        with patch.object(server, "fetch_upstream", return_value=(200, "application/json; charset=utf-8", b"not-json")):
+            response = server.app.test_client().get("/api/markethistory?source=sina-us&symbol=.INX&refresh=1")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[0]["date"], "2026-05-14")
+        self.assertEqual(payload[0]["close"], 7501.24)
+
+    def test_market_history_refresh_without_sqlite_cache_returns_upstream_error(self) -> None:
+        with patch.object(server, "fetch_upstream", return_value=(503, "text/plain; charset=utf-8", b"unavailable")):
+            response = server.app.test_client().get("/api/markethistory?source=sina-us&symbol=.INX&refresh=1")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_data(), b"unavailable")
 
 
 if __name__ == "__main__":

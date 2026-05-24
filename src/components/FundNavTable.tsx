@@ -7,8 +7,8 @@ interface Props {
   fundCode: string;
 }
 
-const PAGE_SIZE = 12;
-const TARGET_SIZE = 90;
+const PAGE_SIZE = 10;
+const TARGET_SIZE = 120;
 
 function cutoffDate(latestDate: string, days: number): string {
   const date = new Date(`${latestDate}T12:00:00+08:00`);

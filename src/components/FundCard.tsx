@@ -12,6 +12,7 @@ interface Props {
   rank: number;
   rankLabel?: string;
   loading: boolean;
+  onRemove?: (fund: Fund) => void;
 }
 
 const RANK_BADGE: Record<number, { label: string; cls: string }> = {
@@ -126,7 +127,7 @@ function FundReturnBar({
   );
 }
 
-export default function FundCard({ fund, estimate, rank, rankLabel, loading }: Props) {
+export default function FundCard({ fund, estimate, rank, rankLabel, loading, onRemove }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'holdings' | 'nav' | 'trend'>('holdings');
   const badge = RANK_BADGE[rank];
@@ -146,6 +147,19 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
             <span className={styles.name}>{fund.name}<span className={styles.code}>{fund.code}</span></span>
           </div>
         </div>
+        {onRemove && (
+          <button
+            type="button"
+            className={styles.removeButton}
+            aria-label={`删除 ${fund.name}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRemove(fund);
+            }}
+          >
+            ×
+          </button>
+        )}
       </div>
     );
   }
@@ -258,6 +272,20 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading }: P
         )}
         <FundReturnBar summary={rangeReturns} ranges={FUND_RETURN_RANGES} />
       </div>
+
+      {onRemove && (
+        <button
+          type="button"
+          className={styles.removeButton}
+          aria-label={`删除 ${fund.name}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemove(fund);
+          }}
+        >
+          ×
+        </button>
+      )}
 
       {expanded && (
         <div className={styles.expanded} onClick={(event) => event.stopPropagation()}>

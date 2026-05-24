@@ -67,6 +67,43 @@
   margin-left: 4px;
 }
 
+.removeButton {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  color: #64748b;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 16px;
+  font-weight: 700;
+  height: 22px;
+  justify-content: center;
+  line-height: 1;
+  opacity: 0.72;
+  padding: 0;
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+  width: 22px;
+  z-index: 2;
+}
+
+.removeButton:hover {
+  background: #fff;
+  border-color: #cbd5e1;
+  color: #475569;
+  opacity: 1;
+}
+
+.removeButton:focus-visible {
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.2);
+  opacity: 1;
+  outline: none;
+}
+
 /* Dual NAV row */
 .dualNav {
   display: flex;

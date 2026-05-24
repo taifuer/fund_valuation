@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import os
 import re
@@ -71,6 +72,20 @@ def ensure_storage() -> None:
               daily_limit TEXT NOT NULL,
               fee_rate TEXT NOT NULL,
               fetched_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS fund_holdings (
+              code TEXT NOT NULL,
+              report_date TEXT NOT NULL,
+              rank INTEGER NOT NULL,
+              stock_code TEXT NOT NULL,
+              stock_name TEXT NOT NULL,
+              weight REAL NOT NULL,
+              market TEXT NOT NULL,
+              sina_symbol TEXT NOT NULL,
+              currency TEXT NOT NULL,
+              fetched_at INTEGER NOT NULL,
+              PRIMARY KEY (code, report_date, rank)
             );
 
             CREATE TABLE IF NOT EXISTS market_history (
@@ -246,6 +261,177 @@ def store_fund_history(code: str, rows: list[dict[str, Any]]) -> None:
         )
 
 
+def strip_tags(value: str) -> str:
+    return html.unescape(re.sub(r"<[^>]+>", "", value)).strip()
+
+
+def js_string_unescape(value: str) -> str:
+    return (
+        value
+        .replace(r"\/", "/")
+        .replace(r"\"" , '"')
+        .replace(r"\r", "")
+        .replace(r"\n", "")
+        .replace(r"\t", "")
+    )
+
+
+def classify_holding_symbol(stock_code: str, href: str, stock_name: str) -> tuple[str, str, str]:
+    code = stock_code.strip().upper()
+    href_match = re.search(r"/unify/r/(\d+)\.([A-Za-z0-9.]+)", href)
+    if href_match:
+        market_id, raw_symbol = href_match.groups()
+        symbol = raw_symbol.upper()
+        if market_id in {"105", "106"}:
+            return "us", f"gb_{symbol.lower()}", "USD"
+        if market_id == "116":
+            return "hk", f"hk{symbol.zfill(5)}", "HKD"
+        if market_id == "0":
+            return "cn", f"sz{symbol.lower()}", "CNY"
+        if market_id == "1":
+            return "cn", f"sh{symbol.lower()}", "CNY"
+
+    if re.fullmatch(r"\d{5}", code):
+        return "hk", f"hk{code}", "HKD"
+    if re.fullmatch(r"\d{6}", code) and (stock_name.startswith(("三星", "SK")) or code in {"005930", "000660"}):
+        return "kr", f"kr{code}", "KRW"
+    if re.fullmatch(r"(00|30)\d{4}", code):
+        return "cn", f"sz{code}", "CNY"
+    if re.fullmatch(r"(60|68)\d{4}", code):
+        return "cn", f"sh{code}", "CNY"
+    if code.endswith("JP"):
+        return "jp", "", "JPY"
+    if re.fullmatch(r"\d{4}", code):
+        return "tw", "", "CNY"
+    return "unknown", "", "CNY"
+
+
+def parse_fund_holdings(code: str, text: str) -> list[dict[str, Any]]:
+    content_match = re.search(r'content:"(.*?)",arryear:', text, re.S)
+    if not content_match:
+        return []
+
+    content = js_string_unescape(content_match.group(1))
+    report_match = re.search(r"截止至：\s*<font[^>]*>(\d{4}-\d{2}-\d{2})</font>", content)
+    report_date = report_match.group(1) if report_match else ""
+    tbody_match = re.search(r"<tbody>(.*?)</tbody>", content, re.S)
+    if not tbody_match or not report_date:
+        return []
+
+    holdings: list[dict[str, Any]] = []
+    for row_html in re.findall(r"<tr>(.*?)</tr>", tbody_match.group(1), re.S):
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", row_html, re.S)
+        if len(cells) < 7:
+            continue
+        try:
+            rank = int(strip_tags(cells[0]))
+        except ValueError:
+            continue
+        href_match = re.search(r"href=['\"]([^'\"]+)['\"]", cells[1])
+        href = href_match.group(1) if href_match else ""
+        stock_code = strip_tags(cells[1]).upper()
+        stock_name = strip_tags(cells[2])
+        weight_text = strip_tags(cells[6]).replace("%", "").replace(",", "")
+        try:
+            weight = float(weight_text) / 100
+        except ValueError:
+            continue
+        if not stock_code or not stock_name or weight <= 0:
+            continue
+        market, sina_symbol, currency = classify_holding_symbol(stock_code, href, stock_name)
+        holdings.append({
+            "code": code,
+            "reportDate": report_date,
+            "rank": rank,
+            "stockCode": stock_code,
+            "symbol": stock_code,
+            "name": stock_name,
+            "weight": weight,
+            "market": market,
+            "sinaSymbol": sina_symbol,
+            "currency": currency,
+        })
+    return holdings
+
+
+def store_fund_holdings(code: str, holdings: list[dict[str, Any]]) -> None:
+    if not holdings:
+        return
+    report_date = str(holdings[0].get("reportDate") or "")
+    if not report_date:
+        return
+    fetched_at = now_ms()
+    points = []
+    for item in holdings:
+        try:
+            rank = int(item.get("rank") or 0)
+            weight = float(item.get("weight") or 0)
+        except (TypeError, ValueError):
+            continue
+        if rank <= 0 or weight <= 0:
+            continue
+        points.append((
+            code,
+            report_date,
+            rank,
+            str(item.get("stockCode") or item.get("symbol") or ""),
+            str(item.get("name") or ""),
+            weight,
+            str(item.get("market") or "unknown"),
+            str(item.get("sinaSymbol") or ""),
+            str(item.get("currency") or "CNY"),
+            fetched_at,
+        ))
+    if not points:
+        return
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM fund_holdings WHERE code = ? AND report_date = ?", (code, report_date))
+        conn.executemany(
+            """
+            INSERT INTO fund_holdings(
+              code, report_date, rank, stock_code, stock_name, weight, market, sina_symbol, currency, fetched_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            points,
+        )
+
+
+def read_fund_holdings_from_db(code: str) -> list[dict[str, Any]]:
+    with sqlite3.connect(DB_PATH) as conn:
+        latest = conn.execute(
+            "SELECT report_date FROM fund_holdings WHERE code = ? ORDER BY report_date DESC LIMIT 1",
+            (code,),
+        ).fetchone()
+        if not latest:
+            return []
+        rows = conn.execute(
+            """
+            SELECT report_date, rank, stock_code, stock_name, weight, market, sina_symbol, currency, fetched_at
+            FROM fund_holdings
+            WHERE code = ? AND report_date = ?
+            ORDER BY rank ASC
+            """,
+            (code, latest[0]),
+        ).fetchall()
+    return [
+        {
+            "code": code,
+            "reportDate": str(report_date),
+            "rank": int(rank),
+            "stockCode": str(stock_code),
+            "symbol": str(stock_code),
+            "name": str(stock_name),
+            "weight": float(weight),
+            "market": str(market),
+            "sinaSymbol": str(sina_symbol),
+            "currency": str(currency),
+            "fetchedAt": int(fetched_at),
+        }
+        for report_date, rank, stock_code, stock_name, weight, market, sina_symbol, currency, fetched_at in rows
+    ]
+
+
 def purchase_status_date(raw_date: str, show_days: list[Any]) -> str:
     if re.match(r"^\d{4}-\d{2}-\d{2}$", raw_date):
         return raw_date
@@ -325,7 +511,7 @@ def store_purchase_status(text: str) -> None:
         )
 
 
-def store_market_history(source: str, symbol: str, text: str) -> None:
+def store_market_history(source: str, symbol: str, text: str) -> int:
     rows: list[dict[str, Any]] = []
     if source == "sina-cn":
         parsed = json.loads(text)
@@ -347,7 +533,7 @@ def store_market_history(source: str, symbol: str, text: str) -> None:
         if re.match(r"^\d{4}-\d{2}-\d{2}$", date) and close > 0:
             points.append((source, symbol, date, close, fetched_at))
     if not points:
-        return
+        return 0
     with sqlite3.connect(DB_PATH) as conn:
         conn.executemany(
             """
@@ -359,6 +545,7 @@ def store_market_history(source: str, symbol: str, text: str) -> None:
             """,
             points,
         )
+    return len(points)
 
 
 def store_market_intraday(source: str, symbol: str, text: str) -> None:
@@ -778,6 +965,48 @@ def fund_nav() -> Response:
     return json_response(results)
 
 
+@app.get("/api/fundholdings")
+def fund_holdings() -> Response:
+    codes = [code for code in require_arg("codes").split(",") if code]
+    refresh = should_refresh()
+    results: dict[str, Any] = {}
+    for code in codes:
+        cached_rows = read_fund_holdings_from_db(code)
+        if cached_rows and not refresh:
+            results[code] = cached_rows
+            continue
+
+        query = urlencode({
+            "type": "jjcc",
+            "code": code,
+            "topline": 10,
+            "year": "",
+            "month": "",
+        })
+        url = f"https://fundf10.eastmoney.com/FundArchivesDatas.aspx?{query}"
+        status, _, body = fetch_upstream(
+            url,
+            referer=f"https://fundf10.eastmoney.com/ccmx_{quote(code)}.html",
+            content_type="text/plain; charset=utf-8",
+            cache_key=f"fundholdings:{code}",
+            kind="fundholdings",
+            ttl_seconds=86400,
+            force_refresh=refresh,
+        )
+        if status >= 400:
+            if cached_rows:
+                results[code] = cached_rows
+            continue
+
+        parsed_rows = parse_fund_holdings(code, decode_body(body))
+        if parsed_rows:
+            store_fund_holdings(code, parsed_rows)
+            results[code] = read_fund_holdings_from_db(code) or parsed_rows
+        elif cached_rows:
+            results[code] = cached_rows
+    return json_response(results)
+
+
 @app.get("/api/fundhistory")
 def fund_history() -> Response:
     codes = require_arg("codes").split(",")
@@ -786,8 +1015,8 @@ def fund_history() -> Response:
     refresh = should_refresh()
     results: dict[str, Any] = {}
     for code in codes:
+        cached_rows = read_fund_history_from_db(code, page_size, page_index)
         if not refresh:
-            cached_rows = read_fund_history_from_db(code, page_size, page_index)
             if len(cached_rows) >= page_size or (page_size > 200 and cached_rows):
                 results[code] = cached_rows
                 continue
@@ -812,13 +1041,18 @@ def fund_history() -> Response:
             force_refresh=refresh,
         )
         if status >= 400:
+            if cached_rows:
+                results[code] = cached_rows
             continue
         parsed = parse_jsonp_call(decode_body(body), "jQuery")
         data = parsed.get("Data") if isinstance(parsed, dict) else None
         rows = data.get("LSJZList") if isinstance(data, dict) else None
-        if isinstance(rows, list):
-            results[code] = rows
+        if isinstance(rows, list) and rows:
             store_fund_history(code, rows)
+            merged_rows = read_fund_history_from_db(code, page_size, page_index)
+            results[code] = merged_rows if len(merged_rows) > len(rows) else rows
+        elif cached_rows:
+            results[code] = cached_rows
     return json_response(results)
 
 
@@ -892,10 +1126,10 @@ def market_history_url(source: str, symbol: str) -> tuple[str, str]:
 def market_history() -> Response:
     source = require_arg("source")
     symbol = require_arg("symbol")
-    if not should_refresh():
-        rows = read_market_history_from_db(source, symbol)
-        if rows:
-            return json_response(rows)
+    refresh = should_refresh()
+    cached_rows = read_market_history_from_db(source, symbol)
+    if not refresh and cached_rows:
+        return json_response(cached_rows)
 
     url, referer = market_history_url(source, symbol)
     status, content_type, body = fetch_upstream(
@@ -905,13 +1139,21 @@ def market_history() -> Response:
         cache_key=f"markethistory:{source}:{symbol}",
         kind="markethistory",
         ttl_seconds=300,
-        force_refresh=should_refresh(),
+        force_refresh=refresh,
     )
-    if status < 400:
-        try:
-            store_market_history(source, symbol, decode_body(body))
-        except Exception:
-            pass
+    if status >= 400:
+        if cached_rows:
+            return json_response(cached_rows)
+        return bytes_response(body, status=status, content_type=content_type)
+
+    try:
+        stored_count = store_market_history(source, symbol, decode_body(body))
+    except Exception:
+        if cached_rows:
+            return json_response(cached_rows)
+    else:
+        if stored_count == 0 and cached_rows:
+            return json_response(cached_rows)
     return bytes_response(body, status=status, content_type=content_type)
 
 

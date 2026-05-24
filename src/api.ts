@@ -1,6 +1,7 @@
 import type {
   QuoteData,
   FundNavData,
+  Holding,
   FundPurchaseData,
   FundHistoryPoint,
   FundReturnSummary,
@@ -437,6 +438,16 @@ interface FundHistoryRow {
   JZZZL: string;
 }
 
+interface FundHoldingRaw {
+  symbol?: string;
+  name?: string;
+  sinaSymbol?: string;
+  weight?: number;
+  currency?: Holding['currency'];
+  market?: string;
+  reportDate?: string;
+}
+
 interface SinaCnKlineRow {
   day?: string;
   close?: string | number;
@@ -527,6 +538,44 @@ export async function fetchFundPurchaseStatuses(codes: string[]): Promise<Map<st
       if (raw) results.set(code, raw);
     }
   } catch { /* skip */ }
+  return results;
+}
+
+export async function fetchFundHoldings(codes: string[]): Promise<Map<string, Holding[]>> {
+  const results = new Map<string, Holding[]>();
+  if (codes.length === 0) return results;
+
+  try {
+    const res = await fetch(apiUrl(`/api/fundholdings?codes=${codes.join(',')}`));
+    if (!res.ok) return results;
+    const json = await res.json();
+    for (const code of codes) {
+      const rows: FundHoldingRaw[] | undefined = json[code];
+      if (!Array.isArray(rows)) continue;
+      const holdings = rows
+        .map((row): Holding | null => {
+          const symbol = String(row.symbol ?? '').trim();
+          const name = String(row.name ?? '').trim();
+          const sinaSymbol = String(row.sinaSymbol ?? '').trim();
+          const weight = Number(row.weight);
+          const currency = row.currency ?? 'CNY';
+          if (!symbol || !name || !Number.isFinite(weight) || weight <= 0) return null;
+          return {
+            symbol,
+            name,
+            sinaSymbol,
+            weight,
+            currency,
+            market: row.market,
+            reportDate: row.reportDate,
+            quoteSupported: Boolean(sinaSymbol),
+          } satisfies Holding;
+        })
+        .filter((item): item is Holding => item != null);
+      if (holdings.length > 0) results.set(code, holdings);
+    }
+  } catch { /* skip */ }
+
   return results;
 }
 
