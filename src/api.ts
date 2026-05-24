@@ -68,43 +68,6 @@ function localDatetimeToBeijing(date: string, time: string, utcOffsetHours: numb
   return beijingDatetimeFromTimestamp(utcTime);
 }
 
-function usDstStartDay(year: number): number {
-  const firstDay = new Date(Date.UTC(year, 2, 1)).getUTCDay();
-  return 1 + ((7 - firstDay) % 7) + 7;
-}
-
-function usDstEndDay(year: number): number {
-  const firstDay = new Date(Date.UTC(year, 10, 1)).getUTCDay();
-  return 1 + ((7 - firstDay) % 7);
-}
-
-function isUsEasternDst(year: number, month: number, day: number): boolean {
-  if (month > 3 && month < 11) return true;
-  if (month < 3 || month > 11) return false;
-  if (month === 3) return day >= usDstStartDay(year);
-  return day < usDstEndDay(year);
-}
-
-function usIntradayToBeijing(datetime: string): string {
-  const match = datetime.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (!match) return datetime;
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const hour = Number(match[4]);
-  const minute = Number(match[5]);
-  const second = Number(match[6] ?? 0);
-
-  // Sina US minute data uses Eastern Time during the regular session. If a
-  // normalized backend row is already Beijing time, keep it unchanged.
-  if (hour < 9 || hour > 16) return datetime;
-
-  const easternOffset = isUsEasternDst(year, month, day) ? 4 : 5;
-  const utcTime = Date.UTC(year, month - 1, day, hour + easternOffset, minute, second);
-  return beijingDatetimeFromTimestamp(utcTime);
-}
-
 // Reject dates that differ from Beijing date by more than this many days (stale Sina data)
 function isStale(dateStr: string, maxDiffDays = 2): boolean {
   const datePart = dateStr.slice(0, 10);
@@ -472,13 +435,6 @@ interface NormalizedMarketPointRow {
   c?: string | number;
 }
 
-type MarketHistorySource = MarketHistoryConfig['source'];
-
-const US_INTRADAY_FUTURES_FALLBACK: Record<string, string> = {
-  '.INX': 'ES',
-  '.DJI': 'YM',
-};
-
 function parseSinaJsonpArray<T>(text: string): T[] {
   const match = text.match(/=\((.*)\);?\s*$/s);
   if (!match) return [];
@@ -642,114 +598,6 @@ function parseClose(value: unknown): number {
   return typeof value === 'number' ? value : parseFloat(String(value ?? ''));
 }
 
-function latestIntradaySession(points: MarketHistoryPoint[]): MarketHistoryPoint[] {
-  const valid = points
-    .filter((point) => (
-      /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?$/.test(point.date) &&
-      Number.isFinite(point.close) &&
-      point.close > 0
-    ))
-    .sort((a, b) => a.date.localeCompare(b.date));
-  if (valid.length === 0) return [];
-
-  const latestDate = valid[valid.length - 1].date.slice(0, 10);
-  if (isStale(latestDate, 5)) return [];
-  return [...new Map(
-    valid
-      .filter((point) => point.date.slice(0, 10) === latestDate)
-      .map((point) => [point.date, point]),
-  ).values()];
-}
-
-function previousDate(date: string): string {
-  const d = new Date(`${date}T12:00:00+08:00`);
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
-}
-
-function latestUsIntradaySession(points: MarketHistoryPoint[]): MarketHistoryPoint[] {
-  const valid = points
-    .filter((point) => (
-      /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?$/.test(point.date) &&
-      Number.isFinite(point.close) &&
-      point.close > 0
-    ))
-    .sort((a, b) => a.date.localeCompare(b.date));
-  if (valid.length === 0) return [];
-
-  const latest = valid[valid.length - 1].date;
-  const latestDate = latest.slice(0, 10);
-  if (isStale(latestDate, 5)) return [];
-  const latestHour = Number(latest.slice(11, 13));
-  const startDate = latestHour <= 5 ? previousDate(latestDate) : latestDate;
-  const start = `${startDate} 20:00:00`;
-  const endDate = latestHour <= 5 ? latestDate : startDate;
-  const end = latestHour <= 5 ? `${endDate} 06:00:00` : `${endDate} 23:59:59`;
-
-  return [...new Map(
-    valid
-      .filter((point) => point.date >= start && point.date <= end)
-      .map((point) => [point.date, point]),
-  ).values()];
-}
-
-function intradaySource(
-  config: MarketHistoryConfig,
-  currentSymbol?: string,
-): { source: MarketHistorySource; symbol: string } {
-  if (currentSymbol?.startsWith('hf_')) {
-    return { source: 'sina-futures', symbol: currentSymbol.slice(3) };
-  }
-  return config;
-}
-
-async function fetchResolvedMarketIntraday(
-  resolved: { source: MarketHistorySource; symbol: string },
-): Promise<MarketHistoryPoint[]> {
-  const params = new URLSearchParams({
-    source: resolved.source,
-    symbol: resolved.symbol,
-  });
-  const res = await fetch(apiUrl(`/api/marketintraday?${params.toString()}`));
-  if (!res.ok) return [];
-  const text = await res.text();
-  let points: MarketHistoryPoint[] = [];
-  const normalizedRows = parseJsonArray<NormalizedMarketPointRow>(text);
-
-  if (normalizedRows.length > 0) {
-    points = normalizedRows.map((row) => ({
-      date: resolved.source === 'sina-us'
-        ? usIntradayToBeijing(row.date ?? row.day ?? row.d ?? '')
-        : row.date ?? row.day ?? row.d ?? '',
-      close: parseClose(row.close ?? row.c),
-    }));
-  } else if (resolved.source === 'sina-cn') {
-    const rows = JSON.parse(text) as SinaCnKlineRow[];
-    points = (Array.isArray(rows) ? rows : []).map((row) => ({
-      date: row.day ?? '',
-      close: parseClose(row.close),
-    }));
-  } else if (resolved.source === 'sina-us') {
-    const rows = parseSinaJsonpArray<SinaUsKlineRow>(text);
-    points = rows.map((row) => ({
-      date: usIntradayToBeijing(row.d ?? ''),
-      close: parseClose(row.c),
-    }));
-  } else if (resolved.source === 'sina-futures') {
-    const json = JSON.parse(text);
-    const rows = Array.isArray(json?.minLine_1d) ? json.minLine_1d as unknown[][] : [];
-    points = rows.map((row) => {
-      const isHeadRow = row.length >= 10;
-      return {
-        date: String(isHeadRow ? row[9] : row[5] ?? ''),
-        close: parseClose(isHeadRow ? row[5] : row[1]),
-      };
-    });
-  }
-
-  return resolved.source === 'sina-us' ? latestUsIntradaySession(points) : latestIntradaySession(points);
-}
-
 export async function fetchMarketHistory(config: MarketHistoryConfig): Promise<MarketHistoryPoint[]> {
   try {
     const params = new URLSearchParams({
@@ -822,28 +670,6 @@ export async function fetchMarketReturnSummaries(
   } catch { /* skip */ }
 
   return results;
-}
-
-export async function fetchMarketIntraday(
-  config: MarketHistoryConfig,
-  currentSymbol?: string,
-): Promise<MarketHistoryPoint[]> {
-  const resolved = intradaySource(config, currentSymbol);
-  try {
-    const primary = await fetchResolvedMarketIntraday(resolved);
-    if (primary.length >= 2) return primary;
-
-    const fallbackSymbol = resolved.source === 'sina-us'
-      ? US_INTRADAY_FUTURES_FALLBACK[resolved.symbol]
-      : undefined;
-    if (fallbackSymbol) {
-      return fetchResolvedMarketIntraday({ source: 'sina-futures', symbol: fallbackSymbol });
-    }
-
-    return primary;
-  } catch {
-    return [];
-  }
 }
 
 export async function fetchFundNavs(codes: string[]): Promise<Map<string, FundNavData>> {

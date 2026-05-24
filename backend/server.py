@@ -97,14 +97,6 @@ def ensure_storage() -> None:
               PRIMARY KEY (source, symbol, date)
             );
 
-            CREATE TABLE IF NOT EXISTS market_intraday (
-              source TEXT NOT NULL,
-              symbol TEXT NOT NULL,
-              datetime TEXT NOT NULL,
-              close REAL NOT NULL,
-              fetched_at INTEGER NOT NULL,
-              PRIMARY KEY (source, symbol, datetime)
-            );
             """
         )
 
@@ -214,23 +206,6 @@ def parse_sina_array_jsonp(text: str) -> list[dict[str, Any]]:
         return parsed if isinstance(parsed, list) else []
     except json.JSONDecodeError:
         return []
-
-
-def us_intraday_to_beijing(value: str) -> str:
-    match = re.match(r"^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2}(?::\d{2})?)$", value)
-    if not match:
-        return value
-    try:
-        local_dt = datetime.fromisoformat(f"{match.group(1)} {match.group(2)}")
-    except ValueError:
-        return value
-
-    if local_dt.hour < 9 or local_dt.hour > 16:
-        return value
-
-    eastern_dt = local_dt.replace(tzinfo=ZoneInfo("America/New_York"))
-    beijing_dt = eastern_dt.astimezone(ZoneInfo("Asia/Shanghai"))
-    return beijing_dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def store_fund_history(code: str, rows: list[dict[str, Any]]) -> None:
@@ -704,57 +679,6 @@ def store_market_history(source: str, symbol: str, text: str) -> int:
     return len(points)
 
 
-def store_market_intraday(source: str, symbol: str, text: str) -> None:
-    raw_points: list[tuple[str, float]] = []
-    if source == "sina-cn":
-        parsed = json.loads(text)
-        rows = parsed if isinstance(parsed, list) else []
-        for row in rows:
-            try:
-                raw_points.append((str(row.get("day") or ""), float(row.get("close") or 0)))
-            except (TypeError, ValueError):
-                continue
-    elif source == "sina-us":
-        for row in parse_sina_array_jsonp(text):
-            try:
-                raw_points.append((us_intraday_to_beijing(str(row.get("d") or "")), float(row.get("c") or 0)))
-            except (TypeError, ValueError):
-                continue
-    elif source == "sina-futures":
-        parsed = json.loads(text)
-        rows = parsed.get("minLine_1d") if isinstance(parsed, dict) else []
-        if isinstance(rows, list):
-            for row in rows:
-                if not isinstance(row, list):
-                    continue
-                try:
-                    is_head = len(row) >= 10
-                    dt = str(row[9] if is_head else row[5])
-                    close = float(row[5] if is_head else row[1])
-                    raw_points.append((dt, close))
-                except (IndexError, TypeError, ValueError):
-                    continue
-
-    points = []
-    fetched_at = now_ms()
-    for dt, close in raw_points:
-        if re.match(r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?$", dt) and close > 0:
-            points.append((source, symbol, dt, close, fetched_at))
-    if not points:
-        return
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.executemany(
-            """
-            INSERT INTO market_intraday(source, symbol, datetime, close, fetched_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(source, symbol, datetime) DO UPDATE SET
-              close = excluded.close,
-              fetched_at = excluded.fetched_at
-            """,
-            points,
-        )
-
-
 def read_fund_history_from_db(code: str, page_size: int, page_index: int) -> list[dict[str, str]]:
     offset = (page_index - 1) * page_size
     with sqlite3.connect(DB_PATH) as conn:
@@ -966,68 +890,6 @@ def read_market_ytd_return_from_db(source: str, symbol: str) -> dict[str, Any] |
         "startClose": round(start_close, 4),
         "endClose": round(latest_close, 4),
     }
-
-
-def read_market_intraday_from_db(source: str, symbol: str) -> list[dict[str, float | str]]:
-    with sqlite3.connect(DB_PATH) as conn:
-        latest = conn.execute(
-            """
-            SELECT datetime
-            FROM market_intraday
-            WHERE source = ? AND symbol = ?
-            ORDER BY datetime DESC
-            LIMIT 1
-            """,
-            (source, symbol),
-        ).fetchone()
-        if not latest:
-            return []
-        latest_dt = str(latest[0])
-        try:
-            latest_date = datetime.fromisoformat(latest_dt[:10]).date()
-            today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
-            if abs((today - latest_date).days) > 5:
-                return []
-        except ValueError:
-            return []
-        if source == "sina-us":
-            try:
-                parsed_latest = datetime.fromisoformat(latest_dt)
-            except ValueError:
-                parsed_latest = None
-            if parsed_latest and parsed_latest.hour <= 5:
-                start_day = (parsed_latest.date() - timedelta(days=1)).isoformat()
-                end_day = parsed_latest.date().isoformat()
-                rows = conn.execute(
-                    """
-                    SELECT datetime, close
-                    FROM market_intraday
-                    WHERE source = ? AND symbol = ? AND datetime >= ? AND datetime <= ?
-                    ORDER BY datetime ASC
-                    """,
-                    (source, symbol, f"{start_day} 20:00:00", f"{end_day} 06:00:00"),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    """
-                    SELECT datetime, close
-                    FROM market_intraday
-                    WHERE source = ? AND symbol = ? AND substr(datetime, 1, 10) = ?
-                    ORDER BY datetime ASC
-                    """,
-                    (source, symbol, latest_dt[:10]),
-                ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT datetime, close
-                FROM market_intraday
-                WHERE source = ? AND symbol = ? AND substr(datetime, 1, 10) = ?
-                ORDER BY datetime ASC
-                """,
-                (source, symbol, latest_dt[:10]),
-            ).fetchall()
-    return [{"date": str(dt), "close": float(close)} for dt, close in rows]
 
 
 def clamp_int(raw: str, low: int, high: int, default: int) -> int:
@@ -1337,56 +1199,6 @@ def market_returns() -> Response:
         if summary:
             results[item] = summary
     return json_response(results)
-
-
-def market_intraday_url(source: str, symbol: str) -> tuple[str, str]:
-    if source == "sina-cn":
-        return (
-            f"https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketData.getKLineData?symbol={quote(symbol)}&scale=1&ma=no&datalen=300",
-            "https://finance.sina.com.cn/",
-        )
-    if source == "sina-us":
-        return (
-            f"https://stock.finance.sina.com.cn/usstock/api/jsonp.php/var%20_=/US_MinKService.getMinK?symbol={quote(symbol)}&type=1",
-            "https://finance.sina.com.cn/stock/usstock/",
-        )
-    if source == "sina-futures":
-        return (
-            f"https://stock2.finance.sina.com.cn/futures/api/json.php/GlobalFuturesService.getGlobalFuturesMinLine?symbol={quote(symbol)}",
-            "https://finance.sina.com.cn/futures/",
-        )
-    raise ValueError("Unsupported source")
-
-
-@app.get("/api/marketintraday")
-def market_intraday() -> Response:
-    source = require_arg("source")
-    symbol = require_arg("symbol")
-    if not should_refresh():
-        rows = read_market_intraday_from_db(source, symbol)
-        if rows:
-            return json_response(rows)
-
-    url, referer = market_intraday_url(source, symbol)
-    status, content_type, body = fetch_upstream(
-        url,
-        referer=referer,
-        content_type="application/json; charset=utf-8",
-        cache_key=f"marketintraday:{source}:{symbol}",
-        kind="marketintraday",
-        ttl_seconds=30,
-    )
-    if status < 400:
-        try:
-            store_market_intraday(source, symbol, decode_body(body))
-        except Exception:
-            pass
-        rows = read_market_intraday_from_db(source, symbol)
-        if rows:
-            return json_response(rows)
-        if source == "sina-us":
-            return json_response([])
-    return bytes_response(body, status=status, content_type=content_type)
 
 
 def main() -> None:

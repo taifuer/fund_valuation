@@ -40,7 +40,6 @@ class ServerDataRefreshTests(unittest.TestCase):
                 DELETE FROM fund_holdings;
                 DELETE FROM fund_purchase_status;
                 DELETE FROM market_history;
-                DELETE FROM market_intraday;
                 """
             )
 
