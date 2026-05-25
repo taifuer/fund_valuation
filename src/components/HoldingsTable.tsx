@@ -1,5 +1,5 @@
-import type { Holding, QuoteData } from '../types';
-import { getMarketState } from '../marketHours';
+import type { Holding, MarketStateData, QuoteData } from '../types';
+import { getMarketState, type MarketState } from '../marketHours';
 import styles from './HoldingsTable.module.css';
 
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
   totalConfiguredWeight: number;
   missingQuoteCount: number;
   currencyChanges: Record<string, number>;
+  marketStates?: Map<string, MarketStateData>;
 }
 
 function formatQuoteDate(date: string): string {
@@ -17,6 +18,18 @@ function formatQuoteDate(date: string): string {
   if (datetimeMatch) return `${datetimeMatch[1]}/${datetimeMatch[2]} ${datetimeMatch[3]}:${datetimeMatch[4]}`;
   const match = date.match(/^\d{4}-(\d{2})-(\d{2})$/);
   return match ? `${match[1]}/${match[2]}` : date || '-';
+}
+
+type DisplayState = 'pre' | 'post' | 'stale' | MarketState;
+
+function marketStateLabel(state: DisplayState): string {
+  if (state === 'live') return 'LIVE';
+  if (state === 'pre') return '盘前';
+  if (state === 'post') return '盘后';
+  if (state === 'stale') return '延迟';
+  if (state === 'holiday') return '假期休市';
+  if (state === 'weekend') return '周末休市';
+  return '已收盘';
 }
 
 export default function HoldingsTable({
@@ -27,6 +40,7 @@ export default function HoldingsTable({
   totalConfiguredWeight,
   missingQuoteCount,
   currencyChanges,
+  marketStates = new Map(),
 }: Props) {
   const quoteMap = new Map(quotes.map((q) => [q.symbol, q]));
   const coveragePct = totalConfiguredWeight > 0 ? (quoteCoverage / totalConfiguredWeight) * 100 : 0;
@@ -67,7 +81,7 @@ export default function HoldingsTable({
               ? ((1 + q.changePercent / 100) * (1 + fxChange / 100) - 1) * 100
               : 0;
             const contrib = q ? rmbChange * h.weight : 0;
-            const state = getMarketState(h.sinaSymbol);
+            const state = marketStates.get(h.sinaSymbol)?.state ?? getMarketState(h.sinaSymbol);
             const fresh = q ? Date.now() - q.fetchedAt < 90_000 : false;
             const displayState = q?.session === 'pre' && fresh
               ? 'pre'
@@ -77,7 +91,7 @@ export default function HoldingsTable({
                   ? 'live'
                   : state === 'live'
                     ? 'stale'
-                    : 'closed';
+                    : state;
             return (
               <tr key={h.symbol}>
                 <td className={styles.stockCell}>
@@ -113,15 +127,7 @@ export default function HoldingsTable({
                           : styles.stateClosed
                     }`}
                   >
-                    {displayState === 'live'
-                      ? 'LIVE'
-                      : displayState === 'pre'
-                        ? '盘前'
-                        : displayState === 'post'
-                          ? '盘后'
-                          : displayState === 'stale'
-                            ? '延迟'
-                            : '已收盘'}
+                    {marketStateLabel(displayState)}
                   </span>
                 </td>
               </tr>

@@ -40,6 +40,7 @@ class ServerDataRefreshTests(unittest.TestCase):
                 DELETE FROM fund_holdings;
                 DELETE FROM fund_purchase_status;
                 DELETE FROM market_history;
+                DELETE FROM market_calendar;
                 """
             )
 
@@ -103,6 +104,26 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertIn("charset=utf-8", response.content_type)
         self.assertIn("易方达亚洲精选股票(QDII)", response.get_data(as_text=True))
         self.assertNotIn("�", response.get_data(as_text=True))
+
+    def test_market_states_marks_known_holidays(self) -> None:
+        response = server.app.test_client().get(
+            "/api/marketstates?symbols=hkHSI,b_KOSPI,s_sh000001&now=2026-05-25T13:00:00%2B08:00"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["hkHSI"]["state"], "holiday")
+        self.assertEqual(payload["b_KOSPI"]["state"], "holiday")
+        self.assertEqual(payload["s_sh000001"]["state"], "live")
+
+    def test_market_states_marks_weekend_separately(self) -> None:
+        response = server.app.test_client().get(
+            "/api/marketstates?symbols=s_sh000001&now=2026-05-23T10:00:00%2B08:00"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["s_sh000001"]["state"], "weekend")
 
     def test_fund_profiles_parses_basic_profile(self) -> None:
         upstream_body = """

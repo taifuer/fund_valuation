@@ -95,7 +95,7 @@ export default function App() {
       .map(toCustomFund);
     return [...defaultFunds, ...customFunds];
   }, [managedFunds]);
-  const { quotes, fundEstimates, fxRates, loading, error } = useQuotes(funds);
+  const { quotes, fundEstimates, fxRates, marketStates, loading, error } = useQuotes(funds);
   const [sortMode, setSortMode] = useState<SortMode>('estimate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [fundCollapsed, setFundCollapsed] = useState(() => readCollapsedFlag(FUND_SECTION_COLLAPSED_KEY));
@@ -242,7 +242,7 @@ export default function App() {
     <div className={styles.app}>
       <Header fxRates={fxRates} />
       {error && <div className={styles.error}>{error}</div>}
-      <IndexCards quotes={quotes} loading={loading} />
+      <IndexCards quotes={quotes} marketStates={marketStates} loading={loading} />
       <div className={styles.fundSection}>
         <div className={styles.sectionHeader}>
           <button
@@ -329,6 +329,7 @@ export default function App() {
               rank={est.rank}
               rankLabel={sortDirection === 'desc' ? `TOP ${est.rank}` : `LOW ${est.rank}`}
               loading={loading}
+              marketStates={marketStates}
               onRemove={removeFund}
             />
           );

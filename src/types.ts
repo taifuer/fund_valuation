@@ -104,6 +104,16 @@ export interface MarketReturnSummary {
   endClose: number;
 }
 
+export type MarketState = 'live' | 'closed' | 'holiday' | 'weekend';
+
+export interface MarketStateData {
+  symbol: string;
+  market: string;
+  date?: string;
+  state: MarketState;
+  source: string;
+}
+
 export interface MarketHistoryConfig {
   source: 'sina-cn' | 'sina-us' | 'sina-futures';
   symbol: string;

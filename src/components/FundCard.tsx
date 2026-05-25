@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Fund, FundRangeReturn, FundReturnRangeKey, FundReturnSummary, QuoteData } from '../types';
+import type { Fund, FundRangeReturn, FundReturnRangeKey, FundReturnSummary, MarketStateData, QuoteData } from '../types';
 import type { FundEstimate } from '../hooks/useQuotes';
 import HoldingsTable from './HoldingsTable';
 import FundNavTable from './FundNavTable';
@@ -12,6 +12,7 @@ interface Props {
   rank: number;
   rankLabel?: string;
   loading: boolean;
+  marketStates?: Map<string, MarketStateData>;
   onRemove?: (fund: Fund) => void;
 }
 
@@ -127,7 +128,7 @@ function FundReturnBar({
   );
 }
 
-export default function FundCard({ fund, estimate, rank, rankLabel, loading, onRemove }: Props) {
+export default function FundCard({ fund, estimate, rank, rankLabel, loading, marketStates = new Map(), onRemove }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'holdings' | 'nav' | 'trend'>('holdings');
   const badge = RANK_BADGE[rank];
@@ -325,6 +326,7 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading, onR
               totalConfiguredWeight={totalConfiguredWeight}
               missingQuoteCount={missingQuoteCount}
               currencyChanges={currencyChanges}
+              marketStates={marketStates}
             />
           )}
           {activeTab === 'nav' && (

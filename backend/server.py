@@ -97,8 +97,326 @@ def ensure_storage() -> None:
               PRIMARY KEY (source, symbol, date)
             );
 
+            CREATE TABLE IF NOT EXISTS market_calendar (
+              market TEXT NOT NULL,
+              date TEXT NOT NULL,
+              status TEXT NOT NULL,
+              sessions TEXT NOT NULL,
+              timezone TEXT NOT NULL,
+              source TEXT NOT NULL,
+              fetched_at INTEGER NOT NULL,
+              PRIMARY KEY (market, date)
+            );
+
             """
         )
+    ensure_market_calendar_seeded()
+
+
+HOLIDAYS_2026 = {
+    "cn": {
+        "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20",
+        "2026-04-06", "2026-05-01", "2026-05-04", "2026-05-05", "2026-06-19",
+        "2026-09-25", "2026-10-01", "2026-10-02", "2026-10-05", "2026-10-06", "2026-10-07",
+    },
+    "hk": {
+        "2026-01-01", "2026-02-17", "2026-02-18", "2026-02-19", "2026-04-03", "2026-04-06",
+        "2026-04-07", "2026-05-01", "2026-05-25", "2026-07-01", "2026-09-26",
+        "2026-10-01", "2026-10-19", "2026-12-25",
+    },
+    "us": {
+        "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19",
+        "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
+    },
+    "jp": {
+        "2026-01-01", "2026-01-02", "2026-01-12", "2026-02-11", "2026-02-23", "2026-03-20",
+        "2026-04-29", "2026-05-04", "2026-05-05", "2026-05-06", "2026-07-20", "2026-08-11",
+        "2026-09-21", "2026-09-22", "2026-09-23", "2026-10-12", "2026-11-03", "2026-11-23",
+        "2026-12-31",
+    },
+    "kr": {
+        "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-03-02", "2026-05-01",
+        "2026-05-05", "2026-05-25", "2026-08-17", "2026-09-24", "2026-09-25", "2026-09-26",
+        "2026-10-05", "2026-10-09", "2026-12-25", "2026-12-31",
+    },
+    "tw": {
+        "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20",
+        "2026-02-27", "2026-04-03", "2026-04-06", "2026-05-01", "2026-06-19",
+        "2026-09-25", "2026-10-09",
+    },
+}
+
+MARKET_CALENDARS: dict[str, dict[str, Any]] = {
+    "cn": {
+        "timezone": "Asia/Shanghai",
+        "sessions": [("09:30", "11:30"), ("13:00", "15:00")],
+        "holidays": HOLIDAYS_2026["cn"],
+        "source": "SSE/SZSE holiday calendar",
+    },
+    "hk": {
+        "timezone": "Asia/Hong_Kong",
+        "sessions": [("09:30", "12:00"), ("13:00", "16:10")],
+        "holidays": HOLIDAYS_2026["hk"],
+        "half_days": {
+            "2026-12-24": [("09:30", "12:10")],
+            "2026-12-31": [("09:30", "12:10")],
+        },
+        "source": "HKEX calendar",
+    },
+    "us": {
+        "timezone": "America/New_York",
+        "sessions": [("09:30", "16:00")],
+        "holidays": HOLIDAYS_2026["us"],
+        "half_days": {
+            "2026-11-27": [("09:30", "13:00")],
+            "2026-12-24": [("09:30", "13:00")],
+        },
+        "source": "NYSE/Nasdaq holiday calendar",
+    },
+    "jp": {
+        "timezone": "Asia/Tokyo",
+        "sessions": [("09:00", "11:30"), ("12:30", "15:30")],
+        "holidays": HOLIDAYS_2026["jp"],
+        "source": "JPX market holidays",
+    },
+    "kr": {
+        "timezone": "Asia/Seoul",
+        "sessions": [("09:00", "15:30")],
+        "holidays": HOLIDAYS_2026["kr"],
+        "source": "KRX trading days and holidays",
+    },
+    "tw": {
+        "timezone": "Asia/Taipei",
+        "sessions": [("09:00", "13:30")],
+        "holidays": HOLIDAYS_2026["tw"],
+        "source": "TWSE/TAIFEX trading calendar",
+    },
+    "hk_futures": {
+        "timezone": "Asia/Hong_Kong",
+        "sessions": [("09:15", "12:00"), ("13:00", "16:30"), ("17:15", "03:00")],
+        "holidays": HOLIDAYS_2026["hk"],
+        "source": "HKEX derivatives calendar",
+    },
+    "jp_futures": {
+        "timezone": "Asia/Tokyo",
+        "sessions": [("07:30", "14:25"), ("14:55", "05:15")],
+        "holidays": HOLIDAYS_2026["jp"],
+        "source": "JPX/OSE derivatives calendar",
+    },
+}
+
+
+def is_weekend(dt: datetime) -> bool:
+    return dt.weekday() >= 5
+
+
+def ensure_market_calendar_seeded(year: int = 2026) -> None:
+    start = datetime(year, 1, 1)
+    end = datetime(year, 12, 31)
+    fetched_at = now_ms()
+    rows: list[tuple[str, str, str, str, str, str, int]] = []
+    with sqlite3.connect(DB_PATH) as conn:
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM market_calendar WHERE date BETWEEN ? AND ?",
+            (f"{year}-01-01", f"{year}-12-31"),
+        ).fetchone()[0]
+        if int(existing) >= len(MARKET_CALENDARS) * 360:
+            return
+
+        for market, calendar in MARKET_CALENDARS.items():
+            current = start
+            while current <= end:
+                day = current.strftime("%Y-%m-%d")
+                sessions = calendar.get("half_days", {}).get(day) or calendar["sessions"]
+                if is_weekend(current):
+                    status = "weekend"
+                elif day in calendar["holidays"]:
+                    status = "holiday"
+                elif calendar.get("half_days", {}).get(day):
+                    status = "half_day"
+                else:
+                    status = "open"
+                rows.append((
+                    market,
+                    day,
+                    status,
+                    json.dumps(sessions, ensure_ascii=False),
+                    str(calendar["timezone"]),
+                    str(calendar["source"]),
+                    fetched_at,
+                ))
+                current += timedelta(days=1)
+
+        conn.executemany(
+            """
+            INSERT INTO market_calendar(market, date, status, sessions, timezone, source, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(market, date) DO UPDATE SET
+              status = excluded.status,
+              sessions = excluded.sessions,
+              timezone = excluded.timezone,
+              source = excluded.source,
+              fetched_at = excluded.fetched_at
+            """,
+            rows,
+        )
+
+
+def market_calendar_row(market: str, day: str) -> dict[str, Any] | None:
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            """
+            SELECT market, date, status, sessions, timezone, source, fetched_at
+            FROM market_calendar
+            WHERE market = ? AND date = ?
+            """,
+            (market, day),
+        ).fetchone()
+    if not row:
+        return None
+    sessions = json.loads(str(row[3]))
+    return {
+        "market": str(row[0]),
+        "date": str(row[1]),
+        "status": str(row[2]),
+        "sessions": sessions if isinstance(sessions, list) else [],
+        "timezone": str(row[4]),
+        "source": str(row[5]),
+        "fetchedAt": int(row[6]),
+    }
+
+
+def parse_hhmm(value: str) -> int:
+    hour, minute = value.split(":", 1)
+    return int(hour) * 60 + int(minute)
+
+
+def in_sessions(sessions: list[list[str]] | list[tuple[str, str]], minutes: int) -> bool:
+    for start_raw, end_raw in sessions:
+        start = parse_hhmm(str(start_raw))
+        end = parse_hhmm(str(end_raw))
+        if start <= minutes < end:
+            return True
+    return False
+
+
+def in_futures_sessions(market: str, local: datetime) -> bool:
+    row = market_calendar_row(market, local.strftime("%Y-%m-%d"))
+    if not row:
+        return False
+    minutes = local.hour * 60 + local.minute
+    for start_raw, end_raw in row["sessions"]:
+        start = parse_hhmm(str(start_raw))
+        end = parse_hhmm(str(end_raw))
+        if start < end:
+            if row["status"] == "open" and start <= minutes < end:
+                return True
+            continue
+        if minutes >= start and row["status"] == "open":
+            return True
+        if minutes < end:
+            prev_day = (local - timedelta(days=1)).strftime("%Y-%m-%d")
+            prev_row = market_calendar_row(market, prev_day)
+            if prev_row and prev_row["status"] == "open":
+                return True
+    return False
+
+
+def market_key_for_symbol(symbol: str) -> str | None:
+    if symbol in {"hf_NQ", "hf_ES", "hf_YM", "hf_GC", "hf_SI", "hf_CL"}:
+        return "us_futures"
+    if symbol == "hf_HSI":
+        return "hk_futures"
+    if symbol == "hf_NK":
+        return "jp_futures"
+    if symbol.startswith("gb_"):
+        return "us"
+    if symbol.startswith("hk"):
+        return "hk"
+    if symbol.startswith("s_") or re.match(r"^(sz|sh)\d", symbol):
+        return "cn"
+    if symbol == "int_nikkei":
+        return "jp"
+    if symbol == "b_KOSPI":
+        return "kr"
+    if symbol == "b_TWSE":
+        return "tw"
+    if symbol == "fx_sbtcusd":
+        return "crypto"
+    return None
+
+
+def parse_market_now(raw: str | None) -> datetime:
+    if not raw:
+        return datetime.now(ZoneInfo("Asia/Shanghai"))
+    normalized = raw.strip()
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+    return parsed
+
+
+def us_futures_state(now: datetime) -> str:
+    local = now.astimezone(ZoneInfo("America/New_York"))
+    minutes = local.hour * 60 + local.minute
+    maintenance_start = 17 * 60
+    maintenance_end = 18 * 60
+    if local.weekday() == 5:
+        return "weekend"
+    if local.weekday() == 6:
+        return "live" if minutes >= maintenance_end else "closed"
+    if local.weekday() == 4:
+        return "live" if minutes < maintenance_start else "closed"
+    if maintenance_start <= minutes < maintenance_end:
+        return "closed"
+    return "live"
+
+
+def market_state_for_symbol(symbol: str, now: datetime) -> dict[str, Any]:
+    market = market_key_for_symbol(symbol)
+    if not market:
+        return {"symbol": symbol, "market": "", "state": "closed", "source": "unknown"}
+    if market == "crypto":
+        return {"symbol": symbol, "market": market, "state": "live", "source": "continuous crypto market"}
+    if market == "us_futures":
+        return {"symbol": symbol, "market": market, "state": us_futures_state(now), "source": "CME Globex session rule"}
+
+    calendar = MARKET_CALENDARS[market]
+    local = now.astimezone(ZoneInfo(str(calendar["timezone"])))
+    day = local.strftime("%Y-%m-%d")
+
+    if market in {"hk_futures", "jp_futures"}:
+        if in_futures_sessions(market, local):
+            state = "live"
+        else:
+            row = market_calendar_row(market, day)
+            state = str(row["status"]) if row and row["status"] in {"holiday", "weekend"} else "closed"
+        row = market_calendar_row(market, day)
+        return {
+            "symbol": symbol,
+            "market": market,
+            "date": day,
+            "state": state,
+            "source": row["source"] if row else str(calendar["source"]),
+        }
+
+    row = market_calendar_row(market, day)
+    if not row:
+        return {"symbol": symbol, "market": market, "date": day, "state": "closed", "source": str(calendar["source"])}
+    if row["status"] in {"holiday", "weekend"}:
+        state = row["status"]
+    else:
+        minutes = local.hour * 60 + local.minute
+        state = "live" if in_sessions(row["sessions"], minutes) else "closed"
+    return {
+        "symbol": symbol,
+        "market": market,
+        "date": day,
+        "state": state,
+        "source": row["source"],
+    }
 
 
 def cache_get(cache_key: str, max_age_seconds: int) -> tuple[int, str, bytes] | None:
@@ -966,6 +1284,14 @@ def sina() -> Response:
     )
     del content_type
     return text_response(decode_body(body), status=status)
+
+
+@app.get("/api/marketstates")
+def market_states() -> Response:
+    ensure_market_calendar_seeded()
+    symbols = [symbol for symbol in require_arg("symbols").split(",") if symbol]
+    now = parse_market_now(request.args.get("now"))
+    return json_response({symbol: market_state_for_symbol(symbol, now) for symbol in symbols})
 
 
 @app.get("/api/fundnav")

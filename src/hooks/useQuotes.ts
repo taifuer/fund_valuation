@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { QuoteData, FundNavData, FxRateData, Fund, FundPurchaseData, FundReturnSummary } from '../types';
+import type { QuoteData, FundNavData, FxRateData, Fund, FundPurchaseData, FundReturnSummary, MarketStateData } from '../types';
 import {
   fetchAllQuotes,
   fetchFundNavs,
@@ -10,6 +10,7 @@ import {
   fetchFundPurchaseStatuses,
   fetchFundReturnSummaries,
   fetchFxRates,
+  fetchMarketStates,
 } from '../api';
 import { INDICES, MARKET_ASSETS, ETF_ASSETS, FUNDS } from '../constants';
 import { getMarketState } from '../marketHours';
@@ -111,6 +112,7 @@ export function useQuotes(funds: Fund[] = FUNDS) {
   const [quotes, setQuotes] = useState<Map<string, QuoteData>>(new Map());
   const [fundEstimates, setFundEstimates] = useState<FundEstimate[]>([]);
   const [fxRates, setFxRates] = useState<Map<string, FxRateData>>(new Map());
+  const [marketStates, setMarketStates] = useState<Map<string, MarketStateData>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
@@ -155,13 +157,14 @@ export function useQuotes(funds: Fund[] = FUNDS) {
         const fundCodes = effectiveFunds.map((f) => f.code);
         const holdingCurrencies = effectiveFunds.flatMap((f) => f.holdings.map((h) => h.currency));
         const currencies = [...new Set([...DISPLAY_FX_CURRENCIES, ...holdingCurrencies])];
-        const [quotesData, navsData, historyData, purchaseStatuses, returnSummaries, fxRates] = await Promise.all([
+        const [quotesData, navsData, historyData, purchaseStatuses, returnSummaries, fxRates, marketStatesData] = await Promise.all([
           fetchAllQuotes(allSinaSymbols),
           fetchFundNavs(fundCodes),
           fetchFundHistory(fundCodes),
           fetchFundPurchaseStatuses(fundCodes),
           fetchFundReturnSummaries(fundCodes),
           fetchFxRates(currencies),
+          fetchMarketStates(allSinaSymbols),
         ]);
 
         if (!mountedRef.current) return;
@@ -203,6 +206,7 @@ export function useQuotes(funds: Fund[] = FUNDS) {
         if (!mountedRef.current) return;
         setQuotes(quotesData);
         setFxRates(fxRates);
+        setMarketStates(marketStatesData);
 
         const now = new Date();
         const fundFxRates = new Map(
@@ -245,7 +249,9 @@ export function useQuotes(funds: Fund[] = FUNDS) {
                   return sum + rmbChange * h.weight;
                 }, 0)
               : 0;
-          const hasLiveHolding = fund.holdings.some((h) => getMarketState(h.sinaSymbol, now) === 'live');
+          const hasLiveHolding = fund.holdings.some((h) => (
+            marketStatesData.get(h.sinaSymbol)?.state ?? getMarketState(h.sinaSymbol, now)
+          ) === 'live');
           const fresh = lastUpdated != null && now.getTime() - lastUpdated < 90_000;
           const effectiveSessions = holdingsQuotes.map((q) => fundQuoteSession(q, now));
           const estimateState: EstimateState = fresh && effectiveSessions.some((session) => session === 'pre')
@@ -309,5 +315,5 @@ export function useQuotes(funds: Fund[] = FUNDS) {
     };
   }, [funds]);
 
-  return { quotes, fundEstimates, fxRates, loading, error };
+  return { quotes, fundEstimates, fxRates, marketStates, loading, error };
 }

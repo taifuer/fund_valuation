@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { QuoteData, IndexConfig, MarketReturnSummary } from '../types';
+import type { QuoteData, IndexConfig, MarketReturnSummary, MarketStateData } from '../types';
 import { INDICES, MARKET_ASSETS, ETF_ASSETS } from '../constants';
 import { fetchMarketReturnSummaries } from '../api';
-import { getMarketState } from '../marketHours';
+import { getMarketState, type MarketState } from '../marketHours';
 import MarketHistoryModal from './MarketHistoryModal';
 import styles from './IndexCards.module.css';
 
 interface Props {
   quotes: Map<string, QuoteData>;
+  marketStates?: Map<string, MarketStateData>;
   loading: boolean;
 }
 
@@ -85,11 +86,27 @@ function closeTimeLabel(sinaSymbol: string, quoteTime: string): string | null {
   return `${dateMatch[2]}/${dateMatch[3]} ${time}`;
 }
 
+type DisplayState = 'futuresLive' | 'live' | 'stale' | MarketState;
+
+function isNonTradingState(state: DisplayState): boolean {
+  return state === 'closed' || state === 'holiday' || state === 'weekend';
+}
+
+function marketStateLabel(state: DisplayState): string {
+  if (state === 'futuresLive') return '期货 LIVE';
+  if (state === 'live') return 'LIVE';
+  if (state === 'stale') return '延迟';
+  if (state === 'holiday') return '假期休市';
+  if (state === 'weekend') return '周末休市';
+  return '已收盘';
+}
+
 function Card({
   idx,
   data,
   futuresData,
   ytdReturn,
+  marketStates,
   loading,
   onOpenHistory,
 }: {
@@ -97,6 +114,7 @@ function Card({
   data?: QuoteData;
   futuresData?: QuoteData;
   ytdReturn?: MarketReturnSummary;
+  marketStates: Map<string, MarketStateData>;
   loading: boolean;
   onOpenHistory?: (quote: QuoteData) => void;
 }) {
@@ -109,8 +127,10 @@ function Card({
       </div>
     );
   }
-  const state = getMarketState(idx.sinaSymbol);
-  const futuresState = idx.futures ? getMarketState(idx.futures.sinaSymbol) : 'closed';
+  const state = marketStates.get(idx.sinaSymbol)?.state ?? getMarketState(idx.sinaSymbol);
+  const futuresState = idx.futures
+    ? marketStates.get(idx.futures.sinaSymbol)?.state ?? getMarketState(idx.futures.sinaSymbol)
+    : 'closed';
   const futuresFresh = futuresData ? Date.now() - futuresData.fetchedAt < 90_000 : false;
   const useFutures = state !== 'live' && futuresData && futuresState === 'live' && futuresFresh;
   const displayData = useFutures ? futuresData : data;
@@ -122,8 +142,8 @@ function Card({
       ? 'live'
       : state === 'live'
         ? 'stale'
-        : 'closed';
-  const quoteTimeLabel = displayState === 'closed'
+        : state;
+  const quoteTimeLabel = isNonTradingState(displayState)
     ? closeTimeLabel(displayData.symbol, displayData.time) ?? formatQuoteDate(displayData.time)
     : formatQuoteDate(displayData.time);
 
@@ -145,13 +165,7 @@ function Card({
               : styles.stateClosed
         }`}
       >
-        {displayState === 'futuresLive'
-          ? '期货 LIVE'
-          : displayState === 'live'
-            ? 'LIVE'
-            : displayState === 'stale'
-              ? '延迟'
-              : '已收盘'}
+        {marketStateLabel(displayState)}
       </span>
       <div className={styles.label}>{useFutures ? idx.futures?.label : idx.name}</div>
       <div className={styles.price}>{displayData.price.toLocaleString()}</div>
@@ -170,7 +184,7 @@ function Card({
   );
 }
 
-export default function IndexCards({ quotes, loading }: Props) {
+export default function IndexCards({ quotes, marketStates = new Map(), loading }: Props) {
   const [selectedHistory, setSelectedHistory] = useState<SelectedHistory | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(readCollapsedGroups);
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
@@ -220,6 +234,7 @@ export default function IndexCards({ quotes, loading }: Props) {
                     data={quotes.get(sym)}
                     futuresData={idx.futures ? quotes.get(idx.futures.sinaSymbol) : undefined}
                     ytdReturn={idx.history ? marketReturns.get(`${idx.history.source}:${idx.history.symbol}`) : undefined}
+                    marketStates={marketStates}
                     loading={loading}
                     onOpenHistory={idx.history ? (quote) => setSelectedHistory({ item: idx, quote }) : undefined}
                   />

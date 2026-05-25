@@ -10,6 +10,7 @@ import type {
   MarketHistoryConfig,
   MarketHistoryPoint,
   MarketReturnSummary,
+  MarketStateData,
 } from './types';
 
 type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'crypto' | 'fund' | 'fx';
@@ -666,6 +667,24 @@ export async function fetchMarketReturnSummaries(
       const key = `${config.source}:${config.symbol}`;
       const raw: MarketReturnSummary | undefined = json[key];
       if (raw) results.set(key, raw);
+    }
+  } catch { /* skip */ }
+
+  return results;
+}
+
+export async function fetchMarketStates(symbols: string[]): Promise<Map<string, MarketStateData>> {
+  const results = new Map<string, MarketStateData>();
+  const unique = [...new Set(symbols.filter(Boolean))];
+  if (unique.length === 0) return results;
+
+  try {
+    const res = await fetch(apiUrl(`/api/marketstates?symbols=${unique.join(',')}`));
+    if (!res.ok) return results;
+    const json = await res.json();
+    for (const symbol of unique) {
+      const raw: MarketStateData | undefined = json[symbol];
+      if (raw) results.set(symbol, raw);
     }
   } catch { /* skip */ }
 
