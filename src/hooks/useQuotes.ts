@@ -120,7 +120,8 @@ export function useQuotes(funds: Fund[] = FUNDS) {
   const [fundEstimates, setFundEstimates] = useState<FundEstimate[]>([]);
   const [fxRates, setFxRates] = useState<Map<string, FxRateData>>(new Map());
   const [marketStates, setMarketStates] = useState<Map<string, MarketStateData>>(new Map());
-  const [loading, setLoading] = useState(true);
+  const [marketLoading, setMarketLoading] = useState(true);
+  const [fundLoading, setFundLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const slowFundDataRef = useRef<SlowFundData>({
@@ -139,6 +140,11 @@ export function useQuotes(funds: Fund[] = FUNDS) {
     };
     slowFundDataFetchedAtRef.current = 0;
     let effectiveFundsCache: Fund[] | null = null;
+    const indexSymbols = INDICES.map((i) => i.sinaSymbol);
+    const assetSymbols = MARKET_ASSETS.map((i) => i.sinaSymbol);
+    const etfSymbols = ETF_ASSETS.map((i) => i.sinaSymbol);
+    const futuresSymbols = INDICES.flatMap((i) => i.futures?.sinaSymbol ?? []);
+    const marketSymbols = [...new Set([...indexSymbols, ...futuresSymbols, ...assetSymbols, ...etfSymbols])];
 
     async function resolveEffectiveFunds(): Promise<Fund[]> {
       if (effectiveFundsCache) return effectiveFundsCache;
@@ -225,21 +231,42 @@ export function useQuotes(funds: Fund[] = FUNDS) {
       return slowFundDataRef.current;
     }
 
-    async function load(showLoading = false) {
-      if (showLoading) setLoading(true);
+    async function loadMarket(showLoading = false) {
+      if (showLoading) setMarketLoading(true);
       setError(null);
 
-      const indexSymbols = INDICES.map((i) => i.sinaSymbol);
-      const assetSymbols = MARKET_ASSETS.map((i) => i.sinaSymbol);
-      const etfSymbols = ETF_ASSETS.map((i) => i.sinaSymbol);
-      const futuresSymbols = INDICES.flatMap((i) => i.futures?.sinaSymbol ?? []);
+      try {
+        const [marketQuotes, displayFxRates, marketStatesData] = await Promise.all([
+          fetchAllQuotes(marketSymbols),
+          fetchFxRates(DISPLAY_FX_CURRENCIES),
+          fetchMarketStates(marketSymbols),
+        ]);
+
+        if (!mountedRef.current) return;
+        setQuotes((prev) => new Map([...prev, ...marketQuotes]));
+        setFxRates((prev) => new Map([...prev, ...displayFxRates]));
+        setMarketStates((prev) => new Map([...prev, ...marketStatesData]));
+      } catch (e) {
+        if (mountedRef.current) {
+          setError(e instanceof Error ? e.message : '市场数据加载失败');
+        }
+      } finally {
+        if (mountedRef.current) {
+          setMarketLoading(false);
+        }
+      }
+    }
+
+    async function loadFunds(showLoading = false) {
+      if (showLoading) setFundLoading(true);
+      setError(null);
 
       try {
         const effectiveFunds = await resolveEffectiveFunds();
         const holdingSymbols = effectiveFunds.flatMap((f) =>
           f.holdings.map((h) => h.sinaSymbol),
         ).filter(Boolean);
-        const allSinaSymbols = [...new Set([...indexSymbols, ...futuresSymbols, ...assetSymbols, ...etfSymbols, ...holdingSymbols])];
+        const allSinaSymbols = [...new Set(holdingSymbols)];
         const holdingCurrencies = effectiveFunds.flatMap((f) => f.holdings.map((h) => h.currency));
         const currencies = [...new Set([...DISPLAY_FX_CURRENCIES, ...holdingCurrencies])];
         const [quotesData, fxRates, marketStatesData, slowFundData] = await Promise.all([
@@ -250,9 +277,9 @@ export function useQuotes(funds: Fund[] = FUNDS) {
         ]);
 
         if (!mountedRef.current) return;
-        setQuotes(quotesData);
-        setFxRates(fxRates);
-        setMarketStates(marketStatesData);
+        setQuotes((prev) => new Map([...prev, ...quotesData]));
+        setFxRates((prev) => new Map([...prev, ...fxRates]));
+        setMarketStates((prev) => new Map([...prev, ...marketStatesData]));
 
         const now = new Date();
         const fundFxRates = new Map(
@@ -348,18 +375,32 @@ export function useQuotes(funds: Fund[] = FUNDS) {
         }
       } finally {
         if (mountedRef.current) {
-          setLoading(false);
+          setFundLoading(false);
         }
       }
     }
 
-    load(true);
-    const timer = window.setInterval(() => load(false), 30_000);
+    loadMarket(true);
+    window.setTimeout(() => {
+      if (mountedRef.current) void loadFunds(true);
+    }, 0);
+    const marketTimer = window.setInterval(() => loadMarket(false), 30_000);
+    const fundTimer = window.setInterval(() => loadFunds(false), 30_000);
     return () => {
       mountedRef.current = false;
-      window.clearInterval(timer);
+      window.clearInterval(marketTimer);
+      window.clearInterval(fundTimer);
     };
   }, [funds]);
 
-  return { quotes, fundEstimates, fxRates, marketStates, loading, error };
+  return {
+    quotes,
+    fundEstimates,
+    fxRates,
+    marketStates,
+    loading: marketLoading && fundLoading,
+    marketLoading,
+    fundLoading,
+    error,
+  };
 }
