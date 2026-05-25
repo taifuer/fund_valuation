@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { QuoteData, IndexConfig } from '../types';
 import { INDICES, MARKET_ASSETS } from '../constants';
-import { getMarketState } from '../marketHours';
+import { getMarketState, type MarketState } from '../marketHours';
 import MarketHistoryModal from './MarketHistoryModal';
 import styles from './IndexCards.module.css';
 
@@ -58,6 +58,21 @@ function closeTimeLabel(sinaSymbol: string, quoteTime: string): string | null {
   return `${dateMatch[2]}/${dateMatch[3]} ${time}`;
 }
 
+type DisplayState = 'futuresLive' | 'live' | 'stale' | MarketState;
+
+function isNonTradingState(state: DisplayState): boolean {
+  return state === 'closed' || state === 'holiday' || state === 'weekend';
+}
+
+function marketStateLabel(state: DisplayState): string {
+  if (state === 'futuresLive') return '期货 LIVE';
+  if (state === 'live') return 'LIVE';
+  if (state === 'stale') return '延迟';
+  if (state === 'holiday') return '假期休市';
+  if (state === 'weekend') return '周末休市';
+  return '已收盘';
+}
+
 function Card({
   idx,
   data,
@@ -93,8 +108,8 @@ function Card({
       ? 'live'
       : state === 'live'
         ? 'stale'
-        : 'closed';
-  const quoteTimeLabel = displayState === 'closed'
+        : state;
+  const quoteTimeLabel = isNonTradingState(displayState)
     ? closeTimeLabel(displayData.symbol, displayData.time) ?? formatQuoteDate(displayData.time)
     : formatQuoteDate(displayData.time);
 
@@ -116,13 +131,7 @@ function Card({
               : styles.stateClosed
         }`}
       >
-        {displayState === 'futuresLive'
-          ? '期货 LIVE'
-          : displayState === 'live'
-            ? 'LIVE'
-            : displayState === 'stale'
-              ? '延迟'
-              : '已收盘'}
+        {marketStateLabel(displayState)}
       </span>
       <div className={styles.label}>{useFutures ? idx.futures?.label : idx.name}</div>
       <div className={styles.price}>{displayData.price.toLocaleString()}</div>

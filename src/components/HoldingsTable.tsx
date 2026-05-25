@@ -1,5 +1,5 @@
 import type { Holding, QuoteData } from '../types';
-import { getMarketState } from '../marketHours';
+import { getMarketState, type MarketState } from '../marketHours';
 import styles from './HoldingsTable.module.css';
 
 interface Props {
@@ -17,6 +17,18 @@ function formatQuoteDate(date: string): string {
   if (datetimeMatch) return `${datetimeMatch[1]}/${datetimeMatch[2]} ${datetimeMatch[3]}:${datetimeMatch[4]}`;
   const match = date.match(/^\d{4}-(\d{2})-(\d{2})$/);
   return match ? `${match[1]}/${match[2]}` : date || '-';
+}
+
+type DisplayState = 'pre' | 'post' | 'stale' | MarketState;
+
+function marketStateLabel(state: DisplayState): string {
+  if (state === 'live') return 'LIVE';
+  if (state === 'pre') return '盘前';
+  if (state === 'post') return '盘后';
+  if (state === 'stale') return '延迟';
+  if (state === 'holiday') return '假期休市';
+  if (state === 'weekend') return '周末休市';
+  return '已收盘';
 }
 
 export default function HoldingsTable({
@@ -77,7 +89,7 @@ export default function HoldingsTable({
                   ? 'live'
                   : state === 'live'
                     ? 'stale'
-                    : 'closed';
+                    : state;
             return (
               <tr key={h.symbol}>
                 <td className={styles.stockCell}>
@@ -113,15 +125,7 @@ export default function HoldingsTable({
                           : styles.stateClosed
                     }`}
                   >
-                    {displayState === 'live'
-                      ? 'LIVE'
-                      : displayState === 'pre'
-                        ? '盘前'
-                        : displayState === 'post'
-                          ? '盘后'
-                          : displayState === 'stale'
-                            ? '延迟'
-                            : '已收盘'}
+                    {marketStateLabel(displayState)}
                   </span>
                 </td>
               </tr>

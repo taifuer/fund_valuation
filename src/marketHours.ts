@@ -161,6 +161,10 @@ function isWeekday(weekday: string): boolean {
   return weekday !== 'Sat' && weekday !== 'Sun';
 }
 
+function isWeekend(weekday: string): boolean {
+  return weekday === 'Sat' || weekday === 'Sun';
+}
+
 function previousDate(date: string): string {
   const d = new Date(`${date}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() - 1);
@@ -231,7 +235,7 @@ function marketKey(sinaSymbol: string): string | null {
   return null;
 }
 
-export type MarketState = 'live' | 'closed';
+export type MarketState = 'live' | 'closed' | 'holiday' | 'weekend';
 
 export function getMarketState(sinaSymbol: string, now = new Date()): MarketState {
   const key = marketKey(sinaSymbol);
@@ -242,7 +246,7 @@ export function getMarketState(sinaSymbol: string, now = new Date()): MarketStat
     const maintenanceStart = 17 * 60;
     const maintenanceEnd = 18 * 60;
 
-    if (local.weekday === 'Sat') return 'closed';
+    if (local.weekday === 'Sat') return 'weekend';
     if (local.weekday === 'Sun') return local.minutes >= maintenanceEnd ? 'live' : 'closed';
     if (local.weekday === 'Fri') return local.minutes < maintenanceStart ? 'live' : 'closed';
     if (local.minutes >= maintenanceStart && local.minutes < maintenanceEnd) return 'closed';
@@ -252,15 +256,18 @@ export function getMarketState(sinaSymbol: string, now = new Date()): MarketStat
   if (key === 'hk_futures' || key === 'jp_futures') {
     const calendar = FUTURES_MARKETS[key];
     const local = zonedNow(calendar.timezone, now);
-    return isInFuturesSession(calendar, local) ? 'live' : 'closed';
+    if (isInFuturesSession(calendar, local)) return 'live';
+    if (isWeekend(local.weekday)) return 'weekend';
+    if (calendar.holidays2026.has(local.date)) return 'holiday';
+    return 'closed';
   }
 
   if (key === 'crypto') return 'live';
 
   const calendar = MARKETS[key];
   const local = zonedNow(calendar.timezone, now);
-  if (local.weekday === 'Sat' || local.weekday === 'Sun') return 'closed';
-  if (calendar.holidays2026.has(local.date)) return 'closed';
+  if (isWeekend(local.weekday)) return 'weekend';
+  if (calendar.holidays2026.has(local.date)) return 'holiday';
 
   const sessions = calendar.halfDays2026?.[local.date] ?? calendar.sessions;
   return isInSession(sessions, local.minutes) ? 'live' : 'closed';
