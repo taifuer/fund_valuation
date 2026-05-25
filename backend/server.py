@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sqlite3
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -30,6 +31,8 @@ DEFAULT_HEADERS = {
 }
 
 app = Flask(__name__)
+_UPSTREAM_LOCKS: dict[str, threading.Lock] = {}
+_UPSTREAM_LOCKS_GUARD = threading.Lock()
 
 
 def now_ms() -> int:
@@ -455,6 +458,15 @@ def cache_any(cache_key: str) -> tuple[int, str, bytes] | None:
     return cache_get(cache_key, 0)
 
 
+def upstream_lock(cache_key: str) -> threading.Lock:
+    with _UPSTREAM_LOCKS_GUARD:
+        lock = _UPSTREAM_LOCKS.get(cache_key)
+        if lock is None:
+            lock = threading.Lock()
+            _UPSTREAM_LOCKS[cache_key] = lock
+        return lock
+
+
 def write_raw(kind: str, cache_key: str, body: bytes) -> None:
     day = datetime.now().strftime("%Y%m%d")
     digest = hashlib.sha1(cache_key.encode("utf-8")).hexdigest()[:16]
@@ -478,22 +490,29 @@ def fetch_upstream(
         if cached:
             return cached
 
-    headers = {**DEFAULT_HEADERS, "Referer": referer}
-    req = Request(url, headers=headers)
-    try:
-        with urlopen(req, timeout=12) as response:
-            body = response.read()
-            status = int(response.status)
-            upstream_content_type = response.headers.get("Content-Type") or content_type
-        resolved_content_type = content_type or upstream_content_type
-        cache_put(cache_key, url, status, resolved_content_type, body)
-        write_raw(kind, cache_key, body)
-        return status, resolved_content_type, body
-    except URLError:
-        stale = cache_any(cache_key)
-        if stale:
-            return stale
-        raise
+    lock = upstream_lock(cache_key)
+    with lock:
+        if not force_refresh:
+            cached = cache_get(cache_key, ttl_seconds)
+            if cached:
+                return cached
+
+        headers = {**DEFAULT_HEADERS, "Referer": referer}
+        req = Request(url, headers=headers)
+        try:
+            with urlopen(req, timeout=12) as response:
+                body = response.read()
+                status = int(response.status)
+                upstream_content_type = response.headers.get("Content-Type") or content_type
+            resolved_content_type = content_type or upstream_content_type
+            cache_put(cache_key, url, status, resolved_content_type, body)
+            write_raw(kind, cache_key, body)
+            return status, resolved_content_type, body
+        except URLError:
+            stale = cache_any(cache_key)
+            if stale:
+                return stale
+            raise
 
 
 def decode_body(body: bytes) -> str:
@@ -1272,7 +1291,7 @@ def health() -> Response:
 
 @app.get("/api/sina")
 def sina() -> Response:
-    symbols = require_arg("list")
+    symbols = ",".join(sorted(dict.fromkeys(symbol for symbol in require_arg("list").split(",") if symbol)))
     url = f"https://hq.sinajs.cn/list={symbols}"
     status, content_type, body = fetch_upstream(
         url,
@@ -1368,7 +1387,8 @@ def fund_history() -> Response:
     for code in codes:
         cached_rows = read_fund_history_from_db(code, page_size, page_index)
         if not refresh:
-            if len(cached_rows) >= page_size or (page_size > 200 and cached_rows):
+            enough_large_history = page_size > 200 and len(cached_rows) >= min(page_size, 200)
+            if len(cached_rows) >= page_size or enough_large_history:
                 results[code] = cached_rows
                 continue
 

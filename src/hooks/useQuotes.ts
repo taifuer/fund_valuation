@@ -17,6 +17,7 @@ import { getMarketState } from '../marketHours';
 
 const DISPLAY_FX_CURRENCIES = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
 type EstimateState = 'LIVE' | 'PRE' | 'POST' | 'PARTIAL' | 'CLOSED';
+const SLOW_DATA_TTL_MS = 5 * 60 * 1000;
 
 export interface FundEstimate {
   fundCode: string;
@@ -36,6 +37,12 @@ export interface FundEstimate {
   lastUpdated: number | null;
   estimateState: EstimateState;
   currencyChanges: Record<string, number>;
+}
+
+interface SlowFundData {
+  navs: Map<string, FundNavData>;
+  purchaseStatuses: Map<string, FundPurchaseData>;
+  returnSummaries: Map<string, FundReturnSummary>;
 }
 
 function usMarketClock(now = new Date()): { weekday: string; minutes: number } {
@@ -116,19 +123,25 @@ export function useQuotes(funds: Fund[] = FUNDS) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const slowFundDataRef = useRef<SlowFundData>({
+    navs: new Map(),
+    purchaseStatuses: new Map(),
+    returnSummaries: new Map(),
+  });
+  const slowFundDataFetchedAtRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
+    slowFundDataRef.current = {
+      navs: new Map(),
+      purchaseStatuses: new Map(),
+      returnSummaries: new Map(),
+    };
+    slowFundDataFetchedAtRef.current = 0;
+    let effectiveFundsCache: Fund[] | null = null;
 
-    async function load(showLoading = false) {
-      if (showLoading) setLoading(true);
-      setError(null);
-
-      const indexSymbols = INDICES.map((i) => i.sinaSymbol);
-      const assetSymbols = MARKET_ASSETS.map((i) => i.sinaSymbol);
-      const etfSymbols = ETF_ASSETS.map((i) => i.sinaSymbol);
-      const futuresSymbols = INDICES.flatMap((i) => i.futures?.sinaSymbol ?? []);
-
+    async function resolveEffectiveFunds(): Promise<Fund[]> {
+      if (effectiveFundsCache) return effectiveFundsCache;
       const dynamicHoldingCodes = funds
         .filter((f) => f.holdings.length === 0)
         .map((f) => f.code);
@@ -147,61 +160,94 @@ export function useQuotes(funds: Fund[] = FUNDS) {
           ? { ...fund, holdings: holdings.length > 0 ? holdings : fund.holdings, profile }
           : fund;
       });
+      effectiveFundsCache = effectiveFunds;
+      return effectiveFunds;
+    }
 
-      const holdingSymbols = effectiveFunds.flatMap((f) =>
-        f.holdings.map((h) => h.sinaSymbol),
-      ).filter(Boolean);
-      const allSinaSymbols = [...new Set([...indexSymbols, ...futuresSymbols, ...assetSymbols, ...etfSymbols, ...holdingSymbols])];
+    async function loadSlowFundData(effectiveFunds: Fund[], force = false): Promise<SlowFundData> {
+      const now = Date.now();
+      const shouldFetch = (
+        force ||
+        slowFundDataFetchedAtRef.current === 0 ||
+        now - slowFundDataFetchedAtRef.current > SLOW_DATA_TTL_MS
+      );
+      if (!shouldFetch) return slowFundDataRef.current;
+
+      const fundCodes = effectiveFunds.map((f) => f.code);
+      const [navsData, historyData, purchaseStatuses, returnSummaries] = await Promise.all([
+        fetchFundNavs(fundCodes),
+        fetchFundHistory(fundCodes),
+        fetchFundPurchaseStatuses(fundCodes),
+        fetchFundReturnSummaries(fundCodes),
+      ]);
+
+      if (!mountedRef.current) return slowFundDataRef.current;
+
+      // Fallback: fetch missing fund NAVs from Sina.
+      const missingCodes = fundCodes.filter((c) => !navsData.has(c));
+      if (missingCodes.length > 0) {
+        const sinaNavs = await fetchSinaFundNavs(missingCodes);
+        for (const [code, nav] of sinaNavs) {
+          if (!navsData.has(code)) {
+            const hist = historyData.get(code);
+            navsData.set(code, { ...nav, officialChange: hist?.officialChange ?? 0 });
+          }
+        }
+      }
+
+      // Merge official NAV history. The fundnav endpoint may lag behind
+      // East Money history, so prefer history when it has a newer NAV date.
+      // If fundnav is newer than the local history cache, calculate the
+      // official daily change against the latest cached history point.
+      for (const [code, hist] of historyData) {
+        const existing = navsData.get(code);
+        if (existing) {
+          const historyIsNewer = hist.navDate && (!existing.navDate || hist.navDate > existing.navDate);
+          const fundNavIsNewer = existing.navDate && hist.navDate && existing.navDate > hist.navDate;
+          const officialChange = fundNavIsNewer && existing.nav > 0 && hist.nav > 0
+            ? Number((((existing.nav - hist.nav) / hist.nav) * 100).toFixed(2))
+            : hist.officialChange;
+          navsData.set(code, {
+            ...existing,
+            navDate: historyIsNewer ? hist.navDate : existing.navDate,
+            nav: historyIsNewer ? hist.nav : existing.nav,
+            officialChange,
+          });
+        }
+      }
+
+      slowFundDataRef.current = {
+        navs: navsData,
+        purchaseStatuses,
+        returnSummaries,
+      };
+      slowFundDataFetchedAtRef.current = Date.now();
+      return slowFundDataRef.current;
+    }
+
+    async function load(showLoading = false) {
+      if (showLoading) setLoading(true);
+      setError(null);
+
+      const indexSymbols = INDICES.map((i) => i.sinaSymbol);
+      const assetSymbols = MARKET_ASSETS.map((i) => i.sinaSymbol);
+      const etfSymbols = ETF_ASSETS.map((i) => i.sinaSymbol);
+      const futuresSymbols = INDICES.flatMap((i) => i.futures?.sinaSymbol ?? []);
 
       try {
-        const fundCodes = effectiveFunds.map((f) => f.code);
+        const effectiveFunds = await resolveEffectiveFunds();
+        const holdingSymbols = effectiveFunds.flatMap((f) =>
+          f.holdings.map((h) => h.sinaSymbol),
+        ).filter(Boolean);
+        const allSinaSymbols = [...new Set([...indexSymbols, ...futuresSymbols, ...assetSymbols, ...etfSymbols, ...holdingSymbols])];
         const holdingCurrencies = effectiveFunds.flatMap((f) => f.holdings.map((h) => h.currency));
         const currencies = [...new Set([...DISPLAY_FX_CURRENCIES, ...holdingCurrencies])];
-        const [quotesData, navsData, historyData, purchaseStatuses, returnSummaries, fxRates, marketStatesData] = await Promise.all([
+        const [quotesData, fxRates, marketStatesData, slowFundData] = await Promise.all([
           fetchAllQuotes(allSinaSymbols),
-          fetchFundNavs(fundCodes),
-          fetchFundHistory(fundCodes),
-          fetchFundPurchaseStatuses(fundCodes),
-          fetchFundReturnSummaries(fundCodes),
           fetchFxRates(currencies),
           fetchMarketStates(allSinaSymbols),
+          loadSlowFundData(effectiveFunds, showLoading),
         ]);
-
-        if (!mountedRef.current) return;
-
-        // Fallback: fetch missing fund NAVs from Sina
-        const missingCodes = fundCodes.filter((c) => !navsData.has(c));
-        if (missingCodes.length > 0) {
-          const sinaNavs = await fetchSinaFundNavs(missingCodes);
-          for (const [code, nav] of sinaNavs) {
-            if (!navsData.has(code)) {
-              // Try to get officialChange from history
-              const hist = historyData.get(code);
-              navsData.set(code, { ...nav, officialChange: hist?.officialChange ?? 0 });
-            }
-          }
-        }
-
-        // Merge official NAV history. The fundnav endpoint may lag behind
-        // East Money history, so prefer history when it has a newer NAV date.
-        // If fundnav is newer than the local history cache, calculate the
-        // official daily change against the latest cached history point.
-        for (const [code, hist] of historyData) {
-          const existing = navsData.get(code);
-          if (existing) {
-            const historyIsNewer = hist.navDate && (!existing.navDate || hist.navDate > existing.navDate);
-            const fundNavIsNewer = existing.navDate && hist.navDate && existing.navDate > hist.navDate;
-            const officialChange = fundNavIsNewer && existing.nav > 0 && hist.nav > 0
-              ? Number((((existing.nav - hist.nav) / hist.nav) * 100).toFixed(2))
-              : hist.officialChange;
-            navsData.set(code, {
-              ...existing,
-              navDate: historyIsNewer ? hist.navDate : existing.navDate,
-              nav: historyIsNewer ? hist.nav : existing.nav,
-              officialChange,
-            });
-          }
-        }
 
         if (!mountedRef.current) return;
         setQuotes(quotesData);
@@ -214,7 +260,7 @@ export function useQuotes(funds: Fund[] = FUNDS) {
         );
 
         const estimates: FundEstimate[] = effectiveFunds.map((fund) => {
-          const officialNAV = navsData.get(fund.code) ?? null;
+          const officialNAV = slowFundData.navs.get(fund.code) ?? null;
           const hasConfiguredHoldings = fund.holdings.length > 0;
           const rawHoldingsQuotes = fund.holdings
             .map((h) => quotesData.get(h.sinaSymbol))
@@ -277,8 +323,8 @@ export function useQuotes(funds: Fund[] = FUNDS) {
             fundName: fund.name,
             fund,
             officialNAV,
-            purchaseStatus: purchaseStatuses.get(fund.code) ?? null,
-            rangeReturns: returnSummaries.get(fund.code) ?? null,
+            purchaseStatus: slowFundData.purchaseStatuses.get(fund.code) ?? null,
+            rangeReturns: slowFundData.returnSummaries.get(fund.code) ?? null,
             computedChangeLocal,
             estimatedNAVLocal,
             computedChange,
