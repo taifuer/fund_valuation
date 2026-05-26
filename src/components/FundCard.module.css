@@ -14,20 +14,13 @@
   border-color: #e2e8f0;
 }
 
-.badge {
+.rankGroup {
+  left: -1px;
+  pointer-events: none;
   position: absolute;
   top: -1px;
-  right: 12px;
-  padding: 2px 8px 4px;
-  border-radius: 0 0 5px 5px;
-  font-size: 9px;
-  font-weight: 700;
-  color: #fff;
-  letter-spacing: 0.04em;
+  z-index: 2;
 }
-.gold { background: linear-gradient(135deg, #f59e0b, #eab308); }
-.silver { background: linear-gradient(135deg, #94a3b8, #64748b); }
-.bronze { background: linear-gradient(135deg, #d97706, #b45309); }
 
 .rankNumber {
   background: #f8fafc;
@@ -40,9 +33,26 @@
   line-height: 18px;
   min-width: 30px;
   padding: 0 7px;
-  position: absolute;
   text-align: center;
-  top: -1px;
+}
+
+.rankNumber.gold,
+.rankNumber.silver,
+.rankNumber.bronze {
+  border-color: transparent;
+  color: #fff;
+}
+
+.rankNumber.gold {
+  background: linear-gradient(135deg, #f59e0b, #eab308);
+}
+
+.rankNumber.silver {
+  background: linear-gradient(135deg, #94a3b8, #64748b);
+}
+
+.rankNumber.bronze {
+  background: linear-gradient(135deg, #d97706, #b45309);
 }
 
 .main { padding: 10px 14px; }
@@ -51,9 +61,13 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding-left: 26px;
-  padding-right: 60px;
+  padding-left: 38px;
+  padding-right: 8px;
   margin-bottom: 6px;
+}
+
+.cardRemovable .topRow {
+  padding-right: 34px;
 }
 .name {
   font-size: 14px;
@@ -84,7 +98,7 @@
   padding: 0;
   position: absolute;
   right: 10px;
-  bottom: 8px;
+  top: 8px;
   transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
   width: 22px;
   z-index: 2;

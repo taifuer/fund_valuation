@@ -1387,10 +1387,9 @@ def fund_history() -> Response:
     for code in codes:
         cached_rows = read_fund_history_from_db(code, page_size, page_index)
         if not refresh:
-            enough_large_history = page_size > 200 and len(cached_rows) >= min(page_size, 200)
-            if len(cached_rows) >= page_size or enough_large_history:
+            if cached_rows:
                 results[code] = cached_rows
-                continue
+            continue
 
         fetch_and_store_fund_history(code, page_size * page_index, refresh=refresh)
         merged_rows = read_fund_history_from_db(code, page_size, page_index)
@@ -1407,12 +1406,6 @@ def fund_returns() -> Response:
     results: dict[str, Any] = {}
     for code in codes:
         summary = read_fund_return_summary_from_db(code)
-        ranges = summary.get("ranges", {}) if isinstance(summary, dict) else {}
-        if not summary or "1y" not in ranges or "3y" not in ranges:
-            before = count_fund_history_rows(code)
-            fetch_and_store_fund_history(code, 900, refresh=False)
-            if count_fund_history_rows(code) > before or not summary:
-                summary = read_fund_return_summary_from_db(code)
         if summary:
             results[code] = summary
     return json_response(results)
@@ -1503,7 +1496,7 @@ def market_history() -> Response:
     symbol = require_arg("symbol")
     refresh = should_refresh()
     cached_rows = read_market_history_from_db(source, symbol)
-    if not refresh and cached_rows:
+    if not refresh:
         return json_response(cached_rows)
 
     url, referer = market_history_url(source, symbol)

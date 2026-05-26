@@ -41,8 +41,8 @@
                                 └── /api/markethistory  ──→ 新浪财经（指数/资产历史行情）
 
 Flask 后端会把上游原始响应保存到 `data/raw/`，并把基金历史净值、基金持仓和指数/资产日 K 写入 `data/fund_valuation.db`。
-历史接口默认优先读取 SQLite；只有数据库缺页/缺符号，或显式追加 `refresh=1` 时，后端才会请求上游补抓并写库。
-也可以通过独立脚本预先增量回填历史数据，避免前端首次点击图表时再等待上游接口。
+历史接口默认只读取 SQLite，避免用户打开页面或点击图表时触发大批量上游补抓；只有显式追加 `refresh=1` 或运行回填脚本时才会请求上游并写库。
+部署后应先通过独立脚本预热历史数据，避免首次访问时出现历史走势或区间收益为空。
 ```
 
 基金 T 日实时估算净值的计算方式：
@@ -97,7 +97,7 @@ npm run backend:setup
 # 3. 启动 Flask 数据后端
 npm run backend
 
-# 4. 可选：预先增量回填基金净值和指数/资产日 K
+# 4. 预先增量回填基金净值和指数/资产日 K
 npm run backend:backfill
 
 # 5. 另开终端启动前端开发服务器
@@ -115,6 +115,8 @@ npm run backend:backfill -- --full               # 从第一页持续拉取到�
 npm run backend:backfill -- --skip-markets       # 只更新基金官方历史净值
 npm run backend:backfill -- --skip-funds         # 只更新指数/资产日 K
 npm run backend:backfill -- --use-cache          # 优先复用 response_cache 中已有上游响应
+npm run backend:backfill -- --fund-code 118001   # 额外回填自定义基金代码
+npm run backend:backfill -- --fund-codes 118001,457001
 ```
 
 ## 构建部署

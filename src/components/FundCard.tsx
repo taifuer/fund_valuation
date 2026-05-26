@@ -10,16 +10,16 @@ interface Props {
   fund: Fund;
   estimate?: FundEstimate;
   rank: number;
-  rankLabel?: string;
   loading: boolean;
   marketStates?: Map<string, MarketStateData>;
+  showDetails?: boolean;
   onRemove?: (fund: Fund) => void;
 }
 
-const RANK_BADGE: Record<number, { label: string; cls: string }> = {
-  1: { label: 'TOP 1', cls: 'gold' },
-  2: { label: 'TOP 2', cls: 'silver' },
-  3: { label: 'TOP 3', cls: 'bronze' },
+const RANK_STYLE: Record<number, string> = {
+  1: 'gold',
+  2: 'silver',
+  3: 'bronze',
 };
 
 const FUND_RETURN_RANGES: FundReturnRangeKey[] = ['1w', '1m', '3m', '6m', '1y', '3y', 'ytd'];
@@ -128,11 +128,27 @@ function FundReturnBar({
   );
 }
 
-export default function FundCard({ fund, estimate, rank, rankLabel, loading, marketStates = new Map(), onRemove }: Props) {
+export default function FundCard({
+  fund,
+  estimate,
+  rank,
+  loading,
+  marketStates = new Map(),
+  showDetails = false,
+  onRemove,
+}: Props) {
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<'holdings' | 'nav' | 'trend'>('holdings');
-  const badge = RANK_BADGE[rank];
-  const badgeLabel = rankLabel ?? badge?.label;
+  const rankStyle = RANK_STYLE[rank];
+  const cardClassName = [
+    styles.card,
+    onRemove ? styles.cardRemovable : '',
+  ].filter(Boolean).join(' ');
+  const rankNode = (
+    <div className={styles.rankGroup}>
+      <div className={`${styles.rankNumber} ${rankStyle ? styles[rankStyle] : ''}`}>#{rank}</div>
+    </div>
+  );
 
   if (loading) {
     return <div className={styles.skeleton} style={{ height: 96, width: '100%' }} />;
@@ -140,9 +156,8 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading, mar
 
   if (!estimate || !estimate.officialNAV) {
     return (
-      <div className={styles.card}>
-        <div className={styles.rankNumber}>#{rank}</div>
-        {badge && <div className={`${styles.badge} ${styles[badge.cls]}`}>{badgeLabel}</div>}
+      <div className={cardClassName}>
+        {rankNode}
         <div className={styles.main}>
           <div className={styles.topRow}>
             <span className={styles.name}>{fund.name}<span className={styles.code}>{fund.code}</span></span>
@@ -193,9 +208,8 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading, mar
   const profile = fund.profile;
 
   return (
-    <div className={styles.card} onClick={() => setExpanded(!expanded)}>
-      <div className={styles.rankNumber}>#{rank}</div>
-      {badge && <div className={`${styles.badge} ${styles[badge.cls]}`}>{badgeLabel}</div>}
+    <div className={cardClassName} onClick={() => setExpanded(!expanded)}>
+      {rankNode}
       <div className={styles.main}>
         <div className={styles.topRow}>
           <span className={styles.name}>{fund.name}<span className={styles.code}>{fund.code}</span></span>
@@ -247,7 +261,7 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading, mar
             </div>
           </div>
         </div>
-        {(profile || purchaseStatus) && (
+        {showDetails && (profile || purchaseStatus) && (
           <div className={styles.fundProfile}>
             {profile && (
               <>
@@ -275,7 +289,7 @@ export default function FundCard({ fund, estimate, rank, rankLabel, loading, mar
             )}
           </div>
         )}
-        <FundReturnBar summary={rangeReturns} ranges={FUND_RETURN_RANGES} />
+        {showDetails && <FundReturnBar summary={rangeReturns} ranges={FUND_RETURN_RANGES} />}
       </div>
 
       {onRemove && (

@@ -10,9 +10,11 @@ import styles from './App.module.css';
 
 type SortMode = 'estimate' | 'official';
 type SortDirection = 'desc' | 'asc';
+type FundDisplayMode = 'compact' | 'detail';
 
 const FUND_SECTION_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_section';
 const FUND_MANAGER_KEY = 'fund_valuation:managed_funds';
+const FUND_DISPLAY_MODE_KEY = 'fund_valuation:fund_display_mode';
 
 interface ManagedFundSettings {
   hiddenDefaultCodes: string[];
@@ -35,6 +37,20 @@ function readCollapsedFlag(key: string): boolean {
 function writeCollapsedFlag(key: string, value: boolean) {
   try {
     window.localStorage.setItem(key, value ? '1' : '0');
+  } catch { /* skip */ }
+}
+
+function readFundDisplayMode(): FundDisplayMode {
+  try {
+    return window.localStorage.getItem(FUND_DISPLAY_MODE_KEY) === 'detail' ? 'detail' : 'compact';
+  } catch {
+    return 'compact';
+  }
+}
+
+function writeFundDisplayMode(value: FundDisplayMode) {
+  try {
+    window.localStorage.setItem(FUND_DISPLAY_MODE_KEY, value);
   } catch { /* skip */ }
 }
 
@@ -86,6 +102,7 @@ function sortValue(estimate: FundEstimate, mode: SortMode): number | null {
 
 export default function App() {
   const [managedFunds, setManagedFunds] = useState<ManagedFundSettings>(() => readManagedFundSettings());
+  const [fundDisplayMode, setFundDisplayMode] = useState<FundDisplayMode>(() => readFundDisplayMode());
   const funds = useMemo(() => {
     const hidden = new Set(managedFunds.hiddenDefaultCodes);
     const defaultFunds = FUNDS.filter((fund) => !hidden.has(fund.code));
@@ -95,7 +112,10 @@ export default function App() {
       .map(toCustomFund);
     return [...defaultFunds, ...customFunds];
   }, [managedFunds]);
-  const { quotes, fundEstimates, fxRates, marketStates, marketLoading, fundLoading, error } = useQuotes(funds);
+  const { quotes, fundEstimates, fxRates, marketStates, marketLoading, fundLoading, error } = useQuotes(
+    funds,
+    fundDisplayMode === 'detail',
+  );
   const [sortMode, setSortMode] = useState<SortMode>('estimate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [fundCollapsed, setFundCollapsed] = useState(() => readCollapsedFlag(FUND_SECTION_COLLAPSED_KEY));
@@ -238,6 +258,11 @@ export default function App() {
     });
   }
 
+  function updateFundDisplayMode(value: FundDisplayMode) {
+    setFundDisplayMode(value);
+    writeFundDisplayMode(value);
+  }
+
   return (
     <div className={styles.app}>
       <Header fxRates={fxRates} />
@@ -289,6 +314,22 @@ export default function App() {
                   低到高
                 </button>
               </div>
+              <div className={styles.sortToggle} aria-label="基金显示模式">
+                <button
+                  type="button"
+                  className={`${styles.sortButton} ${fundDisplayMode === 'compact' ? styles.sortButtonActive : ''}`}
+                  onClick={() => updateFundDisplayMode('compact')}
+                >
+                  简洁
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.sortButton} ${fundDisplayMode === 'detail' ? styles.sortButtonActive : ''}`}
+                  onClick={() => updateFundDisplayMode('detail')}
+                >
+                  详细
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -330,9 +371,9 @@ export default function App() {
               fund={fund}
               estimate={est}
               rank={est.rank}
-              rankLabel={sortDirection === 'desc' ? `TOP ${est.rank}` : `LOW ${est.rank}`}
               loading={false}
               marketStates={marketStates}
+              showDetails={fundDisplayMode === 'detail'}
               onRemove={removeFund}
             />
           );

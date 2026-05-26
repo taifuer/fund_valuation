@@ -164,6 +164,13 @@ class ServerDataRefreshTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["016664"][0]["FSRQ"], "2026-05-15")
 
+    def test_fund_history_without_refresh_does_not_fetch_missing_sqlite_rows(self) -> None:
+        with patch.object(server, "fetch_upstream", side_effect=AssertionError("unexpected upstream fetch")):
+            response = server.app.test_client().get("/api/fundhistory?codes=016664&pageSize=3000&pageIndex=1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {})
+
     def test_fund_history_refresh_fetches_latest_and_updates_sqlite(self) -> None:
         server.store_fund_history(
             "016664",
@@ -309,6 +316,13 @@ class ServerDataRefreshTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual([row["FSRQ"] for row in payload["016664"]], ["2026-05-13", "2026-05-12"])
 
+    def test_fund_returns_without_history_does_not_fetch_upstream(self) -> None:
+        with patch.object(server, "fetch_upstream", side_effect=AssertionError("unexpected upstream fetch")):
+            response = server.app.test_client().get("/api/fundreturns?codes=016664")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {})
+
     def test_fund_holdings_refresh_parses_and_stores_top_holdings(self) -> None:
         upstream_body = (
             'var apidata={ content:"<div><label class=\'right\'>截止至：<font class=\'px12\'>2026-03-31</font></label>'
@@ -398,6 +412,13 @@ class ServerDataRefreshTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload[0]["date"], "2026-05-14")
         self.assertEqual(payload[0]["close"], 7501.24)
+
+    def test_market_history_without_refresh_does_not_fetch_missing_sqlite_rows(self) -> None:
+        with patch.object(server, "fetch_upstream", side_effect=AssertionError("unexpected upstream fetch")):
+            response = server.app.test_client().get("/api/markethistory?source=sina-us&symbol=.INX")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), [])
 
     def test_market_history_refresh_fetches_latest_and_updates_sqlite(self) -> None:
         server.store_market_history("sina-us", ".INX", 'var _=([{"d":"2026-05-14","c":"7501.24"}]);')

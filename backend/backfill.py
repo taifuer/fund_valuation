@@ -236,6 +236,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Incrementally backfill historical data into SQLite")
     parser.add_argument("--skip-funds", action="store_true", help="Skip fund NAV history")
     parser.add_argument("--skip-markets", action="store_true", help="Skip index and asset daily history")
+    parser.add_argument("--fund-code", action="append", default=[], help="Additional 6-digit fund code to backfill")
+    parser.add_argument("--fund-codes", default="", help="Comma-separated additional 6-digit fund codes to backfill")
     parser.add_argument("--full", action="store_true", help="Fetch all pages up to --max-pages")
     parser.add_argument("--use-cache", action="store_true", help="Reuse cached upstream responses when available")
     parser.add_argument("--cache-only", action="store_true", help="Read only from response_cache without network requests")
@@ -251,6 +253,12 @@ def main() -> None:
     ensure_storage()
 
     fund_codes, market_targets = load_targets()
+    extra_codes = [
+        code.strip()
+        for code in [*args.fund_code, *args.fund_codes.split(",")]
+        if re.match(r"^\d{6}$", code.strip())
+    ]
+    fund_codes = unique([*fund_codes, *extra_codes])
     fund_codes = limited(fund_codes, args.fund_limit)
     market_targets = limited(market_targets, args.market_limit)
 

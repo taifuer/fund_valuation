@@ -43,6 +43,7 @@ interface SlowFundData {
   navs: Map<string, FundNavData>;
   purchaseStatuses: Map<string, FundPurchaseData>;
   returnSummaries: Map<string, FundReturnSummary>;
+  detailsLoaded: boolean;
 }
 
 function usMarketClock(now = new Date()): { weekday: string; minutes: number } {
@@ -115,7 +116,7 @@ function normalizeFundFxRate(rate: FxRateData): FxRateData {
   return rate;
 }
 
-export function useQuotes(funds: Fund[] = FUNDS) {
+export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false) {
   const [quotes, setQuotes] = useState<Map<string, QuoteData>>(new Map());
   const [fundEstimates, setFundEstimates] = useState<FundEstimate[]>([]);
   const [fxRates, setFxRates] = useState<Map<string, FxRateData>>(new Map());
@@ -128,6 +129,7 @@ export function useQuotes(funds: Fund[] = FUNDS) {
     navs: new Map(),
     purchaseStatuses: new Map(),
     returnSummaries: new Map(),
+    detailsLoaded: false,
   });
   const slowFundDataFetchedAtRef = useRef(0);
 
@@ -137,6 +139,7 @@ export function useQuotes(funds: Fund[] = FUNDS) {
       navs: new Map(),
       purchaseStatuses: new Map(),
       returnSummaries: new Map(),
+      detailsLoaded: false,
     };
     slowFundDataFetchedAtRef.current = 0;
     let effectiveFundsCache: Fund[] | null = null;
@@ -151,9 +154,9 @@ export function useQuotes(funds: Fund[] = FUNDS) {
       const dynamicHoldingCodes = funds
         .filter((f) => f.holdings.length === 0)
         .map((f) => f.code);
-      const dynamicProfileCodes = funds
-        .filter((f) => !f.profile)
-        .map((f) => f.code);
+      const dynamicProfileCodes = loadFundDetails
+        ? funds.filter((f) => !f.profile).map((f) => f.code)
+        : [];
       const [dynamicHoldings, dynamicProfiles] = await Promise.all([
         fetchFundHoldings(dynamicHoldingCodes),
         fetchFundProfiles(dynamicProfileCodes),
@@ -175,7 +178,8 @@ export function useQuotes(funds: Fund[] = FUNDS) {
       const shouldFetch = (
         force ||
         slowFundDataFetchedAtRef.current === 0 ||
-        now - slowFundDataFetchedAtRef.current > SLOW_DATA_TTL_MS
+        now - slowFundDataFetchedAtRef.current > SLOW_DATA_TTL_MS ||
+        (loadFundDetails && !slowFundDataRef.current.detailsLoaded)
       );
       if (!shouldFetch) return slowFundDataRef.current;
 
@@ -183,8 +187,8 @@ export function useQuotes(funds: Fund[] = FUNDS) {
       const [navsData, historyData, purchaseStatuses, returnSummaries] = await Promise.all([
         fetchFundNavs(fundCodes),
         fetchFundHistory(fundCodes),
-        fetchFundPurchaseStatuses(fundCodes),
-        fetchFundReturnSummaries(fundCodes),
+        loadFundDetails ? fetchFundPurchaseStatuses(fundCodes) : Promise.resolve(new Map<string, FundPurchaseData>()),
+        loadFundDetails ? fetchFundReturnSummaries(fundCodes) : Promise.resolve(new Map<string, FundReturnSummary>()),
       ]);
 
       if (!mountedRef.current) return slowFundDataRef.current;
@@ -226,6 +230,7 @@ export function useQuotes(funds: Fund[] = FUNDS) {
         navs: navsData,
         purchaseStatuses,
         returnSummaries,
+        detailsLoaded: loadFundDetails,
       };
       slowFundDataFetchedAtRef.current = Date.now();
       return slowFundDataRef.current;
@@ -391,7 +396,7 @@ export function useQuotes(funds: Fund[] = FUNDS) {
       window.clearInterval(marketTimer);
       window.clearInterval(fundTimer);
     };
-  }, [funds]);
+  }, [funds, loadFundDetails]);
 
   return {
     quotes,
