@@ -9,6 +9,7 @@ import re
 import sqlite3
 import threading
 import time
+from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -18,7 +19,7 @@ from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 from flask import Flask, Response, jsonify, request
-from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import HTTPException, TooManyRequests
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -33,6 +34,33 @@ DEFAULT_HEADERS = {
 app = Flask(__name__)
 _UPSTREAM_LOCKS: dict[str, threading.Lock] = {}
 _UPSTREAM_LOCKS_GUARD = threading.Lock()
+_RATE_LIMIT_BUCKETS: dict[str, deque[float]] = {}
+_RATE_LIMIT_GUARD = threading.Lock()
+
+FUND_CODE_RE = re.compile(r"^\d{6}$")
+SINA_SYMBOL_RE = re.compile(r"^[A-Za-z0-9_]{1,40}$")
+MARKET_HISTORY_SYMBOL_RE = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
+MAX_FUND_CODES_PER_REQUEST = 50
+MAX_SINA_SYMBOLS_PER_REQUEST = 160
+MAX_MARKET_STATE_SYMBOLS_PER_REQUEST = 160
+MAX_FUND_HISTORY_REFRESH_ROWS = 3000
+
+RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
+    "sina": (240, 60),
+    "marketstates": (240, 60),
+    "fundnav": (120, 60),
+    "fundholdings": (80, 60),
+    "fundholdings_refresh": (10, 60),
+    "fundhistory": (120, 60),
+    "fundhistory_refresh": (10, 60),
+    "fundreturns": (120, 60),
+    "fundprofiles": (80, 60),
+    "fundprofiles_refresh": (10, 60),
+    "fundpurchase": (80, 60),
+    "fundpurchase_refresh": (10, 60),
+    "markethistory": (120, 60),
+    "markethistory_refresh": (20, 60),
+}
 
 
 def now_ms() -> int:
@@ -303,6 +331,20 @@ def in_sessions(sessions: list[list[str]] | list[tuple[str, str]], minutes: int)
     return False
 
 
+def between_sessions(sessions: list[list[str]] | list[tuple[str, str]], minutes: int) -> bool:
+    day_sessions: list[tuple[int, int]] = []
+    for start_raw, end_raw in sessions:
+        start = parse_hhmm(str(start_raw))
+        end = parse_hhmm(str(end_raw))
+        if start < end:
+            day_sessions.append((start, end))
+    day_sessions.sort()
+    for (_, end), (next_start, _) in zip(day_sessions, day_sessions[1:]):
+        if end <= minutes < next_start:
+            return True
+    return False
+
+
 def in_futures_sessions(market: str, local: datetime) -> bool:
     row = market_calendar_row(market, local.strftime("%Y-%m-%d"))
     if not row:
@@ -412,7 +454,12 @@ def market_state_for_symbol(symbol: str, now: datetime) -> dict[str, Any]:
         state = row["status"]
     else:
         minutes = local.hour * 60 + local.minute
-        state = "live" if in_sessions(row["sessions"], minutes) else "closed"
+        if in_sessions(row["sessions"], minutes):
+            state = "live"
+        elif between_sessions(row["sessions"], minutes):
+            state = "break"
+        else:
+            state = "closed"
     return {
         "symbol": symbol,
         "market": market,
@@ -1244,8 +1291,59 @@ def require_arg(name: str) -> str:
     return value
 
 
+def unique_csv_values(raw: str) -> list[str]:
+    return list(dict.fromkeys(part.strip() for part in raw.split(",") if part.strip()))
+
+
+def require_fund_codes(name: str = "codes", *, max_codes: int = MAX_FUND_CODES_PER_REQUEST) -> list[str]:
+    codes = unique_csv_values(require_arg(name))
+    if not codes:
+        raise ValueError(f"Missing {name} parameter")
+    invalid = [code for code in codes if not FUND_CODE_RE.fullmatch(code)]
+    if invalid:
+        preview = ", ".join(invalid[:3])
+        raise ValueError(f"Invalid fund code: {preview}; fund codes must be 6 digits")
+    if len(codes) > max_codes:
+        raise ValueError(f"Too many fund codes; maximum is {max_codes}")
+    return codes
+
+
+def require_symbol_list(name: str, *, pattern: re.Pattern[str], max_symbols: int) -> list[str]:
+    symbols = unique_csv_values(require_arg(name))
+    if not symbols:
+        raise ValueError(f"Missing {name} parameter")
+    invalid = [symbol for symbol in symbols if not pattern.fullmatch(symbol)]
+    if invalid:
+        preview = ", ".join(invalid[:3])
+        raise ValueError(f"Invalid symbol: {preview}")
+    if len(symbols) > max_symbols:
+        raise ValueError(f"Too many symbols; maximum is {max_symbols}")
+    return symbols
+
+
 def should_refresh() -> bool:
     return request.args.get("refresh", "").lower() in {"1", "true", "yes"}
+
+
+def client_rate_key() -> str:
+    forwarded = request.headers.get("X-Forwarded-For", "").split(",", 1)[0].strip()
+    return forwarded or request.remote_addr or "unknown"
+
+
+def enforce_rate_limit(rule: str) -> None:
+    limit, window_seconds = RATE_LIMIT_RULES.get(rule, (0, 0))
+    if limit <= 0 or window_seconds <= 0:
+        return
+
+    now = time.monotonic()
+    bucket_key = f"{rule}:{client_rate_key()}"
+    with _RATE_LIMIT_GUARD:
+        bucket = _RATE_LIMIT_BUCKETS.setdefault(bucket_key, deque())
+        while bucket and now - bucket[0] >= window_seconds:
+            bucket.popleft()
+        if len(bucket) >= limit:
+            raise TooManyRequests(description=f"Rate limit exceeded for {rule}; please retry later")
+        bucket.append(now)
 
 
 def bytes_response(body: bytes, *, status: int = 200, content_type: str = "application/json") -> Response:
@@ -1291,7 +1389,12 @@ def health() -> Response:
 
 @app.get("/api/sina")
 def sina() -> Response:
-    symbols = ",".join(sorted(dict.fromkeys(symbol for symbol in require_arg("list").split(",") if symbol)))
+    enforce_rate_limit("sina")
+    symbols = ",".join(sorted(require_symbol_list(
+        "list",
+        pattern=SINA_SYMBOL_RE,
+        max_symbols=MAX_SINA_SYMBOLS_PER_REQUEST,
+    )))
     url = f"https://hq.sinajs.cn/list={symbols}"
     status, content_type, body = fetch_upstream(
         url,
@@ -1307,15 +1410,21 @@ def sina() -> Response:
 
 @app.get("/api/marketstates")
 def market_states() -> Response:
+    enforce_rate_limit("marketstates")
     ensure_market_calendar_seeded()
-    symbols = [symbol for symbol in require_arg("symbols").split(",") if symbol]
+    symbols = require_symbol_list(
+        "symbols",
+        pattern=SINA_SYMBOL_RE,
+        max_symbols=MAX_MARKET_STATE_SYMBOLS_PER_REQUEST,
+    )
     now = parse_market_now(request.args.get("now"))
     return json_response({symbol: market_state_for_symbol(symbol, now) for symbol in symbols})
 
 
 @app.get("/api/fundnav")
 def fund_nav() -> Response:
-    codes = require_arg("codes").split(",")
+    enforce_rate_limit("fundnav")
+    codes = require_fund_codes()
     results: dict[str, Any] = {}
     for code in codes:
         url = f"https://fundgz.1234567.com.cn/js/{quote(code)}.js"
@@ -1337,8 +1446,11 @@ def fund_nav() -> Response:
 
 @app.get("/api/fundholdings")
 def fund_holdings() -> Response:
-    codes = [code for code in require_arg("codes").split(",") if code]
+    enforce_rate_limit("fundholdings")
+    codes = require_fund_codes()
     refresh = should_refresh()
+    if refresh:
+        enforce_rate_limit("fundholdings_refresh")
     results: dict[str, Any] = {}
     for code in codes:
         cached_rows = read_fund_holdings_from_db(code)
@@ -1379,10 +1491,13 @@ def fund_holdings() -> Response:
 
 @app.get("/api/fundhistory")
 def fund_history() -> Response:
-    codes = require_arg("codes").split(",")
+    enforce_rate_limit("fundhistory")
+    codes = require_fund_codes()
     page_size = clamp_int(request.args.get("pageSize", "2"), 2, 5000, 2)
     page_index = max(clamp_int(request.args.get("pageIndex", "1"), 1, 100000, 1), 1)
     refresh = should_refresh()
+    if refresh:
+        enforce_rate_limit("fundhistory_refresh")
     results: dict[str, Any] = {}
     for code in codes:
         cached_rows = read_fund_history_from_db(code, page_size, page_index)
@@ -1391,7 +1506,8 @@ def fund_history() -> Response:
                 results[code] = cached_rows
             continue
 
-        fetch_and_store_fund_history(code, page_size * page_index, refresh=refresh)
+        target_count = min(page_size * page_index, MAX_FUND_HISTORY_REFRESH_ROWS)
+        fetch_and_store_fund_history(code, target_count, refresh=refresh)
         merged_rows = read_fund_history_from_db(code, page_size, page_index)
         if merged_rows:
             results[code] = merged_rows
@@ -1402,7 +1518,8 @@ def fund_history() -> Response:
 
 @app.get("/api/fundreturns")
 def fund_returns() -> Response:
-    codes = [code for code in require_arg("codes").split(",") if code]
+    enforce_rate_limit("fundreturns")
+    codes = require_fund_codes()
     results: dict[str, Any] = {}
     for code in codes:
         summary = read_fund_return_summary_from_db(code)
@@ -1413,9 +1530,12 @@ def fund_returns() -> Response:
 
 @app.get("/api/fundprofiles")
 def fund_profiles() -> Response:
-    codes = [code for code in require_arg("codes").split(",") if code]
+    enforce_rate_limit("fundprofiles")
+    codes = require_fund_codes()
     results: dict[str, Any] = {}
     refresh = should_refresh()
+    if refresh:
+        enforce_rate_limit("fundprofiles_refresh")
     for code in codes:
         url = f"https://fundf10.eastmoney.com/jbgk_{quote(code)}.html"
         status, _, body = fetch_upstream(
@@ -1437,9 +1557,12 @@ def fund_profiles() -> Response:
 
 @app.get("/api/fundpurchase")
 def fund_purchase() -> Response:
-    codes = [code for code in require_arg("codes").split(",") if code]
+    enforce_rate_limit("fundpurchase")
+    codes = require_fund_codes()
     ttl_seconds = 6 * 60 * 60
     refresh = should_refresh()
+    if refresh:
+        enforce_rate_limit("fundpurchase_refresh")
 
     if not refresh:
         cached_results = read_purchase_status_from_db(codes, ttl_seconds)
@@ -1492,9 +1615,16 @@ def market_history_url(source: str, symbol: str) -> tuple[str, str]:
 
 @app.get("/api/markethistory")
 def market_history() -> Response:
+    enforce_rate_limit("markethistory")
     source = require_arg("source")
     symbol = require_arg("symbol")
+    if source not in {"sina-cn", "sina-us", "sina-futures"}:
+        raise ValueError("Unsupported source")
+    if not MARKET_HISTORY_SYMBOL_RE.fullmatch(symbol):
+        raise ValueError("Invalid symbol")
     refresh = should_refresh()
+    if refresh:
+        enforce_rate_limit("markethistory_refresh")
     cached_rows = read_market_history_from_db(source, symbol)
     if not refresh:
         return json_response(cached_rows)

@@ -104,7 +104,7 @@ export interface MarketReturnSummary {
   endClose: number;
 }
 
-export type MarketState = 'live' | 'closed' | 'holiday' | 'weekend';
+export type MarketState = 'live' | 'break' | 'closed' | 'holiday' | 'weekend';
 
 export interface MarketStateData {
   symbol: string;

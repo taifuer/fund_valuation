@@ -27,6 +27,7 @@ function marketStateLabel(state: DisplayState): string {
   if (state === 'pre') return '盘前';
   if (state === 'post') return '盘后';
   if (state === 'stale') return '延迟';
+  if (state === 'break') return '午间休市';
   if (state === 'holiday') return '假期休市';
   if (state === 'weekend') return '周末休市';
   return '已收盘';

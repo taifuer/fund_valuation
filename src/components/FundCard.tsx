@@ -4,6 +4,7 @@ import type { FundEstimate } from '../hooks/useQuotes';
 import HoldingsTable from './HoldingsTable';
 import FundNavTable from './FundNavTable';
 import FundHistoryChart from './FundHistoryChart';
+import { getMarketState } from '../marketHours';
 import styles from './FundCard.module.css';
 
 interface Props {
@@ -74,8 +75,13 @@ function closeTime(sinaSymbol: string): string | null {
   return null;
 }
 
-function quoteTimeCandidate(quote: QuoteData, closed: boolean): { label: string; sort: string } | null {
-  if (closed) {
+function quoteTimeCandidate(
+  quote: QuoteData,
+  closed: boolean,
+  marketStates: Map<string, MarketStateData>,
+): { label: string; sort: string } | null {
+  const state = marketStates.get(quote.symbol)?.state ?? getMarketState(quote.symbol);
+  if (closed && state !== 'break') {
     const time = closeTime(quote.symbol);
     const dateMatch = quote.time.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (time && dateMatch) {
@@ -90,9 +96,13 @@ function quoteTimeCandidate(quote: QuoteData, closed: boolean): { label: string;
   return label ? { label, sort: quote.time || String(quote.fetchedAt) } : null;
 }
 
-function estimateTimeLabel(quotes: QuoteData[], closed: boolean): string | null {
+function estimateTimeLabel(
+  quotes: QuoteData[],
+  closed: boolean,
+  marketStates: Map<string, MarketStateData>,
+): string | null {
   const candidates = quotes
-    .map((quote) => quoteTimeCandidate(quote, closed))
+    .map((quote) => quoteTimeCandidate(quote, closed, marketStates))
     .filter((item): item is { label: string; sort: string } => item != null)
     .sort((a, b) => b.sort.localeCompare(a.sort));
   return candidates[0]?.label ?? null;
@@ -204,7 +214,7 @@ export default function FundCard({
     : estimateState === 'PARTIAL'
       ? styles.estLiveTagPartial
       : styles.estLiveTagClosed;
-  const timeLabel = estimateTimeLabel(estimate.holdingsQuotes, estimateState === 'CLOSED');
+  const timeLabel = estimateTimeLabel(estimate.holdingsQuotes, estimateState === 'CLOSED', marketStates);
   const profile = fund.profile;
 
   return (

@@ -43,6 +43,8 @@ class ServerDataRefreshTests(unittest.TestCase):
                 DELETE FROM market_calendar;
                 """
             )
+        with server._RATE_LIMIT_GUARD:
+            server._RATE_LIMIT_BUCKETS.clear()
 
     def test_fetch_upstream_uses_cache_until_force_refresh(self) -> None:
         bodies = [b"old", b"new"]
@@ -105,6 +107,47 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertIn("易方达亚洲精选股票(QDII)", response.get_data(as_text=True))
         self.assertNotIn("�", response.get_data(as_text=True))
 
+    def test_fund_api_rejects_invalid_codes_before_upstream_fetch(self) -> None:
+        with patch.object(server, "fetch_upstream") as fetch:
+            response = server.app.test_client().get("/api/fundnav?codes=016664,abc123")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Invalid fund code", response.get_data(as_text=True))
+        fetch.assert_not_called()
+
+    def test_fund_api_limits_code_count(self) -> None:
+        codes = ",".join(f"{100000 + index:06d}" for index in range(server.MAX_FUND_CODES_PER_REQUEST + 1))
+
+        response = server.app.test_client().get(f"/api/fundreturns?codes={codes}")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Too many fund codes", response.get_data(as_text=True))
+
+    def test_fund_api_rate_limits_by_client(self) -> None:
+        body = b'jsonpgz({"fundcode":"016664","name":"test"});'
+
+        with patch.dict(server.RATE_LIMIT_RULES, {"fundnav": (1, 60)}):
+            with patch.object(server, "fetch_upstream", return_value=(200, "text/plain; charset=utf-8", body)):
+                client = server.app.test_client()
+                first = client.get("/api/fundnav?codes=016664")
+                second = client.get("/api/fundnav?codes=016664")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+
+    def test_fund_history_refresh_caps_upstream_target_count(self) -> None:
+        with patch.object(server, "fetch_and_store_fund_history") as fetch_history:
+            response = server.app.test_client().get(
+                "/api/fundhistory?codes=016664&pageSize=5000&pageIndex=100000&refresh=1"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        fetch_history.assert_called_once_with(
+            "016664",
+            server.MAX_FUND_HISTORY_REFRESH_ROWS,
+            refresh=True,
+        )
+
     def test_market_states_marks_known_holidays(self) -> None:
         response = server.app.test_client().get(
             "/api/marketstates?symbols=hkHSI,b_KOSPI,s_sh000001&now=2026-05-25T13:00:00%2B08:00"
@@ -124,6 +167,16 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload["s_sh000001"]["state"], "weekend")
+
+    def test_market_states_marks_lunch_break_separately(self) -> None:
+        response = server.app.test_client().get(
+            "/api/marketstates?symbols=s_sh000001,sh600519&now=2026-05-26T12:00:00%2B08:00"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["s_sh000001"]["state"], "break")
+        self.assertEqual(payload["sh600519"]["state"], "break")
 
     def test_fund_profiles_parses_basic_profile(self) -> None:
         upstream_body = """
