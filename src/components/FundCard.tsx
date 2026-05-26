@@ -4,6 +4,7 @@ import type { FundEstimate } from '../hooks/useQuotes';
 import HoldingsTable from './HoldingsTable';
 import FundNavTable from './FundNavTable';
 import FundHistoryChart from './FundHistoryChart';
+import { getMarketState } from '../marketHours';
 import styles from './FundCard.module.css';
 
 interface Props {
@@ -57,7 +58,8 @@ function closeTime(sinaSymbol: string): string | null {
 }
 
 function quoteTimeCandidate(quote: QuoteData, closed: boolean): { label: string; sort: string } | null {
-  if (closed) {
+  const state = getMarketState(quote.symbol);
+  if (closed && state !== 'break') {
     const time = closeTime(quote.symbol);
     const dateMatch = quote.time.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (time && dateMatch) {

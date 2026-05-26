@@ -157,6 +157,21 @@ function isInSession(sessions: Session[], minutes: number): boolean {
   });
 }
 
+function isBetweenSessions(sessions: Session[], minutes: number): boolean {
+  const ordered = sessions
+    .map((s) => ({
+      start: s.start[0] * 60 + s.start[1],
+      end: s.end[0] * 60 + s.end[1],
+    }))
+    .filter((s) => s.start < s.end)
+    .sort((a, b) => a.start - b.start);
+
+  return ordered.some((session, index) => {
+    const next = ordered[index + 1];
+    return next ? minutes >= session.end && minutes < next.start : false;
+  });
+}
+
 function isWeekday(weekday: string): boolean {
   return weekday !== 'Sat' && weekday !== 'Sun';
 }
@@ -235,7 +250,7 @@ function marketKey(sinaSymbol: string): string | null {
   return null;
 }
 
-export type MarketState = 'live' | 'closed' | 'holiday' | 'weekend';
+export type MarketState = 'live' | 'break' | 'closed' | 'holiday' | 'weekend';
 
 export function getMarketState(sinaSymbol: string, now = new Date()): MarketState {
   const key = marketKey(sinaSymbol);
@@ -270,5 +285,6 @@ export function getMarketState(sinaSymbol: string, now = new Date()): MarketStat
   if (calendar.holidays2026.has(local.date)) return 'holiday';
 
   const sessions = calendar.halfDays2026?.[local.date] ?? calendar.sessions;
-  return isInSession(sessions, local.minutes) ? 'live' : 'closed';
+  if (isInSession(sessions, local.minutes)) return 'live';
+  return isBetweenSessions(sessions, local.minutes) ? 'break' : 'closed';
 }

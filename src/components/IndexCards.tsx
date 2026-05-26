@@ -60,7 +60,7 @@ function closeTimeLabel(sinaSymbol: string, quoteTime: string): string | null {
 
 type DisplayState = 'futuresLive' | 'live' | 'stale' | MarketState;
 
-function isNonTradingState(state: DisplayState): boolean {
+function shouldUseCloseTimeLabel(state: DisplayState): boolean {
   return state === 'closed' || state === 'holiday' || state === 'weekend';
 }
 
@@ -68,6 +68,7 @@ function marketStateLabel(state: DisplayState): string {
   if (state === 'futuresLive') return '期货 LIVE';
   if (state === 'live') return 'LIVE';
   if (state === 'stale') return '延迟';
+  if (state === 'break') return '午间休市';
   if (state === 'holiday') return '假期休市';
   if (state === 'weekend') return '周末休市';
   return '已收盘';
@@ -109,7 +110,7 @@ function Card({
       : state === 'live'
         ? 'stale'
         : state;
-  const quoteTimeLabel = isNonTradingState(displayState)
+  const quoteTimeLabel = shouldUseCloseTimeLabel(displayState)
     ? closeTimeLabel(displayData.symbol, displayData.time) ?? formatQuoteDate(displayData.time)
     : formatQuoteDate(displayData.time);
 
