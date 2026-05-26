@@ -44,6 +44,8 @@ MAX_FUND_CODES_PER_REQUEST = 50
 MAX_SINA_SYMBOLS_PER_REQUEST = 160
 MAX_MARKET_STATE_SYMBOLS_PER_REQUEST = 160
 MAX_FUND_HISTORY_REFRESH_ROWS = 3000
+FUND_HISTORY_AUTO_REFRESH_ROWS = 80
+HISTORY_AUTO_REFRESH_TTL_MS = 30 * 60 * 1000
 
 RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "sina": (240, 60),
@@ -65,6 +67,10 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
 
 def now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def beijing_today() -> str:
+    return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
 
 def ensure_storage() -> None:
@@ -770,6 +776,38 @@ def fetch_and_store_fund_history(code: str, target_count: int, *, refresh: bool)
             break
 
 
+def latest_fund_history_meta(code: str) -> tuple[str | None, int]:
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            """
+            SELECT MAX(date), MAX(fetched_at)
+            FROM fund_nav_history
+            WHERE code = ?
+            """,
+            (code,),
+        ).fetchone()
+    return (str(row[0]) if row and row[0] else None, int(row[1] if row and row[1] else 0))
+
+
+def history_needs_auto_refresh(latest_date: str | None, fetched_at: int) -> bool:
+    if not latest_date:
+        return False
+    if latest_date >= beijing_today():
+        return False
+    return now_ms() - fetched_at > HISTORY_AUTO_REFRESH_TTL_MS
+
+
+def auto_refresh_fund_history_if_stale(code: str, target_count: int) -> None:
+    latest_date, fetched_at = latest_fund_history_meta(code)
+    if not history_needs_auto_refresh(latest_date, fetched_at):
+        return
+    fetch_and_store_fund_history(
+        code,
+        min(max(target_count, 2), FUND_HISTORY_AUTO_REFRESH_ROWS),
+        refresh=True,
+    )
+
+
 def count_fund_history_rows(code: str) -> int:
     with sqlite3.connect(DB_PATH) as conn:
         row = conn.execute("SELECT COUNT(*) FROM fund_nav_history WHERE code = ?", (code,)).fetchone()
@@ -1229,6 +1267,42 @@ def read_market_history_from_db(source: str, symbol: str) -> list[dict[str, floa
     return [{"date": str(date), "close": float(close)} for date, close in rows]
 
 
+def latest_market_history_meta(source: str, symbol: str) -> tuple[str | None, int]:
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            """
+            SELECT MAX(date), MAX(fetched_at)
+            FROM market_history
+            WHERE source = ? AND symbol = ?
+            """,
+            (source, symbol),
+        ).fetchone()
+    return (str(row[0]) if row and row[0] else None, int(row[1] if row and row[1] else 0))
+
+
+def auto_refresh_market_history_if_stale(source: str, symbol: str) -> bool:
+    latest_date, fetched_at = latest_market_history_meta(source, symbol)
+    if not history_needs_auto_refresh(latest_date, fetched_at):
+        return False
+
+    try:
+        url, referer = market_history_url(source, symbol)
+        status, _, body = fetch_upstream(
+            url,
+            referer=referer,
+            content_type="application/json; charset=utf-8",
+            cache_key=f"markethistory:{source}:{symbol}",
+            kind="markethistory",
+            ttl_seconds=300,
+            force_refresh=True,
+        )
+        if status >= 400:
+            return False
+        return store_market_history(source, symbol, decode_body(body)) > 0
+    except Exception:
+        return False
+
+
 def read_market_ytd_return_from_db(source: str, symbol: str) -> dict[str, Any] | None:
     rows = read_market_history_from_db(source, symbol)
     points = [
@@ -1503,7 +1577,11 @@ def fund_history() -> Response:
         cached_rows = read_fund_history_from_db(code, page_size, page_index)
         if not refresh:
             if cached_rows:
-                results[code] = cached_rows
+                try:
+                    auto_refresh_fund_history_if_stale(code, page_size * page_index)
+                except Exception:
+                    pass
+                results[code] = read_fund_history_from_db(code, page_size, page_index) or cached_rows
             continue
 
         target_count = min(page_size * page_index, MAX_FUND_HISTORY_REFRESH_ROWS)
@@ -1522,6 +1600,10 @@ def fund_returns() -> Response:
     codes = require_fund_codes()
     results: dict[str, Any] = {}
     for code in codes:
+        try:
+            auto_refresh_fund_history_if_stale(code, FUND_HISTORY_AUTO_REFRESH_ROWS)
+        except Exception:
+            pass
         summary = read_fund_return_summary_from_db(code)
         if summary:
             results[code] = summary
@@ -1627,6 +1709,9 @@ def market_history() -> Response:
         enforce_rate_limit("markethistory_refresh")
     cached_rows = read_market_history_from_db(source, symbol)
     if not refresh:
+        if cached_rows:
+            auto_refresh_market_history_if_stale(source, symbol)
+            return json_response(read_market_history_from_db(source, symbol) or cached_rows)
         return json_response(cached_rows)
 
     url, referer = market_history_url(source, symbol)

@@ -224,6 +224,35 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {})
 
+    def test_fund_history_without_refresh_updates_stale_sqlite_rows(self) -> None:
+        server.store_fund_history(
+            "016664",
+            [{"FSRQ": "2026-05-15", "DWJZ": "3.1194", "JZZZL": "-4.73"}],
+        )
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute(
+                "UPDATE fund_nav_history SET fetched_at = ? WHERE code = ?",
+                (server.now_ms() - server.HISTORY_AUTO_REFRESH_TTL_MS - 1, "016664"),
+            )
+        upstream_body = (
+            'jQuery({"Data":{"LSJZList":['
+            '{"FSRQ":"2026-05-21","DWJZ":"3.0848","JZZZL":"-0.83"},'
+            '{"FSRQ":"2026-05-20","DWJZ":"3.1106","JZZZL":"-0.28"}'
+            ']}});'
+        ).encode()
+
+        def fake_fetch_upstream(*_args: object, **kwargs: object) -> tuple[int, str, bytes]:
+            self.assertIs(kwargs.get("force_refresh"), True)
+            return 200, "text/plain; charset=utf-8", upstream_body
+
+        with patch.object(server, "fetch_upstream", side_effect=fake_fetch_upstream):
+            response = server.app.test_client().get("/api/fundhistory?codes=016664&pageSize=2&pageIndex=1")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["016664"][0]["FSRQ"], "2026-05-21")
+        self.assertEqual(server.read_fund_history_from_db("016664", 1, 1)[0]["FSRQ"], "2026-05-21")
+
     def test_fund_history_refresh_fetches_latest_and_updates_sqlite(self) -> None:
         server.store_fund_history(
             "016664",
@@ -472,6 +501,28 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), [])
+
+    def test_market_history_without_refresh_updates_stale_sqlite_rows(self) -> None:
+        server.store_market_history("sina-us", ".INX", 'var _=([{"d":"2026-05-14","c":"7501.24"}]);')
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute(
+                "UPDATE market_history SET fetched_at = ? WHERE source = ? AND symbol = ?",
+                (server.now_ms() - server.HISTORY_AUTO_REFRESH_TTL_MS - 1, "sina-us", ".INX"),
+            )
+        upstream_body = b'var _=([{"d":"2026-05-19","c":"7353.61"}]);'
+
+        def fake_fetch_upstream(*_args: object, **kwargs: object) -> tuple[int, str, bytes]:
+            self.assertIs(kwargs.get("force_refresh"), True)
+            return 200, "application/json; charset=utf-8", upstream_body
+
+        with patch.object(server, "fetch_upstream", side_effect=fake_fetch_upstream):
+            response = server.app.test_client().get("/api/markethistory?source=sina-us&symbol=.INX")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[-1]["date"], "2026-05-19")
+        rows = server.read_market_history_from_db("sina-us", ".INX")
+        self.assertEqual(rows[-1]["date"], "2026-05-19")
 
     def test_market_history_refresh_fetches_latest_and_updates_sqlite(self) -> None:
         server.store_market_history("sina-us", ".INX", 'var _=([{"d":"2026-05-14","c":"7501.24"}]);')
