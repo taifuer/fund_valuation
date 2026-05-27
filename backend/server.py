@@ -62,7 +62,11 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "fundpurchase_refresh": (10, 60),
     "markethistory": (120, 60),
     "markethistory_refresh": (20, 60),
+    "fundbacktest": (60, 60),
+    "fundbacktest_refresh": (6, 60),
 }
+
+BACKTEST_MODEL_VERSION = "top_holdings_v1"
 
 
 def now_ms() -> int:
@@ -132,6 +136,29 @@ def ensure_storage() -> None:
               close REAL NOT NULL,
               fetched_at INTEGER NOT NULL,
               PRIMARY KEY (source, symbol, date)
+            );
+
+            CREATE TABLE IF NOT EXISTS stock_daily_history (
+              sina_symbol TEXT NOT NULL,
+              date TEXT NOT NULL,
+              close REAL NOT NULL,
+              change_percent REAL NOT NULL,
+              fetched_at INTEGER NOT NULL,
+              PRIMARY KEY (sina_symbol, date)
+            );
+
+            CREATE TABLE IF NOT EXISTS fund_estimate_backtest (
+              code TEXT NOT NULL,
+              date TEXT NOT NULL,
+              model_version TEXT NOT NULL,
+              predicted_change REAL NOT NULL,
+              fitted_change REAL NOT NULL,
+              actual_change REAL NOT NULL,
+              error REAL NOT NULL,
+              fitted_error REAL NOT NULL,
+              coverage REAL NOT NULL,
+              fetched_at INTEGER NOT NULL,
+              PRIMARY KEY (code, date, model_version)
             );
 
             CREATE TABLE IF NOT EXISTS market_calendar (
@@ -985,6 +1012,58 @@ def read_fund_holdings_from_db(code: str) -> list[dict[str, Any]]:
     ]
 
 
+def parse_default_fund_holdings_from_constants(code: str) -> list[dict[str, Any]]:
+    constants_path = ROOT_DIR / "src" / "constants.ts"
+    try:
+        text = constants_path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+
+    match = re.search(
+        rf"symbol:\s*'{re.escape(code)}'.*?code:\s*'{re.escape(code)}'.*?holdings:\s*\[(.*?)\]\s*,\s*\}}",
+        text,
+        re.S,
+    )
+    if not match:
+        return []
+
+    helpers = {
+        "us": ("us", "USD", lambda symbol: f"gb_{symbol.lower()}"),
+        "cn": ("cn", "CNY", lambda symbol: symbol.lower()),
+        "hk": ("hk", "HKD", lambda symbol: f"hk{symbol.zfill(5)}"),
+        "kr": ("kr", "KRW", lambda symbol: f"kr{symbol}"),
+    }
+    holdings: list[dict[str, Any]] = []
+    for rank, item in enumerate(
+        re.finditer(r"(us|cn|hk|kr)\('([^']+)'\s*,\s*'([^']+)'\s*,\s*([0-9.]+)\)", match.group(1)),
+        start=1,
+    ):
+        helper, symbol, name, weight_raw = item.groups()
+        market, currency, sina_symbol_fn = helpers[helper]
+        try:
+            weight = float(weight_raw)
+        except ValueError:
+            continue
+        holdings.append({
+            "code": code,
+            "reportDate": "2026-03-31",
+            "rank": rank,
+            "stockCode": symbol.upper(),
+            "symbol": symbol.upper(),
+            "name": name,
+            "weight": weight,
+            "market": market,
+            "sinaSymbol": sina_symbol_fn(symbol),
+            "currency": currency,
+        })
+    return holdings
+
+
+def read_fund_holdings_for_backtest(code: str) -> list[dict[str, Any]]:
+    rows = read_fund_holdings_from_db(code)
+    return rows if rows else parse_default_fund_holdings_from_constants(code)
+
+
 def purchase_status_date(raw_date: str, show_days: list[Any]) -> str:
     if re.match(r"^\d{4}-\d{2}-\d{2}$", raw_date):
         return raw_date
@@ -1099,6 +1178,117 @@ def store_market_history(source: str, symbol: str, text: str) -> int:
             points,
         )
     return len(points)
+
+
+def stock_history_url(sina_symbol: str) -> tuple[str, str] | None:
+    if sina_symbol.startswith("gb_"):
+        symbol = sina_symbol[3:].upper()
+        return (
+            f"https://stock.finance.sina.com.cn/usstock/api/jsonp.php/var%20_=/US_MinKService.getDailyK?symbol={quote(symbol)}",
+            "https://finance.sina.com.cn/stock/usstock/",
+        )
+    if re.match(r"^(sh|sz)\d{6}$", sina_symbol):
+        return (
+            f"https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketData.getKLineData?symbol={quote(sina_symbol)}&scale=240&ma=no&datalen=1023",
+            "https://finance.sina.com.cn/",
+        )
+    if re.match(r"^hk\d{5}$", sina_symbol):
+        symbol = sina_symbol[2:]
+        return (
+            f"https://quotes.sina.cn/hk/api/jsonp.php/var%20_=/HK_MarketData.getKLine?symbol={quote(symbol)}&scale=240&ma=no&datalen=1023",
+            "https://finance.sina.com.cn/stock/hkstock/",
+        )
+    return None
+
+
+def parse_stock_history_rows(sina_symbol: str, text: str) -> list[dict[str, Any]]:
+    if sina_symbol.startswith("gb_") or sina_symbol.startswith("hk"):
+        return parse_sina_array_jsonp(text)
+    if re.match(r"^(sh|sz)\d{6}$", sina_symbol):
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, list) else []
+    return []
+
+
+def store_stock_history(sina_symbol: str, text: str) -> int:
+    rows = parse_stock_history_rows(sina_symbol, text)
+    raw_points: list[tuple[str, float]] = []
+    for row in rows:
+        date = str(row.get("day") or row.get("d") or row.get("date") or "")
+        try:
+            close = float(row.get("close") or row.get("c") or 0)
+        except (TypeError, ValueError):
+            continue
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", date) and close > 0:
+            raw_points.append((date, close))
+
+    deduped = sorted(dict(raw_points).items())
+    if not deduped:
+        return 0
+
+    existing: dict[str, float] = {}
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            """
+            SELECT date, close
+            FROM stock_daily_history
+            WHERE sina_symbol = ?
+            ORDER BY date ASC
+            """,
+            (sina_symbol,),
+        ).fetchall()
+    existing = {str(date): float(close) for date, close in rows}
+
+    merged = sorted({**existing, **dict(deduped)}.items())
+    previous_close_by_date: dict[str, float] = {}
+    previous_close: float | None = None
+    for date, close in merged:
+        if previous_close is not None and previous_close > 0:
+            previous_close_by_date[date] = previous_close
+        previous_close = close
+
+    fetched_at = now_ms()
+    points: list[tuple[str, str, float, float, int]] = []
+    for date, close in deduped:
+        previous = previous_close_by_date.get(date)
+        change_percent = ((close - previous) / previous) * 100 if previous and previous > 0 else 0.0
+        points.append((sina_symbol, date, close, change_percent, fetched_at))
+
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.executemany(
+            """
+            INSERT INTO stock_daily_history(sina_symbol, date, close, change_percent, fetched_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(sina_symbol, date) DO UPDATE SET
+              close = excluded.close,
+              change_percent = excluded.change_percent,
+              fetched_at = excluded.fetched_at
+            """,
+            points,
+        )
+    return len(points)
+
+
+def fetch_and_store_stock_history(sina_symbol: str, *, refresh: bool = False) -> bool:
+    target = stock_history_url(sina_symbol)
+    if target is None:
+        return False
+    url, referer = target
+    status, _, body = fetch_upstream(
+        url,
+        referer=referer,
+        content_type="application/json; charset=utf-8",
+        cache_key=f"stockhistory:{sina_symbol}",
+        kind="stockhistory",
+        ttl_seconds=300,
+        force_refresh=refresh,
+    )
+    if status >= 400:
+        return False
+    try:
+        return store_stock_history(sina_symbol, decode_body(body)) > 0
+    except Exception:
+        return False
 
 
 def read_fund_history_from_db(code: str, page_size: int, page_index: int) -> list[dict[str, str]]:
@@ -1347,6 +1537,264 @@ def read_market_ytd_return_from_db(source: str, symbol: str) -> dict[str, Any] |
         "endDate": latest_date,
         "startClose": round(start_close, 4),
         "endClose": round(latest_close, 4),
+    }
+
+
+def read_fund_nav_changes(code: str, days: int) -> list[tuple[str, float]]:
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            """
+            SELECT date, change_percent
+            FROM fund_nav_history
+            WHERE code = ?
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            (code, days),
+        ).fetchall()
+    return [(str(date), float(change)) for date, change in reversed(rows)]
+
+
+def read_stock_changes(symbols: list[str], start_date: str, end_date: str) -> dict[str, dict[str, float]]:
+    supported = [symbol for symbol in dict.fromkeys(symbols) if symbol]
+    if not supported:
+        return {}
+    placeholders = ",".join("?" for _ in supported)
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT sina_symbol, date, change_percent
+            FROM stock_daily_history
+            WHERE sina_symbol IN ({placeholders})
+              AND date BETWEEN ? AND ?
+            """,
+            (*supported, start_date, end_date),
+        ).fetchall()
+    changes: dict[str, dict[str, float]] = {symbol: {} for symbol in supported}
+    for symbol, date, change in rows:
+        changes.setdefault(str(symbol), {})[str(date)] = float(change)
+    return changes
+
+
+def linear_fit(points: list[dict[str, float]], key: str = "predictedChange") -> tuple[float, float]:
+    if len(points) < 2:
+        return 0.0, 1.0
+    xs = [point[key] for point in points]
+    ys = [point["actualChange"] for point in points]
+    mean_x = sum(xs) / len(xs)
+    mean_y = sum(ys) / len(ys)
+    variance = sum((x - mean_x) ** 2 for x in xs)
+    if variance <= 1e-12:
+        return mean_y, 0.0
+    beta = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys)) / variance
+    alpha = mean_y - beta * mean_x
+    return alpha, beta
+
+
+def backtest_metrics(points: list[dict[str, float]], key: str) -> dict[str, Any]:
+    if not points:
+        return {"mae": None, "rmse": None, "directionAccuracy": None}
+    errors = [float(point[key]) - float(point["actualChange"]) for point in points]
+    mae = sum(abs(error) for error in errors) / len(errors)
+    rmse = (sum(error * error for error in errors) / len(errors)) ** 0.5
+    direction_hits = 0
+    direction_count = 0
+    for point in points:
+        predicted = float(point[key])
+        actual = float(point["actualChange"])
+        if predicted == 0 or actual == 0:
+            continue
+        direction_count += 1
+        if (predicted > 0) == (actual > 0):
+            direction_hits += 1
+    return {
+        "mae": round(mae, 4),
+        "rmse": round(rmse, 4),
+        "directionAccuracy": round(direction_hits / direction_count * 100, 2) if direction_count else None,
+    }
+
+
+def split_backtest_points(points: list[dict[str, float]]) -> tuple[list[dict[str, float]], list[dict[str, float]]]:
+    if len(points) < 12:
+        return points, points
+    split_index = int(len(points) * 0.7)
+    split_index = min(max(split_index, 8), len(points) - 4)
+    return points[:split_index], points[split_index:]
+
+
+def store_backtest_points(code: str, points: list[dict[str, float]]) -> None:
+    if not points:
+        return
+    fetched_at = now_ms()
+    rows = [
+        (
+            code,
+            str(point["date"]),
+            BACKTEST_MODEL_VERSION,
+            float(point["predictedChange"]),
+            float(point["fittedChange"]),
+            float(point["actualChange"]),
+            float(point["error"]),
+            float(point["fittedError"]),
+            float(point["coverage"]),
+            fetched_at,
+        )
+        for point in points
+    ]
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.executemany(
+            """
+            INSERT INTO fund_estimate_backtest(
+              code, date, model_version, predicted_change, fitted_change, actual_change,
+              error, fitted_error, coverage, fetched_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(code, date, model_version) DO UPDATE SET
+              predicted_change = excluded.predicted_change,
+              fitted_change = excluded.fitted_change,
+              actual_change = excluded.actual_change,
+              error = excluded.error,
+              fitted_error = excluded.fitted_error,
+              coverage = excluded.coverage,
+              fetched_at = excluded.fetched_at
+            """,
+            rows,
+        )
+
+
+def compute_fund_backtest(code: str, days: int, *, refresh: bool = False) -> dict[str, Any] | None:
+    holdings = read_fund_holdings_for_backtest(code)
+    holdings = [item for item in holdings if item.get("sinaSymbol")]
+    nav_changes = read_fund_nav_changes(code, days)
+    if not holdings or len(nav_changes) < 2:
+        return None
+
+    if refresh:
+        for symbol in dict.fromkeys(str(item.get("sinaSymbol") or "") for item in holdings):
+            if symbol:
+                fetch_and_store_stock_history(symbol, refresh=True)
+
+    start_date = nav_changes[0][0]
+    end_date = nav_changes[-1][0]
+    changes = read_stock_changes([str(item["sinaSymbol"]) for item in holdings], start_date, end_date)
+    total_weight = sum(float(item.get("weight") or 0) for item in holdings)
+    points: list[dict[str, float]] = []
+
+    for date, actual_change in nav_changes:
+        predicted = 0.0
+        covered_weight = 0.0
+        for item in holdings:
+            weight = float(item.get("weight") or 0)
+            change = changes.get(str(item["sinaSymbol"]), {}).get(date)
+            if change is None:
+                continue
+            predicted += weight * change
+            covered_weight += weight
+        if covered_weight <= 0:
+            continue
+        coverage = covered_weight / total_weight if total_weight > 0 else 0
+        points.append({
+            "date": date,  # type: ignore[dict-item]
+            "predictedChange": predicted,
+            "normalizedChange": predicted / covered_weight if covered_weight > 0 else predicted,
+            "actualChange": actual_change,
+            "coverage": coverage,
+            "coveredWeight": covered_weight,
+        })
+
+    if len(points) < 2:
+        return None
+
+    train_points, validation_points = split_backtest_points(points)
+    alpha, beta = linear_fit(train_points, "predictedChange")
+    normalized_alpha, normalized_beta = linear_fit(train_points, "normalizedChange")
+    for point in points:
+        raw_fitted = alpha + beta * float(point["predictedChange"])
+        normalized_fitted = normalized_alpha + normalized_beta * float(point["normalizedChange"])
+        point["rawFittedChange"] = raw_fitted
+        point["normalizedFittedChange"] = normalized_fitted
+        point["error"] = float(point["predictedChange"]) - float(point["actualChange"])
+
+    validation_raw = backtest_metrics(validation_points, "predictedChange")
+    validation_raw_fitted = backtest_metrics(validation_points, "rawFittedChange")
+    validation_normalized_fitted = backtest_metrics(validation_points, "normalizedFittedChange")
+    candidates = [
+        ("raw", validation_raw.get("mae")),
+        ("linear", validation_raw_fitted.get("mae")),
+        ("normalizedLinear", validation_normalized_fitted.get("mae")),
+    ]
+    valid_candidates = [(name, float(mae)) for name, mae in candidates if mae is not None]
+    recommended_model = min(valid_candidates, key=lambda item: item[1])[0] if valid_candidates else "raw"
+    fitted_key = {
+        "raw": "predictedChange",
+        "linear": "rawFittedChange",
+        "normalizedLinear": "normalizedFittedChange",
+    }[recommended_model]
+
+    for point in points:
+        point["fittedChange"] = float(point[fitted_key])
+        point["fittedError"] = float(point["fittedChange"]) - float(point["actualChange"])
+        for key in (
+            "predictedChange",
+            "normalizedChange",
+            "actualChange",
+            "coverage",
+            "coveredWeight",
+            "rawFittedChange",
+            "normalizedFittedChange",
+            "fittedChange",
+            "error",
+            "fittedError",
+        ):
+            point[key] = round(float(point[key]), 4)
+
+    store_backtest_points(code, points)
+    coverage_avg = sum(float(point["coverage"]) for point in points) / len(points)
+    top_holding_weight = total_weight * 100
+    train_summary = {
+        "raw": backtest_metrics(train_points, "predictedChange"),
+        "linear": backtest_metrics(train_points, "rawFittedChange"),
+        "normalizedLinear": backtest_metrics(train_points, "normalizedFittedChange"),
+        "selected": backtest_metrics(train_points, fitted_key),
+    }
+    validation_summary = {
+        "raw": validation_raw,
+        "linear": validation_raw_fitted,
+        "normalizedLinear": validation_normalized_fitted,
+        "selected": backtest_metrics(validation_points, fitted_key),
+    }
+    return {
+        "code": code,
+        "modelVersion": BACKTEST_MODEL_VERSION,
+        "sampleCount": len(points),
+        "trainSampleCount": len(train_points),
+        "validationSampleCount": len(validation_points),
+        "startDate": points[0]["date"],
+        "endDate": points[-1]["date"],
+        "holdingCount": len(holdings),
+        "supportedHoldingCount": len([item for item in holdings if stock_history_url(str(item.get("sinaSymbol") or ""))]),
+        "coverageAvg": round(coverage_avg * 100, 2),
+        "topHoldingWeight": round(top_holding_weight, 2),
+        "fit": {"alpha": round(alpha, 4), "beta": round(beta, 4), "source": "predictedChange"},
+        "normalizedFit": {
+            "alpha": round(normalized_alpha, 4),
+            "beta": round(normalized_beta, 4),
+            "source": "normalizedChange",
+        },
+        "recommendedModel": recommended_model,
+        "shouldApplyFitted": recommended_model != "raw",
+        "expectedError": validation_summary["selected"].get("mae"),
+        "train": train_summary,
+        "validation": validation_summary,
+        "raw": backtest_metrics(points, "predictedChange"),
+        "normalized": backtest_metrics(points, "normalizedChange"),
+        "fitted": backtest_metrics(points, "fittedChange"),
+        "points": points,
+        "limitations": [
+            "当前版本使用最新披露/配置的前十大持仓回测，尚未按历史季度切换持仓。",
+            "历史汇率暂未纳入，外币持仓回测使用股票本币涨跌。",
+            "未披露持仓、现金仓位和基金费用会体现在残差中。",
+        ],
     }
 
 
@@ -1676,6 +2124,22 @@ def fund_purchase() -> Response:
     return json_response(read_purchase_status_from_db(codes, ttl_seconds))
 
 
+@app.get("/api/fundbacktest")
+def fund_backtest() -> Response:
+    enforce_rate_limit("fundbacktest")
+    codes = require_fund_codes()
+    days = clamp_int(request.args.get("days", "90"), 20, 750, 90)
+    refresh = should_refresh()
+    if refresh:
+        enforce_rate_limit("fundbacktest_refresh")
+    results: dict[str, Any] = {}
+    for code in codes:
+        result = compute_fund_backtest(code, days, refresh=refresh)
+        if result:
+            results[code] = result
+    return json_response(results)
+
+
 def market_history_url(source: str, symbol: str) -> tuple[str, str]:
     if source == "sina-cn":
         return (
@@ -1749,6 +2213,10 @@ def market_returns() -> Response:
         if len(pieces) != 2:
             continue
         source, symbol = pieces
+        try:
+            auto_refresh_market_history_if_stale(source, symbol)
+        except Exception:
+            pass
         summary = read_market_ytd_return_from_db(source, symbol)
         if summary:
             results[item] = summary

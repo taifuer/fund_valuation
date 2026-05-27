@@ -41,6 +41,8 @@ class ServerDataRefreshTests(unittest.TestCase):
                 DELETE FROM fund_purchase_status;
                 DELETE FROM market_history;
                 DELETE FROM market_calendar;
+                DELETE FROM stock_daily_history;
+                DELETE FROM fund_estimate_backtest;
                 """
             )
         with server._RATE_LIMIT_GUARD:
@@ -484,6 +486,43 @@ class ServerDataRefreshTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["457001"][0]["sinaSymbol"], "gb_tsm")
 
+    def test_fund_backtest_uses_cached_stock_history(self) -> None:
+        server.store_fund_history(
+            "016664",
+            [
+                {"FSRQ": "2026-05-19", "DWJZ": "1.0000", "JZZZL": "1.00"},
+                {"FSRQ": "2026-05-20", "DWJZ": "1.0200", "JZZZL": "2.00"},
+                {"FSRQ": "2026-05-21", "DWJZ": "1.0098", "JZZZL": "-1.00"},
+            ],
+        )
+        server.store_stock_history(
+            "gb_nvda",
+            'var _=([{"d":"2026-05-18","c":"100"},{"d":"2026-05-19","c":"102"},'
+            '{"d":"2026-05-20","c":"105"},{"d":"2026-05-21","c":"103"}]);',
+        )
+        server.store_stock_history(
+            "gb_tsm",
+            'var _=([{"d":"2026-05-18","c":"50"},{"d":"2026-05-19","c":"51"},'
+            '{"d":"2026-05-20","c":"52"},{"d":"2026-05-21","c":"51"}]);',
+        )
+
+        response = server.app.test_client().get("/api/fundbacktest?codes=016664&days=3")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        result = payload["016664"]
+        self.assertEqual(result["sampleCount"], 3)
+        self.assertEqual(result["modelVersion"], server.BACKTEST_MODEL_VERSION)
+        self.assertGreater(result["coverageAvg"], 0)
+        self.assertIn("mae", result["raw"])
+        self.assertIn("beta", result["fit"])
+
+    def test_fund_backtest_rejects_invalid_codes(self) -> None:
+        response = server.app.test_client().get("/api/fundbacktest?codes=abc123")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Invalid fund code", response.get_data(as_text=True))
+
     def test_market_history_without_refresh_reads_sqlite(self) -> None:
         server.store_market_history("sina-us", ".INX", 'var _=([{"d":"2026-05-14","c":"7501.24"}]);')
 
@@ -523,6 +562,32 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(payload[-1]["date"], "2026-05-19")
         rows = server.read_market_history_from_db("sina-us", ".INX")
         self.assertEqual(rows[-1]["date"], "2026-05-19")
+
+    def test_market_returns_updates_stale_sqlite_rows_before_calculation(self) -> None:
+        server.store_market_history(
+            "sina-us",
+            ".INX",
+            'var _=([{"d":"2025-12-31","c":"100"},{"d":"2026-05-14","c":"110"}]);',
+        )
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute(
+                "UPDATE market_history SET fetched_at = ? WHERE source = ? AND symbol = ?",
+                (server.now_ms() - server.HISTORY_AUTO_REFRESH_TTL_MS - 1, "sina-us", ".INX"),
+            )
+        upstream_body = b'var _=([{"d":"2026-05-19","c":"120"}]);'
+
+        def fake_fetch_upstream(*_args: object, **kwargs: object) -> tuple[int, str, bytes]:
+            self.assertIs(kwargs.get("force_refresh"), True)
+            return 200, "application/json; charset=utf-8", upstream_body
+
+        with patch.object(server, "fetch_upstream", side_effect=fake_fetch_upstream):
+            response = server.app.test_client().get("/api/marketreturns?items=sina-us:.INX")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        summary = payload["sina-us:.INX"]
+        self.assertEqual(summary["endDate"], "2026-05-19")
+        self.assertEqual(summary["returnPercent"], 20.0)
 
     def test_market_history_refresh_fetches_latest_and_updates_sqlite(self) -> None:
         server.store_market_history("sina-us", ".INX", 'var _=([{"d":"2026-05-14","c":"7501.24"}]);')

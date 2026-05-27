@@ -4,6 +4,7 @@ import type { FundEstimate } from '../hooks/useQuotes';
 import HoldingsTable from './HoldingsTable';
 import FundNavTable from './FundNavTable';
 import FundHistoryChart from './FundHistoryChart';
+import FundBacktestPanel from './FundBacktestPanel';
 import { getMarketState } from '../marketHours';
 import styles from './FundCard.module.css';
 
@@ -148,7 +149,7 @@ export default function FundCard({
   onRemove,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState<'holdings' | 'nav' | 'trend'>('holdings');
+  const [activeTab, setActiveTab] = useState<'holdings' | 'nav' | 'trend' | 'backtest'>('holdings');
   const rankStyle = RANK_STYLE[rank];
   const cardClassName = [
     styles.card,
@@ -340,6 +341,13 @@ export default function FundCard({
             >
               走势
             </button>
+            <button
+              type="button"
+              className={`${styles.tabButton} ${activeTab === 'backtest' ? styles.tabButtonActive : ''}`}
+              onClick={() => setActiveTab('backtest')}
+            >
+              回测
+            </button>
           </div>
           {activeTab === 'holdings' && (
             <HoldingsTable
@@ -358,6 +366,9 @@ export default function FundCard({
           )}
           {activeTab === 'trend' && (
             <FundHistoryChart fundCode={fund.code} />
+          )}
+          {activeTab === 'backtest' && (
+            <FundBacktestPanel fundCode={fund.code} />
           )}
         </div>
       )}

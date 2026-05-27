@@ -6,6 +6,7 @@ import type {
   FundPurchaseData,
   FundHistoryPoint,
   FundReturnSummary,
+  FundBacktestSummary,
   FxRateData,
   MarketHistoryConfig,
   MarketHistoryPoint,
@@ -567,6 +568,26 @@ export async function fetchFundReturnSummaries(codes: string[]): Promise<Map<str
     }
   } catch { /* skip */ }
   return results;
+}
+
+export async function fetchFundBacktest(
+  code: string,
+  days = 90,
+  refresh = false,
+): Promise<FundBacktestSummary | null> {
+  try {
+    const params = new URLSearchParams({
+      codes: code,
+      days: String(days),
+    });
+    if (refresh) params.set('refresh', '1');
+    const res = await fetch(apiUrl(`/api/fundbacktest?${params.toString()}`));
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json[code] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchFundHistorySeries(
