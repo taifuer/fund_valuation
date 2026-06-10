@@ -24,7 +24,7 @@ const GROUPS = [
   { title: '美股', symbols: ['gb_ixic', 'gb_ndx', 'gb_inx', 'gb_dji'], cols: 'grid4' },
   { title: '亚太', symbols: ['hkHSI', 'int_nikkei', 'b_KOSPI', 'b_TWSE'], cols: 'grid4' },
   { title: '资产', symbols: ['hf_GC', 'hf_SI', 'hf_CL', 'fx_sbtcusd'], cols: 'grid4' },
-  { title: 'ETF', symbols: ['sz159695', 'sh512480', 'sh561380', 'sz159770', 'sz159755', 'sz159206', 'sh510170', 'sh512890'], cols: 'grid4' },
+  { title: 'ETF', symbols: ['sz159695', 'sz159558', 'sh561380', 'sz159770', 'sz159755', 'sz159206', 'sh510170', 'sh512890'], cols: 'grid4' },
 ] as const;
 
 function readCollapsedGroups(): Record<string, boolean> {

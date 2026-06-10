@@ -56,7 +56,7 @@ export const MARKET_ASSETS: IndexConfig[] = [
 
 export const ETF_ASSETS: IndexConfig[] = [
   { symbol: '159695', name: '通信ETF', sinaSymbol: 'sz159695', history: { source: 'sina-cn', symbol: 'sz159695' } },
-  { symbol: '512480', name: '半导体ETF', sinaSymbol: 'sh512480', history: { source: 'sina-cn', symbol: 'sh512480' } },
+  { symbol: '159558', name: '半导体ETF', sinaSymbol: 'sz159558', history: { source: 'sina-cn', symbol: 'sz159558' } },
   { symbol: '561380', name: '电网设备ETF', sinaSymbol: 'sh561380', history: { source: 'sina-cn', symbol: 'sh561380' } },
   { symbol: '159770', name: '机器人ETF', sinaSymbol: 'sz159770', history: { source: 'sina-cn', symbol: 'sz159770' } },
   { symbol: '159755', name: '电池ETF', sinaSymbol: 'sz159755', history: { source: 'sina-cn', symbol: 'sz159755' } },
