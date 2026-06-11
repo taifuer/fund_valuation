@@ -12,7 +12,7 @@ import {
   fetchFxRates,
   fetchMarketStates,
 } from '../api';
-import { INDICES, MARKET_ASSETS, ETF_ASSETS, FUNDS } from '../constants';
+import { INDICES, MARKET_ASSETS, ETF_ASSETS, FUNDS, RANKING_INDICES, RANKING_ETFS } from '../constants';
 import { getMarketState } from '../marketHours';
 
 const DISPLAY_FX_CURRENCIES = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
@@ -44,6 +44,7 @@ interface SlowFundData {
   purchaseStatuses: Map<string, FundPurchaseData>;
   returnSummaries: Map<string, FundReturnSummary>;
   detailsLoaded: boolean;
+  returnSummariesLoaded: boolean;
 }
 
 function usMarketClock(now = new Date()): { weekday: string; minutes: number } {
@@ -116,7 +117,7 @@ function normalizeFundFxRate(rate: FxRateData): FxRateData {
   return rate;
 }
 
-export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false) {
+export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false, loadFundReturns = false) {
   const [quotes, setQuotes] = useState<Map<string, QuoteData>>(new Map());
   const [fundEstimates, setFundEstimates] = useState<FundEstimate[]>([]);
   const [fxRates, setFxRates] = useState<Map<string, FxRateData>>(new Map());
@@ -130,6 +131,7 @@ export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false) {
     purchaseStatuses: new Map(),
     returnSummaries: new Map(),
     detailsLoaded: false,
+    returnSummariesLoaded: false,
   });
   const slowFundDataFetchedAtRef = useRef(0);
 
@@ -140,14 +142,24 @@ export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false) {
       purchaseStatuses: new Map(),
       returnSummaries: new Map(),
       detailsLoaded: false,
+      returnSummariesLoaded: false,
     };
     slowFundDataFetchedAtRef.current = 0;
     let effectiveFundsCache: Fund[] | null = null;
     const indexSymbols = INDICES.map((i) => i.sinaSymbol);
     const assetSymbols = MARKET_ASSETS.map((i) => i.sinaSymbol);
     const etfSymbols = ETF_ASSETS.map((i) => i.sinaSymbol);
+    const rankingIndexSymbols = RANKING_INDICES.map((i) => i.sinaSymbol);
+    const rankingEtfSymbols = RANKING_ETFS.map((i) => i.sinaSymbol);
     const futuresSymbols = INDICES.flatMap((i) => i.futures?.sinaSymbol ?? []);
-    const marketSymbols = [...new Set([...indexSymbols, ...futuresSymbols, ...assetSymbols, ...etfSymbols])];
+    const marketSymbols = [...new Set([
+      ...indexSymbols,
+      ...futuresSymbols,
+      ...assetSymbols,
+      ...etfSymbols,
+      ...rankingIndexSymbols,
+      ...rankingEtfSymbols,
+    ])];
 
     async function resolveEffectiveFunds(): Promise<Fund[]> {
       if (effectiveFundsCache) return effectiveFundsCache;
@@ -179,16 +191,18 @@ export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false) {
         force ||
         slowFundDataFetchedAtRef.current === 0 ||
         now - slowFundDataFetchedAtRef.current > SLOW_DATA_TTL_MS ||
-        (loadFundDetails && !slowFundDataRef.current.detailsLoaded)
+        (loadFundDetails && !slowFundDataRef.current.detailsLoaded) ||
+        (loadFundReturns && !slowFundDataRef.current.returnSummariesLoaded)
       );
       if (!shouldFetch) return slowFundDataRef.current;
 
       const fundCodes = effectiveFunds.map((f) => f.code);
+      const shouldLoadReturns = loadFundDetails || loadFundReturns;
       const [navsData, historyData, purchaseStatuses, returnSummaries] = await Promise.all([
         fetchFundNavs(fundCodes),
         fetchFundHistory(fundCodes),
         loadFundDetails ? fetchFundPurchaseStatuses(fundCodes) : Promise.resolve(new Map<string, FundPurchaseData>()),
-        loadFundDetails ? fetchFundReturnSummaries(fundCodes) : Promise.resolve(new Map<string, FundReturnSummary>()),
+        shouldLoadReturns ? fetchFundReturnSummaries(fundCodes) : Promise.resolve(new Map<string, FundReturnSummary>()),
       ]);
 
       if (!mountedRef.current) return slowFundDataRef.current;
@@ -231,6 +245,7 @@ export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false) {
         purchaseStatuses,
         returnSummaries,
         detailsLoaded: loadFundDetails,
+        returnSummariesLoaded: shouldLoadReturns,
       };
       slowFundDataFetchedAtRef.current = Date.now();
       return slowFundDataRef.current;
@@ -396,7 +411,7 @@ export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false) {
       window.clearInterval(marketTimer);
       window.clearInterval(fundTimer);
     };
-  }, [funds, loadFundDetails]);
+  }, [funds, loadFundDetails, loadFundReturns]);
 
   return {
     quotes,

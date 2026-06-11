@@ -6,11 +6,13 @@ import type { Fund } from './types';
 import Header from './components/Header';
 import IndexCards from './components/IndexCards';
 import FundCard from './components/FundCard';
+import RankingPage from './components/RankingPage';
 import styles from './App.module.css';
 
 type SortMode = 'estimate' | 'official';
 type SortDirection = 'desc' | 'asc';
 type FundDisplayMode = 'compact' | 'detail';
+type PageKey = 'overview' | 'ranking';
 
 const FUND_SECTION_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_section';
 const FUND_MANAGER_KEY = 'fund_valuation:managed_funds';
@@ -103,6 +105,7 @@ function sortValue(estimate: FundEstimate, mode: SortMode): number | null {
 export default function App() {
   const [managedFunds, setManagedFunds] = useState<ManagedFundSettings>(() => readManagedFundSettings());
   const [fundDisplayMode, setFundDisplayMode] = useState<FundDisplayMode>(() => readFundDisplayMode());
+  const [activePage, setActivePage] = useState<PageKey>('overview');
   const funds = useMemo(() => {
     const hidden = new Set(managedFunds.hiddenDefaultCodes);
     const defaultFunds = FUNDS.filter((fund) => !hidden.has(fund.code));
@@ -115,6 +118,7 @@ export default function App() {
   const { quotes, fundEstimates, fxRates, marketStates, marketLoading, fundLoading, error } = useQuotes(
     funds,
     fundDisplayMode === 'detail',
+    activePage === 'ranking',
   );
   const [sortMode, setSortMode] = useState<SortMode>('estimate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -265,120 +269,132 @@ export default function App() {
 
   return (
     <div className={styles.app}>
-      <Header fxRates={fxRates} />
+      <Header fxRates={fxRates} activePage={activePage} onPageChange={setActivePage} />
       {error && <div className={styles.error}>{error}</div>}
-      <IndexCards quotes={quotes} marketStates={marketStates} loading={marketLoading} />
-      <div className={styles.fundSection}>
-        <div className={styles.sectionHeader}>
-          <button
-            type="button"
-            className={styles.sectionTitleButton}
-            aria-expanded={!fundCollapsed}
-            onClick={toggleFundSection}
-          >
-            <span className={styles.toggleIcon}>{fundCollapsed ? '+' : '-'}</span>
-            <span>QDII 主动基金</span>
-            <span className={styles.count}> · {funds.length}只{fundCollapsed ? '' : ` · ${sortLabel}`}</span>
-          </button>
-          {!fundCollapsed && (
-            <div className={styles.sortControls}>
-              <div className={styles.sortToggle} aria-label="基金排序方式">
-                <button
-                  type="button"
-                  className={`${styles.sortButton} ${sortMode === 'estimate' ? styles.sortButtonActive : ''}`}
-                  onClick={() => setSortMode('estimate')}
-                >
-                  实时估算
-                </button>
-                <button
-                  type="button"
-                  className={`${styles.sortButton} ${sortMode === 'official' ? styles.sortButtonActive : ''}`}
-                  onClick={() => setSortMode('official')}
-                >
-                  T-1 净值
-                </button>
-              </div>
-              <div className={styles.sortToggle} aria-label="基金排序方向">
-                <button
-                  type="button"
-                  className={`${styles.sortButton} ${sortDirection === 'desc' ? styles.sortButtonActive : ''}`}
-                  onClick={() => setSortDirection('desc')}
-                >
-                  高到低
-                </button>
-                <button
-                  type="button"
-                  className={`${styles.sortButton} ${sortDirection === 'asc' ? styles.sortButtonActive : ''}`}
-                  onClick={() => setSortDirection('asc')}
-                >
-                  低到高
-                </button>
-              </div>
-              <div className={styles.sortToggle} aria-label="基金显示模式">
-                <button
-                  type="button"
-                  className={`${styles.sortButton} ${fundDisplayMode === 'compact' ? styles.sortButtonActive : ''}`}
-                  onClick={() => updateFundDisplayMode('compact')}
-                >
-                  简洁
-                </button>
-                <button
-                  type="button"
-                  className={`${styles.sortButton} ${fundDisplayMode === 'detail' ? styles.sortButtonActive : ''}`}
-                  onClick={() => updateFundDisplayMode('detail')}
-                >
-                  详细
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-        {!fundCollapsed && (
-          <div className={styles.fundManager}>
-            <div className={styles.addFundForm}>
-              <input
-                className={styles.fundSearchInput}
-                placeholder="基金代码或基金名称"
-                value={fundSearchQuery}
-                onChange={(event) => {
-                  setFundSearchQuery(event.target.value);
-                  if (fundManageMessage) setFundManageMessage('');
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !addingFund) {
-                    addFund();
-                  }
-                }}
-              />
-              <button type="button" className={styles.managerButtonPrimary} onClick={addFund} disabled={addingFund}>
-                {addingFund ? '校验中' : '添加'}
+      {activePage === 'overview' ? (
+        <>
+          <IndexCards quotes={quotes} marketStates={marketStates} loading={marketLoading} />
+          <div className={styles.fundSection}>
+            <div className={styles.sectionHeader}>
+              <button
+                type="button"
+                className={styles.sectionTitleButton}
+                aria-expanded={!fundCollapsed}
+                onClick={toggleFundSection}
+              >
+                <span className={styles.toggleIcon}>{fundCollapsed ? '+' : '-'}</span>
+                <span>QDII 主动基金</span>
+                <span className={styles.count}> · {funds.length}只{fundCollapsed ? '' : ` · ${sortLabel}`}</span>
               </button>
-              <button type="button" className={styles.managerButton} onClick={restoreDefaultFunds} disabled={addingFund}>
-                恢复默认
-              </button>
+              {!fundCollapsed && (
+                <div className={styles.sortControls}>
+                  <div className={styles.sortToggle} aria-label="基金排序方式">
+                    <button
+                      type="button"
+                      className={`${styles.sortButton} ${sortMode === 'estimate' ? styles.sortButtonActive : ''}`}
+                      onClick={() => setSortMode('estimate')}
+                    >
+                      实时估算
+                    </button>
+                    <button
+                      type="button"
+                      className={`${styles.sortButton} ${sortMode === 'official' ? styles.sortButtonActive : ''}`}
+                      onClick={() => setSortMode('official')}
+                    >
+                      T-1 净值
+                    </button>
+                  </div>
+                  <div className={styles.sortToggle} aria-label="基金排序方向">
+                    <button
+                      type="button"
+                      className={`${styles.sortButton} ${sortDirection === 'desc' ? styles.sortButtonActive : ''}`}
+                      onClick={() => setSortDirection('desc')}
+                    >
+                      高到低
+                    </button>
+                    <button
+                      type="button"
+                      className={`${styles.sortButton} ${sortDirection === 'asc' ? styles.sortButtonActive : ''}`}
+                      onClick={() => setSortDirection('asc')}
+                    >
+                      低到高
+                    </button>
+                  </div>
+                  <div className={styles.sortToggle} aria-label="基金显示模式">
+                    <button
+                      type="button"
+                      className={`${styles.sortButton} ${fundDisplayMode === 'compact' ? styles.sortButtonActive : ''}`}
+                      onClick={() => updateFundDisplayMode('compact')}
+                    >
+                      简洁
+                    </button>
+                    <button
+                      type="button"
+                      className={`${styles.sortButton} ${fundDisplayMode === 'detail' ? styles.sortButtonActive : ''}`}
+                      onClick={() => updateFundDisplayMode('detail')}
+                    >
+                      详细
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            {fundManageMessage && <div className={styles.managerMessage}>{fundManageMessage}</div>}
+            {!fundCollapsed && (
+              <div className={styles.fundManager}>
+                <div className={styles.addFundForm}>
+                  <input
+                    className={styles.fundSearchInput}
+                    placeholder="基金代码或基金名称"
+                    value={fundSearchQuery}
+                    onChange={(event) => {
+                      setFundSearchQuery(event.target.value);
+                      if (fundManageMessage) setFundManageMessage('');
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !addingFund) {
+                        addFund();
+                      }
+                    }}
+                  />
+                  <button type="button" className={styles.managerButtonPrimary} onClick={addFund} disabled={addingFund}>
+                    {addingFund ? '校验中' : '添加'}
+                  </button>
+                  <button type="button" className={styles.managerButton} onClick={restoreDefaultFunds} disabled={addingFund}>
+                    恢复默认
+                  </button>
+                </div>
+                {fundManageMessage && <div className={styles.managerMessage}>{fundManageMessage}</div>}
+              </div>
+            )}
+            {!fundCollapsed && fundLoading && sortedEstimates.length === 0 && (
+              <div className={styles.fundLoading}>基金数据加载中...</div>
+            )}
+            {!fundCollapsed && sortedEstimates.map((est) => {
+              const fund = est.fund;
+              return (
+                <FundCard
+                  key={fund.code}
+                  fund={fund}
+                  estimate={est}
+                  rank={est.rank}
+                  loading={false}
+                  marketStates={marketStates}
+                  showDetails={fundDisplayMode === 'detail'}
+                  onRemove={removeFund}
+                />
+              );
+            })}
           </div>
-        )}
-        {!fundCollapsed && fundLoading && sortedEstimates.length === 0 && (
-          <div className={styles.fundLoading}>基金数据加载中...</div>
-        )}
-        {!fundCollapsed && sortedEstimates.map((est) => {
-          const fund = est.fund;
-          return (
-            <FundCard
-              key={fund.code}
-              fund={fund}
-              estimate={est}
-              rank={est.rank}
-              loading={false}
-              marketStates={marketStates}
-              showDetails={fundDisplayMode === 'detail'}
-              onRemove={removeFund}
-            />
-          );
-        })}
-      </div>
+        </>
+      ) : (
+        <RankingPage
+          quotes={quotes}
+          fundEstimates={fundEstimates}
+          marketStates={marketStates}
+          marketLoading={marketLoading}
+          fundLoading={fundLoading}
+        />
+      )}
       <footer className={styles.footer}>
         © <a href="https://github.com/taifuer/fund_valuation" target="_blank" rel="noreferrer">Fund Valuation</a> · 数据来源：新浪财经、天天基金、东方财富等公开接口；估算结果仅供参考，不构成投资建议，实际净值以基金公司披露为准。
       </footer>

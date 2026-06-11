@@ -1,37 +1,108 @@
 .header {
-  text-align: center;
-  padding: 20px 16px 4px;
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  width: 100%;
+}
+
+.inner {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  margin: 0 auto;
+  max-width: 1040px;
+  padding: 12px 16px;
 }
 
 .brand {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+  text-align: left;
 }
 
 .title {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
+  line-height: 1.2;
+}
+
+.titleButton {
+  background: transparent;
+  border: 0;
   color: #0f172a;
+  cursor: pointer;
+  font: inherit;
   letter-spacing: 0.02em;
+  padding: 0;
+  text-align: left;
+}
+
+.titleButton:hover {
+  color: #1e293b;
 }
 
 .subtitle {
-  font-size: 12px;
+  font-size: 11px;
   color: #94a3b8;
   margin-top: 2px;
   font-weight: 400;
+  letter-spacing: 0.01em;
 }
 
 .datetime {
   font-size: 12px;
   color: #64748b;
-  margin-top: 2px;
   font-weight: 500;
+  text-align: center;
 }
 
 .meta {
-  margin-top: 2px;
+  display: flex;
+  flex-direction: column;
+  margin: 0 auto;
+  max-width: 1040px;
+  min-width: 0;
+  padding: 14px 16px 0;
+}
+
+.statusBar {
+  background: #f8fafc;
+}
+
+.nav {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+  justify-self: end;
+}
+
+.navButton {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 30px;
+  min-width: 64px;
+  padding: 0 13px;
+}
+
+.navButton:hover {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #334155;
+}
+
+.navButtonActive {
+  background: #0f172a;
+  border-color: #0f172a;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
+  color: #fff;
 }
 
 .fxRow {
@@ -91,11 +162,36 @@
 }
 
 @media (max-width: 640px) {
+  .inner {
+    align-items: stretch;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+  }
+
   .brand {
     align-items: center;
   }
 
+  .nav {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .datetime {
+    text-align: center;
+  }
+
+  .fxRow {
+    justify-content: center;
+  }
+
   .title {
-    font-size: 20px;
+    font-size: 18px;
+  }
+
+  .titleButton {
+    text-align: center;
   }
 }

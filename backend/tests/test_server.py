@@ -588,6 +588,53 @@ class ServerDataRefreshTests(unittest.TestCase):
         summary = payload["sina-us:.INX"]
         self.assertEqual(summary["endDate"], "2026-05-19")
         self.assertEqual(summary["returnPercent"], 20.0)
+        self.assertEqual(summary["ranges"]["ytd"]["returnPercent"], 20.0)
+        self.assertIn("1m", summary["ranges"])
+
+    def test_market_returns_fetches_missing_sqlite_rows_before_calculation(self) -> None:
+        upstream_body = (
+            b'[{"day":"2025-12-31","close":"100"},'
+            b'{"day":"2026-05-19","close":"120"}]'
+        )
+
+        def fake_fetch_upstream(*_args: object, **kwargs: object) -> tuple[int, str, bytes]:
+            self.assertIs(kwargs.get("force_refresh"), True)
+            return 200, "application/json; charset=utf-8", upstream_body
+
+        with patch.object(server, "fetch_upstream", side_effect=fake_fetch_upstream):
+            response = server.app.test_client().get("/api/marketreturns?items=sina-cn:sh000688")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        summary = payload["sina-cn:sh000688"]
+        self.assertEqual(summary["endDate"], "2026-05-19")
+        self.assertEqual(summary["ranges"]["ytd"]["returnPercent"], 20.0)
+        rows = server.read_market_history_from_db("sina-cn", "sh000688")
+        self.assertEqual(rows[-1]["date"], "2026-05-19")
+
+    def test_market_returns_fetches_tencent_hk_history(self) -> None:
+        upstream_body = (
+            b'{"code":0,"data":{"hkHSTECH":{"day":['
+            b'["2025-12-31","4400.00","4500.00","4510.00","4390.00","1000"],'
+            b'["2026-06-11","4700.00","4950.00","5000.00","4650.00","2000"]'
+            b']}}}'
+        )
+
+        def fake_fetch_upstream(*_args: object, **kwargs: object) -> tuple[int, str, bytes]:
+            self.assertIs(kwargs.get("force_refresh"), True)
+            return 200, "application/json; charset=utf-8", upstream_body
+
+        with patch.object(server, "fetch_upstream", side_effect=fake_fetch_upstream):
+            response = server.app.test_client().get("/api/marketreturns?items=tencent-hk:hkHSTECH")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        summary = payload["tencent-hk:hkHSTECH"]
+        self.assertEqual(summary["endDate"], "2026-06-11")
+        self.assertEqual(summary["ranges"]["ytd"]["returnPercent"], 10.0)
+        rows = server.read_market_history_from_db("tencent-hk", "hkHSTECH")
+        self.assertEqual(rows[-1]["date"], "2026-06-11")
+        self.assertEqual(rows[-1]["close"], 4950.0)
 
     def test_market_history_refresh_fetches_latest_and_updates_sqlite(self) -> None:
         server.store_market_history("sina-us", ".INX", 'var _=([{"d":"2026-05-14","c":"7501.24"}]);')

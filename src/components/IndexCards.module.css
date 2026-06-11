@@ -1,7 +1,7 @@
 .container {
-  max-width: 960px;
+  max-width: 1040px;
   margin: 0 auto;
-  padding: 0 16px;
+  padding: 14px 16px 0;
 }
 
 .sectionToggle {
@@ -20,7 +20,7 @@
 }
 
 .sectionToggle:first-child {
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .sectionToggle:hover {

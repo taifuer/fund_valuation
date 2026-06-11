@@ -1,0 +1,275 @@
+.page {
+  margin: 0 auto;
+  max-width: 1040px;
+  padding: 14px 16px 32px;
+}
+
+.toolbar {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+  margin: 0 0 12px;
+}
+
+.controlBlock {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rangeControl {
+  order: 2;
+}
+
+.sortControl {
+  justify-content: flex-end;
+  order: 3;
+}
+
+.subControl {
+  flex-basis: 100%;
+  order: 4;
+}
+
+.categoryControl .segmented,
+.subControl .segmented {
+  width: 308px;
+}
+
+.categoryControl .segmentButton,
+.subControl .segmentButton {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.segmented {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+}
+
+.segmentButton {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 26px;
+  min-width: 58px;
+  padding: 0 8px;
+}
+
+.segmentButtonActive {
+  background: #0f172a;
+  color: #fff;
+}
+
+.tableWrap {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  min-width: 760px;
+}
+
+.table thead {
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.table th,
+.table td {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 10px 16px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.rankCol { width: 9%; }
+.nameCol { width: 25%; }
+.returnCol { width: 13%; }
+.valueCol { width: 13%; }
+.categoryCol { width: 12%; }
+.statusCol { width: 13%; }
+.dateCol { width: 15%; }
+
+.table th:nth-child(3),
+.table td:nth-child(3),
+.table th:nth-child(4),
+.table td:nth-child(4),
+.table th:nth-child(6),
+.table td:nth-child(6),
+.table th:nth-child(7),
+.table td:nth-child(7) {
+  text-align: right;
+}
+
+.table th:nth-child(5),
+.table td:nth-child(5) {
+  text-align: center;
+}
+
+.table tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.table tbody tr:last-child {
+  border-bottom: 0;
+}
+
+.rank {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  color: #64748b;
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 22px;
+  min-width: 34px;
+  padding: 0 7px;
+  text-align: center;
+}
+
+.rank.gold,
+.rank.silver,
+.rank.bronze {
+  border-color: transparent;
+  color: #fff;
+}
+
+.rank.gold {
+  background: linear-gradient(135deg, #f59e0b, #eab308);
+}
+
+.rank.silver {
+  background: linear-gradient(135deg, #94a3b8, #64748b);
+}
+
+.rank.bronze {
+  background: linear-gradient(135deg, #d97706, #b45309);
+}
+
+.nameCell {
+  min-width: 0;
+}
+
+.nameCell strong {
+  color: #0f172a;
+  display: block;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nameCell span {
+  display: block;
+  margin-top: 2px;
+}
+
+.nameCell span,
+.dateRange,
+.source,
+.value {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.dateRange,
+.source,
+.value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.category {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  color: #64748b;
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  padding: 0 7px;
+}
+
+.percent {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.up {
+  color: #991b1b;
+}
+
+.down {
+  color: #166534;
+}
+
+.empty {
+  color: #94a3b8;
+  font-size: 13px;
+  padding: 28px 16px;
+  text-align: center;
+}
+
+.note {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 10px 2px 0;
+}
+
+@media (max-width: 720px) {
+  .page {
+    padding: 8px 12px 28px;
+  }
+
+  .controlBlock {
+    align-items: flex-start;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .toolbar {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+
+  .sortControl {
+    justify-content: flex-start;
+  }
+
+  .segmented {
+    width: 100%;
+  }
+
+  .categoryControl .segmented,
+  .subControl .segmented {
+    width: 100%;
+  }
+}

@@ -656,6 +656,13 @@ export async function fetchMarketHistory(config: MarketHistoryConfig): Promise<M
         date: row.date ?? '',
         close: typeof row.close === 'number' ? row.close : parseFloat(row.close ?? ''),
       }));
+    } else if (config.source === 'tencent-hk') {
+      const json = JSON.parse(text);
+      const rows = json?.data?.[config.symbol]?.day;
+      points = (Array.isArray(rows) ? rows : []).map((row) => ({
+        date: row?.[0] ?? '',
+        close: parseFloat(String(row?.[2] ?? '')),
+      }));
     }
 
     return points

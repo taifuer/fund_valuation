@@ -65,6 +65,51 @@ export const ETF_ASSETS: IndexConfig[] = [
   { symbol: '512890', name: '红利低波ETF', sinaSymbol: 'sh512890', history: { source: 'sina-cn', symbol: 'sh512890' } },
 ];
 
+const RANKING_BASE_INDICES: IndexConfig[] = INDICES.map((index) => {
+  if (index.symbol === 'HSI') {
+    return { ...index, history: { source: 'tencent-hk', symbol: 'hkHSI' } };
+  }
+  if (index.symbol === 'N225') {
+    return { ...index, history: undefined };
+  }
+  return index;
+});
+
+export const RANKING_INDICES: IndexConfig[] = [
+  ...RANKING_BASE_INDICES,
+  { symbol: 'SZ399001', name: '深证成指', sinaSymbol: 's_sz399001', history: { source: 'sina-cn', symbol: 'sz399001' } },
+  { symbol: 'SH000016', name: '上证50', sinaSymbol: 's_sh000016', history: { source: 'sina-cn', symbol: 'sh000016' } },
+  { symbol: 'SH000688', name: '科创50', sinaSymbol: 's_sh000688', history: { source: 'sina-cn', symbol: 'sh000688' } },
+];
+
+export const RANKING_SECTOR_ETFS: IndexConfig[] = [
+  ...ETF_ASSETS,
+  { symbol: '159928', name: '消费ETF', sinaSymbol: 'sz159928', history: { source: 'sina-cn', symbol: 'sz159928' } },
+  { symbol: '515790', name: '光伏ETF', sinaSymbol: 'sh515790', history: { source: 'sina-cn', symbol: 'sh515790' } },
+  { symbol: '159992', name: '创新药ETF', sinaSymbol: 'sz159992', history: { source: 'sina-cn', symbol: 'sz159992' } },
+  { symbol: '512400', name: '有色ETF', sinaSymbol: 'sh512400', history: { source: 'sina-cn', symbol: 'sh512400' } },
+  { symbol: '513310', name: '中韩半导体ETF', sinaSymbol: 'sh513310', history: { source: 'sina-cn', symbol: 'sh513310' } },
+  { symbol: '515070', name: '人工智能ETF', sinaSymbol: 'sh515070', history: { source: 'sina-cn', symbol: 'sh515070' } },
+  { symbol: '512880', name: '证券ETF', sinaSymbol: 'sh512880', history: { source: 'sina-cn', symbol: 'sh512880' } },
+  { symbol: '512800', name: '银行ETF', sinaSymbol: 'sh512800', history: { source: 'sina-cn', symbol: 'sh512800' } },
+  { symbol: '561560', name: '电力ETF', sinaSymbol: 'sh561560', history: { source: 'sina-cn', symbol: 'sh561560' } },
+];
+
+export const RANKING_INDEX_ETFS: IndexConfig[] = [
+  { symbol: '510050', name: '上证50ETF', sinaSymbol: 'sh510050', history: { source: 'sina-cn', symbol: 'sh510050' } },
+  { symbol: '510300', name: '沪深300ETF', sinaSymbol: 'sh510300', history: { source: 'sina-cn', symbol: 'sh510300' } },
+  { symbol: '510500', name: '中证500ETF', sinaSymbol: 'sh510500', history: { source: 'sina-cn', symbol: 'sh510500' } },
+  { symbol: '159915', name: '创业板ETF', sinaSymbol: 'sz159915', history: { source: 'sina-cn', symbol: 'sz159915' } },
+  { symbol: '588000', name: '科创50ETF', sinaSymbol: 'sh588000', history: { source: 'sina-cn', symbol: 'sh588000' } },
+  { symbol: '159920', name: '恒生ETF', sinaSymbol: 'sz159920', history: { source: 'sina-cn', symbol: 'sz159920' } },
+  { symbol: '513520', name: '日经ETF', sinaSymbol: 'sh513520', history: { source: 'sina-cn', symbol: 'sh513520' } },
+  { symbol: '513100', name: '纳指ETF', sinaSymbol: 'sh513100', history: { source: 'sina-cn', symbol: 'sh513100' } },
+  { symbol: '513500', name: '标普ETF', sinaSymbol: 'sh513500', history: { source: 'sina-cn', symbol: 'sh513500' } },
+  { symbol: '513180', name: '恒生科技ETF', sinaSymbol: 'sh513180', history: { source: 'sina-cn', symbol: 'sh513180' } },
+];
+
+export const RANKING_ETFS: IndexConfig[] = [...RANKING_INDEX_ETFS, ...RANKING_SECTOR_ETFS];
+
 export const FUNDS: Fund[] = [
   // ──── 纳斯达克/美股科技 ────
   {

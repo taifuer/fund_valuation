@@ -1153,6 +1153,16 @@ def store_market_history(source: str, symbol: str, text: str) -> int:
     elif source == "sina-futures":
         parsed = json.loads(text)
         rows = parsed if isinstance(parsed, list) else []
+    elif source == "tencent-hk":
+        parsed = json.loads(text)
+        data = parsed.get("data") if isinstance(parsed, dict) else None
+        symbol_data = data.get(symbol) if isinstance(data, dict) else None
+        day_rows = symbol_data.get("day") if isinstance(symbol_data, dict) else None
+        if isinstance(day_rows, list):
+            for row in day_rows:
+                if not isinstance(row, list) or len(row) < 3:
+                    continue
+                rows.append({"date": row[0], "close": row[2]})
 
     points = []
     fetched_at = now_ms()
@@ -1315,6 +1325,16 @@ def read_fund_history_from_db(code: str, page_size: int, page_index: int) -> lis
 
 
 FUND_RETURN_RANGES: dict[str, tuple[str, int | None]] = {
+    "1w": ("近1周", 7),
+    "1m": ("近1月", 30),
+    "3m": ("近3月", 90),
+    "6m": ("近半年", 182),
+    "1y": ("近1年", 365),
+    "3y": ("近3年", 365 * 3),
+    "ytd": ("今年", None),
+}
+
+MARKET_RETURN_RANGES: dict[str, tuple[str, int | None]] = {
     "1w": ("近1周", 7),
     "1m": ("近1月", 30),
     "3m": ("近3月", 90),
@@ -1493,7 +1513,30 @@ def auto_refresh_market_history_if_stale(source: str, symbol: str) -> bool:
         return False
 
 
-def read_market_ytd_return_from_db(source: str, symbol: str) -> dict[str, Any] | None:
+def ensure_market_history_for_returns(source: str, symbol: str) -> None:
+    latest_date, fetched_at = latest_market_history_meta(source, symbol)
+    if latest_date:
+        auto_refresh_market_history_if_stale(source, symbol)
+        return
+
+    try:
+        url, referer = market_history_url(source, symbol)
+        status, _, body = fetch_upstream(
+            url,
+            referer=referer,
+            content_type="application/json; charset=utf-8",
+            cache_key=f"markethistory:{source}:{symbol}",
+            kind="markethistory",
+            ttl_seconds=300,
+            force_refresh=now_ms() - fetched_at > HISTORY_AUTO_REFRESH_TTL_MS,
+        )
+        if status < 400:
+            store_market_history(source, symbol, decode_body(body))
+    except Exception:
+        pass
+
+
+def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, Any] | None:
     rows = read_market_history_from_db(source, symbol)
     points = [
         (str(row["date"]), float(row["close"]))
@@ -1509,33 +1552,62 @@ def read_market_ytd_return_from_db(source: str, symbol: str) -> dict[str, Any] |
     except ValueError:
         return None
 
-    year_start = f"{latest_day.year}-01-01"
-    start: tuple[str, float] | None = None
-    for point in points:
-        if point[0] <= year_start:
-            start = point
-        else:
-            break
-
-    if start is None or start[0] == latest_date:
+    def point_on_or_before(target: str) -> tuple[str, float] | None:
+        candidate = None
         for point in points:
-            if point[0] >= year_start:
-                start = point
+            if point[0] <= target:
+                candidate = point
+            else:
                 break
+        return candidate
 
-    if start is None or start[0] == latest_date or start[1] <= 0:
+    def first_point_on_or_after(target: str) -> tuple[str, float] | None:
+        for point in points:
+            if point[0] >= target:
+                return point
         return None
 
-    start_date, start_close = start
-    return_percent = ((latest_close - start_close) / start_close) * 100
+    ranges: dict[str, Any] = {}
+    for key, (label, days) in MARKET_RETURN_RANGES.items():
+        if days is None:
+            year_start = f"{latest_day.year}-01-01"
+            start = point_on_or_before(year_start)
+            if start is None or start[0] == latest_date:
+                start = first_point_on_or_after(year_start)
+        else:
+            target = (latest_day - timedelta(days=days)).isoformat()
+            start = point_on_or_before(target)
+
+        if start is None:
+            continue
+        start_date, start_close = start
+        if start_date == latest_date or start_close <= 0:
+            continue
+        return_percent = ((latest_close - start_close) / start_close) * 100
+        ranges[key] = {
+            "key": key,
+            "label": label,
+            "returnPercent": round(return_percent, 2),
+            "startDate": start_date,
+            "endDate": latest_date,
+            "startClose": round(start_close, 4),
+            "endClose": round(latest_close, 4),
+        }
+
+    if not ranges:
+        return None
+
+    ytd = ranges.get("ytd")
     return {
         "source": source,
         "symbol": symbol,
-        "label": "今年",
-        "returnPercent": round(return_percent, 2),
-        "startDate": start_date,
+        "asOf": latest_date,
+        "ranges": ranges,
+        "label": ytd["label"] if ytd else "",
+        "returnPercent": ytd["returnPercent"] if ytd else 0,
+        "startDate": ytd["startDate"] if ytd else "",
         "endDate": latest_date,
-        "startClose": round(start_close, 4),
+        "startClose": ytd["startClose"] if ytd else 0,
         "endClose": round(latest_close, 4),
     }
 
@@ -2156,6 +2228,11 @@ def market_history_url(source: str, symbol: str) -> tuple[str, str]:
             f"https://stock2.finance.sina.com.cn/futures/api/json.php/GlobalFuturesService.getGlobalFuturesDailyKLine?symbol={quote(symbol)}",
             "https://finance.sina.com.cn/futures/",
         )
+    if source == "tencent-hk":
+        return (
+            f"https://web.ifzq.gtimg.cn/appstock/app/kline/kline?param={quote(symbol)},day,,,1023",
+            "https://gu.qq.com/",
+        )
     raise ValueError("Unsupported source")
 
 
@@ -2164,7 +2241,7 @@ def market_history() -> Response:
     enforce_rate_limit("markethistory")
     source = require_arg("source")
     symbol = require_arg("symbol")
-    if source not in {"sina-cn", "sina-us", "sina-futures"}:
+    if source not in {"sina-cn", "sina-us", "sina-futures", "tencent-hk"}:
         raise ValueError("Unsupported source")
     if not MARKET_HISTORY_SYMBOL_RE.fullmatch(symbol):
         raise ValueError("Invalid symbol")
@@ -2213,11 +2290,8 @@ def market_returns() -> Response:
         if len(pieces) != 2:
             continue
         source, symbol = pieces
-        try:
-            auto_refresh_market_history_if_stale(source, symbol)
-        except Exception:
-            pass
-        summary = read_market_ytd_return_from_db(source, symbol)
+        ensure_market_history_for_returns(source, symbol)
+        summary = read_market_return_summary_from_db(source, symbol)
         if summary:
             results[item] = summary
     return json_response(results)

@@ -160,6 +160,18 @@ export interface MarketHistoryPoint {
 export interface MarketReturnSummary {
   source: MarketHistoryConfig['source'];
   symbol: string;
+  asOf?: string;
+  ranges?: Partial<Record<FundReturnRangeKey, MarketRangeReturn>>;
+  label: string;
+  returnPercent: number;
+  startDate: string;
+  endDate: string;
+  startClose: number;
+  endClose: number;
+}
+
+export interface MarketRangeReturn {
+  key: FundReturnRangeKey;
   label: string;
   returnPercent: number;
   startDate: string;
@@ -179,7 +191,7 @@ export interface MarketStateData {
 }
 
 export interface MarketHistoryConfig {
-  source: 'sina-cn' | 'sina-us' | 'sina-futures';
+  source: 'sina-cn' | 'sina-us' | 'sina-futures' | 'tencent-hk';
   symbol: string;
 }
 

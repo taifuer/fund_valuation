@@ -137,6 +137,10 @@ npm run preview   # 预览生产构建
 
 ![概览 2](./demo/overview2.png)
 
+### 排行
+
+![排行](./demo/rank.png)
+
 ### 股票走势
 
 ![股票走势](./demo/stock_history.png)
