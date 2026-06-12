@@ -1,42 +1,36 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchMarketReturnSummaries } from '../api';
 import { MARKET_ASSETS, RANKING_ETFS, RANKING_INDEX_ETFS, RANKING_INDICES, RANKING_SECTOR_ETFS } from '../constants';
-import { getMarketState } from '../marketHours';
 import type { FundEstimate } from '../hooks/useQuotes';
-import type { FundReturnRangeKey, IndexConfig, MarketReturnSummary, MarketStateData, QuoteData } from '../types';
+import type { FundReturnRangeKey, IndexConfig, MarketReturnSummary, MarketStateData } from '../types';
 import styles from './RankingPage.module.css';
 
-type RankingRangeKey = 'today' | '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | 'ytd';
+type RiskRangeKey = 'ytd' | '1m' | '3m' | '6m' | '1y' | '3y';
 type CategoryKey = 'all' | 'index' | 'asset' | 'etf' | 'fund';
 type EtfFilterKey = 'all' | 'index' | 'sector';
+type SortKey = 'return' | 'drawdown' | 'ratio';
 type SortDirection = 'desc' | 'asc';
-type SortKey = 'return' | 'value';
 
 interface Props {
-  quotes: Map<string, QuoteData>;
   fundEstimates: FundEstimate[];
   marketStates?: Map<string, MarketStateData>;
   marketLoading: boolean;
   fundLoading?: boolean;
 }
 
-interface RankingItem {
+interface RiskItem {
   id: string;
   name: string;
   symbol: string;
   category: Exclude<CategoryKey, 'all'>;
   categoryLabel: string;
   returnPercent: number | null;
-  currentValue: number | null;
-  startDate?: string;
+  maxDrawdownPercent: number | null;
   endDate?: string;
-  sourceLabel: string;
 }
 
-const RANGES: Array<{ key: RankingRangeKey; label: string }> = [
-  { key: 'today', label: '最新' },
+const RANGES: Array<{ key: RiskRangeKey; label: string }> = [
   { key: 'ytd', label: '今年' },
-  { key: '1w', label: '近1周' },
   { key: '1m', label: '近1月' },
   { key: '3m', label: '近3月' },
   { key: '6m', label: '近半年' },
@@ -70,51 +64,39 @@ function marketReturnKey(item: IndexConfig) {
 
 function makeMarketItems(
   configs: IndexConfig[],
-  category: RankingItem['category'],
+  category: RiskItem['category'],
   categoryLabel: string,
-  range: RankingRangeKey,
-  quotes: Map<string, QuoteData>,
+  range: RiskRangeKey,
   marketReturns: Map<string, MarketReturnSummary>,
-  marketStates: Map<string, MarketStateData>,
-): RankingItem[] {
+): RiskItem[] {
   return configs.map((item) => {
-    const quote = quotes.get(item.sinaSymbol);
     const summary = item.history ? marketReturns.get(marketReturnKey(item)) : undefined;
-    const rangeReturn = range === 'today' ? null : summary?.ranges?.[range as FundReturnRangeKey];
-    const state = marketStates.get(item.sinaSymbol)?.state ?? getMarketState(item.sinaSymbol);
+    const rangeReturn = summary?.ranges?.[range as FundReturnRangeKey];
     return {
       id: `${category}:${item.sinaSymbol}`,
       name: item.name,
       symbol: item.symbol,
       category,
       categoryLabel,
-      returnPercent: range === 'today' ? quote?.changePercent ?? null : rangeReturn?.returnPercent ?? null,
-      currentValue: range === 'today' ? quote?.price ?? null : rangeReturn?.endClose ?? summary?.endClose ?? null,
-      startDate: range === 'today' ? quote?.time?.slice(0, 10) : rangeReturn?.startDate,
-      endDate: range === 'today' ? quote?.time?.slice(0, 10) : rangeReturn?.endDate,
-      sourceLabel: range === 'today' ? marketStateLabel(state) : '收盘价',
+      returnPercent: rangeReturn?.returnPercent ?? null,
+      maxDrawdownPercent: rangeReturn?.maxDrawdownPercent ?? null,
+      endDate: rangeReturn?.endDate,
     };
   });
 }
 
-function makeFundItems(
-  funds: FundEstimate[],
-  range: RankingRangeKey,
-): RankingItem[] {
+function makeFundItems(funds: FundEstimate[], range: RiskRangeKey): RiskItem[] {
   return funds.map((estimate) => {
-    const officialNAV = estimate.officialNAV;
-    const rangeReturn = range === 'today' ? null : estimate.rangeReturns?.ranges?.[range as FundReturnRangeKey];
+    const rangeReturn = estimate.rangeReturns?.ranges?.[range as FundReturnRangeKey];
     return {
       id: `fund:${estimate.fund.code}`,
       name: estimate.fund.name,
       symbol: estimate.fund.code,
       category: 'fund',
       categoryLabel: '基金',
-      returnPercent: range === 'today' ? officialNAV?.officialChange ?? null : rangeReturn?.returnPercent ?? null,
-      currentValue: range === 'today' ? officialNAV?.nav ?? null : rangeReturn?.endNav ?? officialNAV?.nav ?? null,
-      startDate: range === 'today' ? officialNAV?.navDate : rangeReturn?.startDate,
-      endDate: range === 'today' ? officialNAV?.navDate : rangeReturn?.endDate,
-      sourceLabel: '确认净值',
+      returnPercent: rangeReturn?.returnPercent ?? null,
+      maxDrawdownPercent: rangeReturn?.maxDrawdownPercent ?? null,
+      endDate: rangeReturn?.endDate ?? estimate.officialNAV?.navDate,
     };
   });
 }
@@ -124,15 +106,38 @@ function formatPercent(value: number | null) {
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
 
-function formatValue(value: number | null) {
+function formatMetricPercent(value: number | null) {
   if (value == null || !Number.isFinite(value)) return '--';
-  if (Math.abs(value) >= 1000) return value.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
-  if (Math.abs(value) >= 10) return value.toFixed(2);
-  return value.toFixed(4);
+  return `${value.toFixed(2)}%`;
 }
 
-function formatAsOf(item: RankingItem) {
-  return item.endDate || item.startDate || '--';
+function riskRatio(item: RiskItem) {
+  if (item.returnPercent == null || item.maxDrawdownPercent == null || item.maxDrawdownPercent === 0) return null;
+  return item.returnPercent / Math.abs(item.maxDrawdownPercent);
+}
+
+function formatRatio(item: RiskItem) {
+  const ratio = riskRatio(item);
+  return ratio == null || !Number.isFinite(ratio) ? '--' : ratio.toFixed(2);
+}
+
+function drawdownAbs(item: RiskItem) {
+  return item.maxDrawdownPercent == null ? null : Math.abs(item.maxDrawdownPercent);
+}
+
+function sortableValue(item: RiskItem, sortKey: SortKey) {
+  if (sortKey === 'ratio') return riskRatio(item);
+  if (sortKey === 'drawdown') return drawdownAbs(item);
+  return item.returnPercent;
+}
+
+function defaultDirection(sortKey: SortKey): SortDirection {
+  return sortKey === 'drawdown' ? 'asc' : 'desc';
+}
+
+function nextDirection(currentKey: SortKey, currentDirection: SortDirection, nextKey: SortKey): SortDirection {
+  if (currentKey === nextKey) return currentDirection === 'desc' ? 'asc' : 'desc';
+  return defaultDirection(nextKey);
 }
 
 function rankStyle(index: number) {
@@ -142,35 +147,16 @@ function rankStyle(index: number) {
   return '';
 }
 
-function marketStateLabel(state: MarketStateData['state']) {
-  if (state === 'live') return '开盘中';
-  if (state === 'break') return '午间休市';
-  if (state === 'holiday') return '假期休市';
-  if (state === 'weekend') return '周末休市';
-  return '已收盘';
-}
-
-function sortableValue(item: RankingItem, sortKey: SortKey) {
-  return sortKey === 'value' ? item.currentValue : item.returnPercent;
-}
-
-function nextDirection(currentKey: SortKey, currentDirection: SortDirection, nextKey: SortKey): SortDirection {
-  if (currentKey === nextKey) return currentDirection === 'desc' ? 'asc' : 'desc';
-  return 'desc';
-}
-
-export default function RankingPage({
-  quotes,
+export default function RiskPage({
   fundEstimates,
-  marketStates = new Map(),
   marketLoading,
   fundLoading = false,
 }: Props) {
-  const [range, setRange] = useState<RankingRangeKey>('today');
+  const [range, setRange] = useState<RiskRangeKey>('ytd');
   const [category, setCategory] = useState<CategoryKey>('index');
   const [etfFilter, setEtfFilter] = useState<EtfFilterKey>('all');
-  const [sortKey, setSortKey] = useState<SortKey>('return');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [sortKey, setSortKey] = useState<SortKey>('drawdown');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
   const [returnsLoading, setReturnsLoading] = useState(false);
 
@@ -192,14 +178,15 @@ export default function RankingPage({
 
   const items = useMemo(() => {
     const allItems = [
-      ...makeMarketItems(RANKING_INDICES, 'index', '指数', range, quotes, marketReturns, marketStates),
-      ...makeMarketItems(MARKET_ASSETS, 'asset', '资产', range, quotes, marketReturns, marketStates),
-      ...makeMarketItems(RANKING_INDEX_ETFS, 'etf', '指数ETF', range, quotes, marketReturns, marketStates),
-      ...makeMarketItems(RANKING_SECTOR_ETFS, 'etf', '行业ETF', range, quotes, marketReturns, marketStates),
+      ...makeMarketItems(RANKING_INDICES, 'index', '指数', range, marketReturns),
+      ...makeMarketItems(MARKET_ASSETS, 'asset', '资产', range, marketReturns),
+      ...makeMarketItems(RANKING_INDEX_ETFS, 'etf', '指数ETF', range, marketReturns),
+      ...makeMarketItems(RANKING_SECTOR_ETFS, 'etf', '行业ETF', range, marketReturns),
       ...makeFundItems(fundEstimates, range),
     ];
+
     return allItems
-      .filter((item) => (category === 'all' ? item.category !== 'fund' : item.category === category))
+      .filter((item) => category === 'all' || item.category === category)
       .filter((item) => (
         category !== 'etf' ||
         etfFilter === 'all' ||
@@ -213,11 +200,9 @@ export default function RankingPage({
         if (bValue == null) return -1;
         return sortDirection === 'desc' ? bValue - aValue : aValue - bValue;
       });
-  }, [category, etfFilter, fundEstimates, marketReturns, marketStates, quotes, range, sortDirection, sortKey]);
+  }, [category, etfFilter, fundEstimates, marketReturns, range, sortDirection, sortKey]);
 
-  const loading = category === 'fund'
-    ? fundLoading
-    : marketLoading || (range !== 'today' && returnsLoading);
+  const loading = returnsLoading || marketLoading || fundLoading;
 
   function updateSort(nextKey: SortKey) {
     setSortDirection((currentDirection) => nextDirection(sortKey, currentDirection, nextKey));
@@ -226,7 +211,10 @@ export default function RankingPage({
 
   function sortLabel(label: string, key: SortKey) {
     if (sortKey !== key) return label;
-    return `${label} ${sortDirection === 'desc' ? '↓' : '↑'}`;
+    const arrow = key === 'drawdown'
+      ? (sortDirection === 'asc' ? '↓' : '↑')
+      : (sortDirection === 'desc' ? '↓' : '↑');
+    return `${label} ${arrow}`;
   }
 
   return (
@@ -262,7 +250,7 @@ export default function RankingPage({
             </div>
           </div>
         )}
-        <div className={`${styles.controlBlock} ${styles.rangeControl}`} aria-label="排行区间">
+        <div className={`${styles.controlBlock} ${styles.rangeControl}`} aria-label="风险区间">
           <div className={styles.segmented}>
             {RANGES.map((item) => (
               <button
@@ -279,14 +267,14 @@ export default function RankingPage({
       </section>
 
       <section className={styles.tableWrap}>
-        <table className={`${styles.table} ${styles.rankingTable}`}>
+        <table className={`${styles.table} ${styles.riskTable}`}>
           <colgroup>
             <col className={styles.rankCol} />
             <col className={styles.nameCol} />
             <col className={styles.returnCol} />
-            <col className={styles.valueCol} />
+            <col className={styles.riskCol} />
+            <col className={styles.ratioCol} />
             <col className={styles.categoryCol} />
-            <col className={styles.statusCol} />
             <col className={styles.dateCol} />
           </colgroup>
           <thead>
@@ -302,29 +290,37 @@ export default function RankingPage({
                   {sortLabel('收益', 'return')}
                 </button>
               </th>
-              <th aria-sort={sortKey === 'value' ? (sortDirection === 'desc' ? 'descending' : 'ascending') : 'none'}>
+              <th aria-sort={sortKey === 'drawdown' ? (sortDirection === 'desc' ? 'descending' : 'ascending') : 'none'}>
                 <button
                   type="button"
-                  className={`${styles.sortHeaderButton} ${sortKey === 'value' ? styles.sortHeaderButtonActive : ''}`}
-                  onClick={() => updateSort('value')}
+                  className={`${styles.sortHeaderButton} ${sortKey === 'drawdown' ? styles.sortHeaderButtonActive : ''}`}
+                  onClick={() => updateSort('drawdown')}
                 >
-                  {sortLabel('现值', 'value')}
+                  {sortLabel('回撤', 'drawdown')}
+                </button>
+              </th>
+              <th aria-sort={sortKey === 'ratio' ? (sortDirection === 'desc' ? 'descending' : 'ascending') : 'none'}>
+                <button
+                  type="button"
+                  className={`${styles.sortHeaderButton} ${sortKey === 'ratio' ? styles.sortHeaderButtonActive : ''}`}
+                  onClick={() => updateSort('ratio')}
+                >
+                  {sortLabel('收益回撤比', 'ratio')}
                 </button>
               </th>
               <th>分类</th>
-              <th>状态</th>
               <th>截至</th>
             </tr>
           </thead>
           <tbody>
             {loading && items.length === 0 && (
               <tr>
-                <td colSpan={7} className={styles.empty}>排行数据加载中...</td>
+                <td colSpan={7} className={styles.empty}>风险数据加载中...</td>
               </tr>
             )}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={7} className={styles.empty}>暂无排行数据</td>
+                <td colSpan={7} className={styles.empty}>暂无风险数据</td>
               </tr>
             )}
             {items.map((item, index) => {
@@ -337,10 +333,10 @@ export default function RankingPage({
                     <span>{item.symbol}</span>
                   </td>
                   <td className={`${styles.percent} ${up ? styles.up : styles.down}`}>{formatPercent(item.returnPercent)}</td>
-                  <td className={styles.value}>{formatValue(item.currentValue)}</td>
+                  <td className={styles.risk}>{formatMetricPercent(item.maxDrawdownPercent)}</td>
+                  <td className={styles.ratio}>{formatRatio(item)}</td>
                   <td><span className={styles.category}>{item.categoryLabel}</span></td>
-                  <td className={styles.source}>{item.sourceLabel}</td>
-                  <td className={styles.dateRange}>{formatAsOf(item)}</td>
+                  <td className={styles.dateRange}>{item.endDate ?? '--'}</td>
                 </tr>
               );
             })}
@@ -349,7 +345,7 @@ export default function RankingPage({
       </section>
 
       <p className={styles.note}>
-        * 最新排行可能包含盘中行情；基金排行使用已披露官方净值。数据可能存在延迟或误差，以官方披露为准。
+        * 风险页基于历史收盘价和官方净值计算最大回撤；收益回撤比为区间收益除以最大回撤绝对值，仅供参考。
       </p>
     </main>
   );

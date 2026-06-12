@@ -407,6 +407,25 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {})
 
+    def test_fund_returns_include_risk_metrics(self) -> None:
+        server.store_fund_history(
+            "016664",
+            [
+                {"FSRQ": "2026-01-04", "DWJZ": "1.1000", "JZZZL": "22.22"},
+                {"FSRQ": "2026-01-03", "DWJZ": "0.9000", "JZZZL": "-25.00"},
+                {"FSRQ": "2026-01-02", "DWJZ": "1.2000", "JZZZL": "20.00"},
+                {"FSRQ": "2025-12-31", "DWJZ": "1.0000", "JZZZL": "0.00"},
+            ],
+        )
+
+        response = server.app.test_client().get("/api/fundreturns?codes=016664")
+
+        self.assertEqual(response.status_code, 200)
+        ytd = response.get_json()["016664"]["ranges"]["ytd"]
+        self.assertEqual(ytd["returnPercent"], 10.0)
+        self.assertEqual(ytd["maxDrawdownPercent"], -25.0)
+        self.assertNotIn("volatilityPercent", ytd)
+
     def test_fund_holdings_refresh_parses_and_stores_top_holdings(self) -> None:
         upstream_body = (
             'var apidata={ content:"<div><label class=\'right\'>截止至：<font class=\'px12\'>2026-03-31</font></label>'

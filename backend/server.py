@@ -1345,6 +1345,27 @@ MARKET_RETURN_RANGES: dict[str, tuple[str, int | None]] = {
 }
 
 
+def history_risk_metrics(points: list[tuple[str, float]], start_date: str, end_date: str) -> dict[str, float | None]:
+    window = [
+        value
+        for date, value in points
+        if start_date <= date <= end_date and value > 0
+    ]
+    if len(window) < 2:
+        return {"maxDrawdownPercent": None}
+
+    peak = window[0]
+    max_drawdown = 0.0
+    for value in window:
+        peak = max(peak, value)
+        if peak > 0:
+            max_drawdown = min(max_drawdown, (value - peak) / peak * 100)
+
+    return {
+        "maxDrawdownPercent": round(max_drawdown, 2),
+    }
+
+
 def read_fund_return_summary_from_db(code: str) -> dict[str, Any] | None:
     with sqlite3.connect(DB_PATH) as conn:
         rows = conn.execute(
@@ -1402,6 +1423,7 @@ def read_fund_return_summary_from_db(code: str) -> dict[str, Any] | None:
             "key": key,
             "label": label,
             "returnPercent": round(return_percent, 2),
+            **history_risk_metrics(points, start_date, latest_date),
             "startDate": start_date,
             "endDate": latest_date,
             "startNav": round(start_nav, 4),
@@ -1588,6 +1610,7 @@ def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, An
             "key": key,
             "label": label,
             "returnPercent": round(return_percent, 2),
+            **history_risk_metrics(points, start_date, latest_date),
             "startDate": start_date,
             "endDate": latest_date,
             "startClose": round(start_close, 4),

@@ -76,6 +76,7 @@ export interface FundRangeReturn {
   key: FundReturnRangeKey;
   label: string;
   returnPercent: number;
+  maxDrawdownPercent?: number | null;
   startDate: string;
   endDate: string;
   startNav: number;
@@ -174,6 +175,7 @@ export interface MarketRangeReturn {
   key: FundReturnRangeKey;
   label: string;
   returnPercent: number;
+  maxDrawdownPercent?: number | null;
   startDate: string;
   endDate: string;
   startClose: number;

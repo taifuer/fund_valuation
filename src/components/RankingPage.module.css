@@ -25,11 +25,6 @@
   order: 2;
 }
 
-.sortControl {
-  justify-content: flex-end;
-  order: 3;
-}
-
 .subControl {
   flex-basis: 100%;
   order: 4;
@@ -85,7 +80,7 @@
   border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
-  min-width: 760px;
+  min-width: 980px;
 }
 
 .table thead {
@@ -105,28 +100,80 @@
   vertical-align: middle;
 }
 
-.rankCol { width: 9%; }
-.nameCol { width: 25%; }
+.rankCol { width: 8%; }
+.nameCol { width: 29%; }
 .returnCol { width: 13%; }
+.riskCol { width: 13%; }
+.ratioCol { width: 13%; }
 .valueCol { width: 13%; }
-.categoryCol { width: 12%; }
-.statusCol { width: 13%; }
-.dateCol { width: 15%; }
+.categoryCol { width: 11%; }
+.statusCol { width: 12%; }
+.dateCol { width: 14%; }
 
-.table th:nth-child(3),
-.table td:nth-child(3),
-.table th:nth-child(4),
-.table td:nth-child(4),
-.table th:nth-child(6),
-.table td:nth-child(6),
-.table th:nth-child(7),
-.table td:nth-child(7) {
+.riskTable .rankCol { width: 8%; }
+.riskTable .nameCol { width: 29%; }
+.riskTable .returnCol { width: 13%; }
+.riskTable .riskCol { width: 13%; }
+.riskTable .ratioCol { width: 13%; }
+.riskTable .categoryCol { width: 11%; }
+.riskTable .dateCol { width: 13%; }
+
+.rankingTable th:nth-child(3),
+.rankingTable td:nth-child(3),
+.rankingTable th:nth-child(4),
+.rankingTable td:nth-child(4),
+.rankingTable th:nth-child(6),
+.rankingTable td:nth-child(6),
+.rankingTable th:nth-child(7),
+.rankingTable td:nth-child(7),
+.riskTable th:nth-child(3),
+.riskTable td:nth-child(3),
+.riskTable th:nth-child(4),
+.riskTable td:nth-child(4),
+.riskTable th:nth-child(5),
+.riskTable td:nth-child(5),
+.riskTable th:nth-child(7),
+.riskTable td:nth-child(7) {
   text-align: right;
 }
 
-.table th:nth-child(5),
-.table td:nth-child(5) {
+.rankingTable th:nth-child(5),
+.rankingTable td:nth-child(5),
+.riskTable th:nth-child(6),
+.riskTable td:nth-child(6) {
   text-align: center;
+}
+
+.sortHeaderButton {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-weight: 800;
+  justify-content: inherit;
+  line-height: 20px;
+  max-width: 100%;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.sortHeaderButton:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.sortHeaderButtonActive {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.sortHeaderButton:focus-visible {
+  outline: 2px solid #0f172a;
+  outline-offset: 2px;
 }
 
 .table tbody tr {
@@ -191,14 +238,18 @@
 .nameCell span,
 .dateRange,
 .source,
-.value {
+.value,
+.risk,
+.ratio {
   color: #94a3b8;
   font-size: 12px;
 }
 
 .dateRange,
 .source,
-.value {
+.value,
+.risk,
+.ratio {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -257,10 +308,6 @@
   .toolbar {
     display: flex;
     flex-direction: column;
-    justify-content: flex-start;
-  }
-
-  .sortControl {
     justify-content: flex-start;
   }
 

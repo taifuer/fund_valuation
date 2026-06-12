@@ -18,8 +18,8 @@ function formatTime() {
 
 interface Props {
   fxRates: Map<string, FxRateData>;
-  activePage: 'overview' | 'ranking';
-  onPageChange: (page: 'overview' | 'ranking') => void;
+  activePage: 'overview' | 'ranking' | 'risk';
+  onPageChange: (page: 'overview' | 'ranking' | 'risk') => void;
 }
 
 const FX_ORDER = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
@@ -34,7 +34,8 @@ export default function Header({ fxRates, activePage, onPageChange }: Props) {
   }, []);
 
   function reloadToTop() {
-    window.location.href = `${window.location.origin}${window.location.pathname}`;
+    onPageChange('overview');
+    window.scrollTo({ top: 0, behavior: 'auto' });
   }
 
   return (
@@ -66,6 +67,13 @@ export default function Header({ fxRates, activePage, onPageChange }: Props) {
               onClick={() => onPageChange('ranking')}
             >
               排行
+            </button>
+            <button
+              type="button"
+              className={`${styles.navButton} ${activePage === 'risk' ? styles.navButtonActive : ''}`}
+              onClick={() => onPageChange('risk')}
+            >
+              风险
             </button>
           </nav>
         </div>

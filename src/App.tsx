@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuotes, FundEstimate } from './hooks/useQuotes';
 import { fetchFundNavs, fetchSinaFundNavs } from './api';
 import { FUNDS } from './constants';
@@ -7,16 +7,23 @@ import Header from './components/Header';
 import IndexCards from './components/IndexCards';
 import FundCard from './components/FundCard';
 import RankingPage from './components/RankingPage';
+import RiskPage from './components/RiskPage';
 import styles from './App.module.css';
 
 type SortMode = 'estimate' | 'official';
 type SortDirection = 'desc' | 'asc';
 type FundDisplayMode = 'compact' | 'detail';
-type PageKey = 'overview' | 'ranking';
+type PageKey = 'overview' | 'ranking' | 'risk';
 
 const FUND_SECTION_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_section';
 const FUND_MANAGER_KEY = 'fund_valuation:managed_funds';
 const FUND_DISPLAY_MODE_KEY = 'fund_valuation:fund_display_mode';
+
+const PAGE_PATHS: Record<PageKey, string> = {
+  overview: '/',
+  ranking: '/ranking',
+  risk: '/risk',
+};
 
 interface ManagedFundSettings {
   hiddenDefaultCodes: string[];
@@ -54,6 +61,12 @@ function writeFundDisplayMode(value: FundDisplayMode) {
   try {
     window.localStorage.setItem(FUND_DISPLAY_MODE_KEY, value);
   } catch { /* skip */ }
+}
+
+function pageFromPathname(pathname: string): PageKey {
+  if (pathname === '/ranking') return 'ranking';
+  if (pathname === '/risk') return 'risk';
+  return 'overview';
 }
 
 function readManagedFundSettings(): ManagedFundSettings {
@@ -105,7 +118,7 @@ function sortValue(estimate: FundEstimate, mode: SortMode): number | null {
 export default function App() {
   const [managedFunds, setManagedFunds] = useState<ManagedFundSettings>(() => readManagedFundSettings());
   const [fundDisplayMode, setFundDisplayMode] = useState<FundDisplayMode>(() => readFundDisplayMode());
-  const [activePage, setActivePage] = useState<PageKey>('overview');
+  const [activePage, setActivePage] = useState<PageKey>(() => pageFromPathname(window.location.pathname));
   const funds = useMemo(() => {
     const hidden = new Set(managedFunds.hiddenDefaultCodes);
     const defaultFunds = FUNDS.filter((fund) => !hidden.has(fund.code));
@@ -118,7 +131,7 @@ export default function App() {
   const { quotes, fundEstimates, fxRates, marketStates, marketLoading, fundLoading, error } = useQuotes(
     funds,
     fundDisplayMode === 'detail',
-    activePage === 'ranking',
+    activePage === 'ranking' || activePage === 'risk',
   );
   const [sortMode, setSortMode] = useState<SortMode>('estimate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -140,6 +153,23 @@ export default function App() {
   }, [fundEstimates, sortMode, sortDirection]);
 
   const sortLabel = sortMode === 'official' ? '按 T-1 已出净值排序' : '按实时估算涨跌排序';
+
+  useEffect(() => {
+    function handlePopState() {
+      setActivePage(pageFromPathname(window.location.pathname));
+    }
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  function navigatePage(page: PageKey) {
+    const path = PAGE_PATHS[page];
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+    }
+    setActivePage(page);
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }
 
   function updateManagedFunds(next: ManagedFundSettings) {
     const normalized = {
@@ -269,7 +299,7 @@ export default function App() {
 
   return (
     <div className={styles.app}>
-      <Header fxRates={fxRates} activePage={activePage} onPageChange={setActivePage} />
+      <Header fxRates={fxRates} activePage={activePage} onPageChange={navigatePage} />
       {error && <div className={styles.error}>{error}</div>}
       {activePage === 'overview' ? (
         <>
@@ -386,9 +416,16 @@ export default function App() {
             })}
           </div>
         </>
-      ) : (
+      ) : activePage === 'ranking' ? (
         <RankingPage
           quotes={quotes}
+          fundEstimates={fundEstimates}
+          marketStates={marketStates}
+          marketLoading={marketLoading}
+          fundLoading={fundLoading}
+        />
+      ) : (
+        <RiskPage
           fundEstimates={fundEstimates}
           marketStates={marketStates}
           marketLoading={marketLoading}
