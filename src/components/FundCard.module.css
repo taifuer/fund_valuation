@@ -361,6 +361,13 @@
   color: #fff;
 }
 
+.tabLoading {
+  color: #94a3b8;
+  font-size: 12px;
+  padding: 16px 14px;
+  text-align: center;
+}
+
 .skeleton {
   animation: pulse 1.5s ease-in-out infinite;
   background: #e2e8f0;

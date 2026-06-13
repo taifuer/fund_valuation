@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import type { Fund, FundRangeReturn, FundReturnRangeKey, FundReturnSummary, MarketStateData, QuoteData } from '../types';
 import type { FundEstimate } from '../hooks/useQuotes';
-import HoldingsTable from './HoldingsTable';
-import FundNavTable from './FundNavTable';
-import FundHistoryChart from './FundHistoryChart';
-import FundBacktestPanel from './FundBacktestPanel';
 import { getMarketState } from '../marketHours';
 import styles from './FundCard.module.css';
+
+const HoldingsTable = lazy(() => import('./HoldingsTable'));
+const FundNavTable = lazy(() => import('./FundNavTable'));
+const FundHistoryChart = lazy(() => import('./FundHistoryChart'));
+const FundBacktestPanel = lazy(() => import('./FundBacktestPanel'));
 
 interface Props {
   fund: Fund;
@@ -349,27 +350,29 @@ export default function FundCard({
               回测
             </button>
           </div>
-          {activeTab === 'holdings' && (
-            <HoldingsTable
-              holdings={fund.holdings}
-              quotes={estimate.holdingsQuotes}
-              computedChange={computedChange}
-              quoteCoverage={quoteCoverage}
-              totalConfiguredWeight={totalConfiguredWeight}
-              missingQuoteCount={missingQuoteCount}
-              currencyChanges={currencyChanges}
-              marketStates={marketStates}
-            />
-          )}
-          {activeTab === 'nav' && (
-            <FundNavTable fundCode={fund.code} />
-          )}
-          {activeTab === 'trend' && (
-            <FundHistoryChart fundCode={fund.code} />
-          )}
-          {activeTab === 'backtest' && (
-            <FundBacktestPanel fundCode={fund.code} />
-          )}
+          <Suspense fallback={<div className={styles.tabLoading}>详情加载中...</div>}>
+            {activeTab === 'holdings' && (
+              <HoldingsTable
+                holdings={fund.holdings}
+                quotes={estimate.holdingsQuotes}
+                computedChange={computedChange}
+                quoteCoverage={quoteCoverage}
+                totalConfiguredWeight={totalConfiguredWeight}
+                missingQuoteCount={missingQuoteCount}
+                currencyChanges={currencyChanges}
+                marketStates={marketStates}
+              />
+            )}
+            {activeTab === 'nav' && (
+              <FundNavTable fundCode={fund.code} />
+            )}
+            {activeTab === 'trend' && (
+              <FundHistoryChart fundCode={fund.code} />
+            )}
+            {activeTab === 'backtest' && (
+              <FundBacktestPanel fundCode={fund.code} />
+            )}
+          </Suspense>
         </div>
       )}
     </div>

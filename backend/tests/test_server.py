@@ -111,6 +111,33 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertIn("易方达亚洲精选股票(QDII)", response.get_data(as_text=True))
         self.assertNotIn("�", response.get_data(as_text=True))
 
+    def test_dashboard_aggregates_market_snapshot_and_uses_cache(self) -> None:
+        quote_body = 'var hq_str_s_sh000001="上证指数,3000,10,0.33";'.encode("gb18030")
+        fx_body = 'var hq_str_fx_susdcny="美元人民币,7.1000,0,0,0,0,0,0,0,09:30:00,0.12,2026-06-12";'.encode("gb18030")
+        calls: list[str] = []
+
+        def fake_fetch(url: str, **_kwargs: object) -> tuple[int, str, bytes]:
+            calls.append(url)
+            if "fx_susdcny" in url:
+                return 200, "text/plain; charset=utf-8", fx_body
+            return 200, "text/plain; charset=utf-8", quote_body
+
+        client = server.app.test_client()
+        url = "/api/dashboard?symbols=s_sh000001&currencies=USD&now=2026-05-26T10:00:00%2B08:00"
+        with patch.object(server, "fetch_upstream", side_effect=fake_fetch):
+            first = client.get(url)
+            second = client.get(url)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        payload = first.get_json()
+        self.assertIn("上证指数", payload["quotesText"])
+        self.assertIn("美元人民币", payload["fxText"])
+        self.assertEqual(payload["marketStates"]["s_sh000001"]["state"], "live")
+        self.assertEqual(first.headers.get("X-Cache"), "MISS")
+        self.assertEqual(second.headers.get("X-Cache"), "HIT")
+        self.assertEqual(len(calls), 2)
+
     def test_fund_api_rejects_invalid_codes_before_upstream_fetch(self) -> None:
         with patch.object(server, "fetch_upstream") as fetch:
             response = server.app.test_client().get("/api/fundnav?codes=016664,abc123")
@@ -158,10 +185,48 @@ class ServerDataRefreshTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+        self.assertIn("X-Elapsed-ms", response.headers)
         payload = response.get_json()
         self.assertEqual(payload["hkHSI"]["state"], "holiday")
         self.assertEqual(payload["b_KOSPI"]["state"], "holiday")
         self.assertEqual(payload["s_sh000001"]["state"], "live")
+
+    def test_market_states_uses_response_cache(self) -> None:
+        client = server.app.test_client()
+        url = "/api/marketstates?symbols=s_sh000001,sh600519&now=2026-05-26T12:00:00%2B08:00"
+
+        first = client.get(url)
+        second = client.get(url)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.headers.get("X-Cache"), "MISS")
+        self.assertEqual(second.headers.get("X-Cache"), "HIT")
+
+    def test_prewarm_response_cache_primes_fund_returns(self) -> None:
+        codes = server.configured_fund_codes_from_constants()
+        self.assertGreater(len(codes), 0)
+        code = codes[0]
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.executemany(
+                """
+                INSERT INTO fund_nav_history(code, date, nav, change_percent, fetched_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (code, "2026-01-02", 1.0, 0.0, 1),
+                    (code, "2026-06-01", 1.2, 1.0, 1),
+                ],
+            )
+
+        with server.app.app_context():
+            server.prewarm_response_cache()
+
+        response = server.app.test_client().get(f"/api/fundreturns?codes={','.join(codes)}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("X-Cache"), "HIT")
+        self.assertIn(code, response.get_json())
 
     def test_market_states_marks_weekend_separately(self) -> None:
         response = server.app.test_client().get(

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { QuoteData, FundNavData, FxRateData, Fund, FundPurchaseData, FundReturnSummary, MarketStateData } from '../types';
 import {
   fetchAllQuotes,
+  fetchDashboardSnapshot,
   fetchFundNavs,
   fetchSinaFundNavs,
   fetchFundHistory,
@@ -270,11 +271,14 @@ export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false, loadFu
       setError(null);
 
       try {
-        const [marketQuotes, displayFxRates, marketStatesData] = await Promise.all([
-          fetchAllQuotes(marketSymbols),
-          fetchFxRates(DISPLAY_FX_CURRENCIES),
-          fetchMarketStates(marketSymbols),
-        ]);
+        const snapshot = await fetchDashboardSnapshot(marketSymbols, DISPLAY_FX_CURRENCIES);
+        const [marketQuotes, displayFxRates, marketStatesData] = snapshot && snapshot.quotes.size > 0
+          ? [snapshot.quotes, snapshot.fxRates, snapshot.marketStates]
+          : await Promise.all([
+              fetchAllQuotes(marketSymbols),
+              fetchFxRates(DISPLAY_FX_CURRENCIES),
+              fetchMarketStates(marketSymbols),
+            ]);
 
         if (!mountedRef.current) return;
         setQuotes((prev) => new Map([...prev, ...marketQuotes]));

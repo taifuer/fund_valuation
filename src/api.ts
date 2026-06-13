@@ -319,25 +319,46 @@ function parseSinaFx(line: string, fetchedAt: number): FxRateData | null {
   return null;
 }
 
+const QUOTE_CACHE_TTL_MS = 15_000;
+const quoteCache = new Map<string, QuoteData>();
+
 export async function fetchAllQuotes(sinaSymbols: string[]): Promise<Map<string, QuoteData>> {
   const results = new Map<string, QuoteData>();
   const unique = [...new Set(sinaSymbols)].filter((s) => !s.startsWith('f_'));
-  const chunkSize = 20;
+  const chunkSize = 140;
+  const now = Date.now();
+  const missing: string[] = [];
 
-  for (let i = 0; i < unique.length; i += chunkSize) {
-    const batch = unique.slice(i, i + chunkSize);
+  for (const symbol of unique) {
+    const cached = quoteCache.get(symbol);
+    if (cached && now - cached.fetchedAt < QUOTE_CACHE_TTL_MS) {
+      results.set(symbol, cached);
+    } else {
+      missing.push(symbol);
+    }
+  }
+
+  const batches: string[][] = [];
+  for (let i = 0; i < missing.length; i += chunkSize) {
+    batches.push(missing.slice(i, i + chunkSize));
+  }
+
+  await Promise.all(batches.map(async (batch) => {
     const url = apiUrl(`/api/sina?list=${batch.join(',')}`);
     try {
       const res = await fetch(url);
-      if (!res.ok) continue;
+      if (!res.ok) return;
       const text = await res.text();
       const fetchedAt = Date.now();
       for (const line of text.split('\n')) {
         const parsed = parseSinaVar(line.trim(), fetchedAt);
-        if (parsed) results.set(parsed.symbol, parsed.data);
+        if (parsed) {
+          quoteCache.set(parsed.symbol, parsed.data);
+          results.set(parsed.symbol, parsed.data);
+        }
       }
     } catch { /* skip */ }
-  }
+  }));
 
   return results;
 }
@@ -359,18 +380,30 @@ export async function fetchSinaFundNavs(codes: string[]): Promise<Map<string, Fu
   return results;
 }
 
+const FX_RATE_CACHE_TTL_MS = 15_000;
+const fxRateCache = new Map<string, FxRateData>();
+
 export async function fetchFxRates(currencies: string[]): Promise<Map<string, FxRateData>> {
   const today = beijingDate();
   const results = new Map<string, FxRateData>([[
     'CNY',
     { currency: 'CNY', pair: 'CNY/CNY', rate: 1, changePercent: 0, date: today, time: '00:00:00', datetime: `${today} 00:00:00`, fetchedAt: Date.now() },
   ]]);
+  const now = Date.now();
+  const requested = [...new Set(currencies)];
+  for (const currency of requested) {
+    const cached = fxRateCache.get(currency);
+    if (cached && now - cached.fetchedAt < FX_RATE_CACHE_TTL_MS) {
+      results.set(currency, cached);
+    }
+  }
+  const missing = requested.filter((currency) => currency !== 'CNY' && !results.has(currency));
   const symbols = [
-    currencies.includes('USD') ? 'fx_susdcny' : null,
-    currencies.includes('EUR') ? 'fx_seurcny' : null,
-    currencies.includes('JPY') ? 'fx_sjpycny' : null,
-    currencies.includes('KRW') ? 'fx_skrwcny' : null,
-    currencies.includes('HKD') ? 'fx_shkdcny' : null,
+    missing.includes('USD') ? 'fx_susdcny' : null,
+    missing.includes('EUR') ? 'fx_seurcny' : null,
+    missing.includes('JPY') ? 'fx_sjpycny' : null,
+    missing.includes('KRW') ? 'fx_skrwcny' : null,
+    missing.includes('HKD') ? 'fx_shkdcny' : null,
   ].filter((symbol): symbol is string => symbol != null);
   if (symbols.length === 0) return results;
 
@@ -382,10 +415,78 @@ export async function fetchFxRates(currencies: string[]): Promise<Map<string, Fx
     const fetchedAt = Date.now();
     for (const line of text.split('\n')) {
       const parsed = parseSinaFx(line.trim(), fetchedAt);
-      if (parsed) results.set(parsed.currency, parsed);
+      if (parsed) {
+        fxRateCache.set(parsed.currency, parsed);
+        results.set(parsed.currency, parsed);
+      }
     }
   } catch { /* skip */ }
   return results;
+}
+
+export interface DashboardSnapshot {
+  quotes: Map<string, QuoteData>;
+  fxRates: Map<string, FxRateData>;
+  marketStates: Map<string, MarketStateData>;
+}
+
+const dashboardSnapshotPending = new Map<string, Promise<DashboardSnapshot | null>>();
+
+export async function fetchDashboardSnapshot(
+  symbols: string[],
+  currencies: string[],
+): Promise<DashboardSnapshot | null> {
+  const uniqueSymbols = [...new Set(symbols.filter(Boolean))];
+  const uniqueCurrencies = [...new Set(currencies.filter((currency) => currency !== 'CNY'))];
+  if (uniqueSymbols.length > 160) return null;
+  const cacheKey = `${uniqueSymbols.join(',')}|${uniqueCurrencies.join(',')}`;
+  const pending = dashboardSnapshotPending.get(cacheKey);
+  if (pending) return pending;
+
+  const request = (async () => {
+    const params = new URLSearchParams({
+      symbols: uniqueSymbols.join(','),
+      currencies: uniqueCurrencies.join(','),
+    });
+    const res = await fetch(apiUrl(`/api/dashboard?${params.toString()}`));
+    if (!res.ok) return null;
+    const json = await res.json();
+    const fetchedAt = Date.now();
+    const quotes = new Map<string, QuoteData>();
+    const fxRates = new Map<string, FxRateData>([[
+      'CNY',
+      { currency: 'CNY', pair: 'CNY/CNY', rate: 1, changePercent: 0, date: beijingDate(), time: '00:00:00', datetime: `${beijingDate()} 00:00:00`, fetchedAt },
+    ]]);
+    const marketStates = new Map<string, MarketStateData>();
+
+    for (const line of String(json.quotesText ?? '').split('\n')) {
+      const parsed = parseSinaVar(line.trim(), fetchedAt);
+      if (parsed) {
+        quoteCache.set(parsed.symbol, parsed.data);
+        quotes.set(parsed.symbol, parsed.data);
+      }
+    }
+
+    for (const line of String(json.fxText ?? '').split('\n')) {
+      const parsed = parseSinaFx(line.trim(), fetchedAt);
+      if (parsed) {
+        fxRateCache.set(parsed.currency, parsed);
+        fxRates.set(parsed.currency, parsed);
+      }
+    }
+
+    for (const symbol of uniqueSymbols) {
+      const raw: MarketStateData | undefined = json.marketStates?.[symbol];
+      if (raw) marketStates.set(symbol, raw);
+    }
+
+    return { quotes, fxRates, marketStates };
+  })().catch(() => null).finally(() => {
+    dashboardSnapshotPending.delete(cacheKey);
+  });
+
+  dashboardSnapshotPending.set(cacheKey, request);
+  return request;
 }
 
 interface EastMoneyFundRaw {

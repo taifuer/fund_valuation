@@ -10,6 +10,7 @@ import sqlite3
 import threading
 import time
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -18,7 +19,7 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, g, jsonify, request
 from werkzeug.exceptions import HTTPException, TooManyRequests
 
 
@@ -30,6 +31,7 @@ RAW_DIR = DATA_DIR / "raw"
 DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
 }
+SLOW_REQUEST_LOG_MS = int(os.environ.get("FUND_VALUATION_SLOW_REQUEST_MS", "500"))
 
 app = Flask(__name__)
 _UPSTREAM_LOCKS: dict[str, threading.Lock] = {}
@@ -51,6 +53,7 @@ HISTORY_AUTO_REFRESH_TTL_MS = 30 * 60 * 1000
 
 RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "sina": (240, 60),
+    "dashboard": (180, 60),
     "marketstates": (240, 60),
     "fundnav": (120, 60),
     "fundholdings": (80, 60),
@@ -1067,6 +1070,69 @@ def read_fund_holdings_for_backtest(code: str) -> list[dict[str, Any]]:
     return rows if rows else parse_default_fund_holdings_from_constants(code)
 
 
+def configured_fund_codes_from_constants() -> list[str]:
+    constants_path = ROOT_DIR / "src" / "constants.ts"
+    try:
+        text = constants_path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return list(dict.fromkeys(re.findall(r"code:\s*'(\d{6})'", text)))
+
+
+def configured_market_return_items_from_constants() -> list[str]:
+    constants_path = ROOT_DIR / "src" / "constants.ts"
+    try:
+        text = constants_path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    pairs = re.findall(
+        r"history:\s*\{\s*source:\s*'([^']+)'\s*,\s*symbol:\s*'([^']+)'",
+        text,
+    )
+    items = [
+        f"{source}:{symbol}"
+        for source, symbol in pairs
+        if source in {"sina-cn", "sina-us", "sina-futures", "tencent-hk"}
+        and MARKET_HISTORY_SYMBOL_RE.fullmatch(symbol)
+    ]
+    return sorted(dict.fromkeys(items))
+
+
+def prewarm_response_cache() -> None:
+    fund_codes = configured_fund_codes_from_constants()
+    fund_payload = {
+        code: summary
+        for code in sorted(fund_codes)
+        if (summary := read_fund_return_summary_from_db(code))
+    }
+    if fund_payload:
+        response_cache_set(
+            f"api:fundreturns:{','.join(sorted(fund_codes))}",
+            json_response(fund_payload),
+            5 * 60,
+        )
+
+    market_items = configured_market_return_items_from_constants()
+    market_payload: dict[str, Any] = {}
+    for item in market_items:
+        source, symbol = item.split(":", 1)
+        summary = read_market_return_summary_from_db(source, symbol)
+        if summary:
+            market_payload[item] = summary
+    if market_payload:
+        response_cache_set(
+            f"api:marketreturns:{','.join(market_items)}",
+            json_response(market_payload),
+            5 * 60,
+        )
+
+    print(
+        f"Prewarmed caches: fundreturns {len(fund_payload)}/{len(fund_codes)}, "
+        f"marketreturns {len(market_payload)}/{len(market_items)}",
+        flush=True,
+    )
+
+
 def purchase_status_date(raw_date: str, show_days: list[Any]) -> str:
     if re.match(r"^\d{4}-\d{2}-\d{2}$", raw_date):
         return raw_date
@@ -2034,19 +2100,45 @@ def cached_json_response(cache_key: str, ttl_seconds: int, payload_factory: Any)
     cached = response_cache_get(cache_key, ttl_seconds)
     if cached is not None:
         return cached
-    return response_cache_set(cache_key, json_response(payload_factory()), ttl_seconds)
+    lock = upstream_lock(f"response:{cache_key}")
+    with lock:
+        cached = response_cache_get(cache_key, ttl_seconds)
+        if cached is not None:
+            return cached
+        return response_cache_set(cache_key, json_response(payload_factory()), ttl_seconds)
 
 
 def cached_text_response(cache_key: str, ttl_seconds: int, text_factory: Any) -> Response:
     cached = response_cache_get(cache_key, ttl_seconds)
     if cached is not None:
         return cached
-    text, status = text_factory()
-    return response_cache_set(cache_key, text_response(text, status=status), ttl_seconds)
+    lock = upstream_lock(f"response:{cache_key}")
+    with lock:
+        cached = response_cache_get(cache_key, ttl_seconds)
+        if cached is not None:
+            return cached
+        text, status = text_factory()
+        return response_cache_set(cache_key, text_response(text, status=status), ttl_seconds)
+
+
+@app.before_request
+def mark_request_start() -> None:
+    g.request_started_at = time.perf_counter()
 
 
 @app.after_request
-def add_cors_headers(response: Response) -> Response:
+def add_response_headers(response: Response) -> Response:
+    started_at = getattr(g, "request_started_at", None)
+    if isinstance(started_at, float):
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        response.headers["X-Elapsed-ms"] = f"{elapsed_ms:.1f}"
+        if elapsed_ms >= SLOW_REQUEST_LOG_MS:
+            cache_status = response.headers.get("X-Cache", "-")
+            print(
+                f"[slow-request] {request.method} {request.full_path.rstrip('?')} "
+                f"{response.status_code} {elapsed_ms:.1f}ms cache={cache_status}",
+                flush=True,
+            )
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
@@ -2092,14 +2184,84 @@ def sina() -> Response:
 @app.get("/api/marketstates")
 def market_states() -> Response:
     enforce_rate_limit("marketstates")
-    ensure_market_calendar_seeded()
-    symbols = require_symbol_list(
+    symbols = sorted(require_symbol_list(
         "symbols",
         pattern=SINA_SYMBOL_RE,
         max_symbols=MAX_MARKET_STATE_SYMBOLS_PER_REQUEST,
-    )
-    now = parse_market_now(request.args.get("now"))
-    return json_response({symbol: market_state_for_symbol(symbol, now) for symbol in symbols})
+    ))
+    now_arg = request.args.get("now", "")
+    cache_key = f"api:marketstates:{now_arg}:{','.join(symbols)}"
+
+    def build() -> dict[str, Any]:
+        ensure_market_calendar_seeded()
+        now = parse_market_now(now_arg)
+        return {symbol: market_state_for_symbol(symbol, now) for symbol in symbols}
+
+    return cached_json_response(cache_key, 15, build)
+
+
+@app.get("/api/dashboard")
+def dashboard() -> Response:
+    enforce_rate_limit("dashboard")
+    symbols = sorted(require_symbol_list(
+        "symbols",
+        pattern=SINA_SYMBOL_RE,
+        max_symbols=MAX_SINA_SYMBOLS_PER_REQUEST,
+    ))
+    currencies = sorted(dict.fromkeys(
+        currency
+        for currency in request.args.get("currencies", "").split(",")
+        if currency in {"USD", "EUR", "JPY", "KRW", "HKD"}
+    ))
+    now_arg = request.args.get("now", "")
+    cache_key = f"api:dashboard:{now_arg}:{','.join(currencies)}:{','.join(symbols)}"
+
+    def build() -> dict[str, Any]:
+        sina_text = ""
+        if symbols:
+            joined_symbols = ",".join(symbols)
+            status, _, body = fetch_upstream(
+                f"https://hq.sinajs.cn/list={joined_symbols}",
+                referer="https://finance.sina.com.cn/",
+                content_type="text/plain; charset=utf-8",
+                cache_key=f"sina:{joined_symbols}",
+                kind="sina",
+                ttl_seconds=30,
+            )
+            if status < 400:
+                sina_text = decode_body(body)
+
+        fx_text = ""
+        fx_symbols = {
+            "USD": "fx_susdcny",
+            "EUR": "fx_seurcny",
+            "JPY": "fx_sjpycny",
+            "KRW": "fx_skrwcny",
+            "HKD": "fx_shkdcny",
+        }
+        requested_fx_symbols = [fx_symbols[currency] for currency in currencies if currency in fx_symbols]
+        if requested_fx_symbols:
+            joined_fx_symbols = ",".join(requested_fx_symbols)
+            status, _, body = fetch_upstream(
+                f"https://hq.sinajs.cn/list={joined_fx_symbols}",
+                referer="https://finance.sina.com.cn/",
+                content_type="text/plain; charset=utf-8",
+                cache_key=f"sina:{joined_fx_symbols}",
+                kind="sina",
+                ttl_seconds=30,
+            )
+            if status < 400:
+                fx_text = decode_body(body)
+
+        ensure_market_calendar_seeded()
+        now = parse_market_now(now_arg)
+        return {
+            "quotesText": sina_text,
+            "fxText": fx_text,
+            "marketStates": {symbol: market_state_for_symbol(symbol, now) for symbol in symbols},
+        }
+
+    return cached_json_response(cache_key, 15, build)
 
 
 @app.get("/api/fundnav")
@@ -2109,8 +2271,7 @@ def fund_nav() -> Response:
     cache_key = f"api:fundnav:{','.join(sorted(codes))}"
 
     def build() -> dict[str, Any]:
-        results: dict[str, Any] = {}
-        for code in codes:
+        def fetch_one(code: str) -> tuple[str, Any | None]:
             url = f"https://fundgz.1234567.com.cn/js/{quote(code)}.js"
             status, _, body = fetch_upstream(
                 url,
@@ -2121,10 +2282,17 @@ def fund_nav() -> Response:
                 ttl_seconds=60,
             )
             if status >= 400:
-                continue
-            parsed = parse_jsonp_call(decode_body(body), "jsonpgz")
-            if parsed:
-                results[code] = parsed
+                return code, None
+            return code, parse_jsonp_call(decode_body(body), "jsonpgz")
+
+        results: dict[str, Any] = {}
+        max_workers = min(8, len(codes))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(fetch_one, code) for code in codes]
+            for future in as_completed(futures):
+                code, parsed = future.result()
+                if parsed:
+                    results[code] = parsed
         return results
 
     return cached_json_response(cache_key, 60, build)
@@ -2417,6 +2585,9 @@ def main() -> None:
     args = parser.parse_args()
 
     ensure_storage()
+    if os.environ.get("FUND_VALUATION_PREWARM", "1") != "0":
+        with app.app_context():
+            prewarm_response_cache()
     print(f"Flask backend listening on http://{args.host}:{args.port}")
     print(f"SQLite database: {DB_PATH}")
     app.run(host=args.host, port=args.port, debug=args.debug, threaded=True)

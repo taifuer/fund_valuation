@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useQuotes, FundEstimate } from './hooks/useQuotes';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { useQuotes, type FundEstimate } from './hooks/useQuotes';
 import { fetchFundNavs, fetchSinaFundNavs } from './api';
 import { FUNDS } from './constants';
 import type { Fund } from './types';
 import Header from './components/Header';
 import IndexCards from './components/IndexCards';
 import FundCard from './components/FundCard';
-import RankingPage from './components/RankingPage';
-import RiskPage from './components/RiskPage';
 import styles from './App.module.css';
+
+const RankingPage = lazy(() => import('./components/RankingPage'));
+const RiskPage = lazy(() => import('./components/RiskPage'));
 
 type SortMode = 'estimate' | 'official';
 type SortDirection = 'desc' | 'asc';
@@ -427,22 +428,26 @@ export default function App() {
           </div>
         </>
       ) : activePage === 'ranking' ? (
-        <RankingPage
-          quotes={quotes}
-          fundEstimates={fundEstimates}
-          marketStates={marketStates}
-          marketLoading={marketLoading}
-          fundLoading={fundLoading}
-          onStatusMessageChange={setPageStatusMessage}
-        />
+        <Suspense fallback={<div className={styles.pageFallback}>收益页面加载中...</div>}>
+          <RankingPage
+            quotes={quotes}
+            fundEstimates={fundEstimates}
+            marketStates={marketStates}
+            marketLoading={marketLoading}
+            fundLoading={fundLoading}
+            onStatusMessageChange={setPageStatusMessage}
+          />
+        </Suspense>
       ) : (
-        <RiskPage
-          fundEstimates={fundEstimates}
-          marketStates={marketStates}
-          marketLoading={marketLoading}
-          fundLoading={fundLoading}
-          onStatusMessageChange={setPageStatusMessage}
-        />
+        <Suspense fallback={<div className={styles.pageFallback}>风险页面加载中...</div>}>
+          <RiskPage
+            fundEstimates={fundEstimates}
+            marketStates={marketStates}
+            marketLoading={marketLoading}
+            fundLoading={fundLoading}
+            onStatusMessageChange={setPageStatusMessage}
+          />
+        </Suspense>
       )}
       <footer className={styles.footer}>
         © <a href="https://github.com/taifuer/fund_valuation" target="_blank" rel="noreferrer">Fund Valuation</a> · 数据来源：新浪财经、天天基金、东方财富等公开接口；估算结果仅供参考，不构成投资建议，实际净值以基金公司披露为准。
