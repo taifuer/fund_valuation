@@ -146,6 +146,14 @@
   font-weight: 600;
 }
 
+.statusMessage {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 6px;
+  text-align: center;
+}
+
 .live {
   display: inline-block;
   width: 7px;

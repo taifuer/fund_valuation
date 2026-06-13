@@ -20,11 +20,12 @@ interface Props {
   fxRates: Map<string, FxRateData>;
   activePage: 'overview' | 'ranking' | 'risk';
   onPageChange: (page: 'overview' | 'ranking' | 'risk') => void;
+  statusMessage?: string;
 }
 
 const FX_ORDER = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
 
-export default function Header({ fxRates, activePage, onPageChange }: Props) {
+export default function Header({ fxRates, activePage, onPageChange, statusMessage = '' }: Props) {
   const [time, setTime] = useState(formatTime());
   const displayRates = FX_ORDER.map((currency) => fxRates.get(currency)).filter((rate): rate is FxRateData => rate != null);
 
@@ -99,6 +100,9 @@ export default function Header({ fxRates, activePage, onPageChange }: Props) {
                 );
               })}
             </div>
+          )}
+          {statusMessage && (
+            <div className={styles.statusMessage}>{statusMessage}</div>
           )}
         </div>
       </div>

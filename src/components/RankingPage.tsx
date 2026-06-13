@@ -18,6 +18,7 @@ interface Props {
   marketStates?: Map<string, MarketStateData>;
   marketLoading: boolean;
   fundLoading?: boolean;
+  onStatusMessageChange?: (message: string) => void;
 }
 
 interface RankingItem {
@@ -165,6 +166,7 @@ export default function RankingPage({
   marketStates = new Map(),
   marketLoading,
   fundLoading = false,
+  onStatusMessageChange,
 }: Props) {
   const [range, setRange] = useState<RankingRangeKey>('today');
   const [category, setCategory] = useState<CategoryKey>('index');
@@ -218,6 +220,11 @@ export default function RankingPage({
   const loading = category === 'fund'
     ? fundLoading
     : marketLoading || (range !== 'today' && returnsLoading);
+
+  useEffect(() => {
+    onStatusMessageChange?.(loading ? '收益数据加载中...' : '');
+    return () => onStatusMessageChange?.('');
+  }, [loading, onStatusMessageChange]);
 
   function updateSort(nextKey: SortKey) {
     setSortDirection((currentDirection) => nextDirection(sortKey, currentDirection, nextKey));
@@ -347,10 +354,6 @@ export default function RankingPage({
           </tbody>
         </table>
       </section>
-      {loading && items.length > 0 && (
-        <p className={styles.refreshing}>收益数据更新中...</p>
-      )}
-
       <p className={styles.note}>
         * 最新收益可能包含盘中行情；基金收益使用已披露官方净值。数据可能存在延迟或误差，以官方披露为准。
       </p>

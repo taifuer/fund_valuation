@@ -311,14 +311,6 @@
   margin: 10px 2px 0;
 }
 
-.refreshing {
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.6;
-  margin: 8px 2px 0;
-  text-align: right;
-}
-
 @media (max-width: 720px) {
   .page {
     padding: 8px 12px 28px;

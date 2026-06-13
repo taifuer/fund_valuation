@@ -8,7 +8,7 @@ import styles from './RankingPage.module.css';
 type RiskRangeKey = 'ytd' | '1w' | '1m' | '3m' | '6m' | '1y' | '3y';
 type CategoryKey = 'all' | 'index' | 'asset' | 'etf' | 'fund';
 type EtfFilterKey = 'all' | 'index' | 'sector';
-type SortKey = 'return' | 'drawdown' | 'ratio';
+type SortKey = 'return' | 'drawdown' | 'ratio' | 'winRate';
 type SortDirection = 'desc' | 'asc';
 
 interface Props {
@@ -16,6 +16,7 @@ interface Props {
   marketStates?: Map<string, MarketStateData>;
   marketLoading: boolean;
   fundLoading?: boolean;
+  onStatusMessageChange?: (message: string) => void;
 }
 
 interface RiskItem {
@@ -130,6 +131,7 @@ function drawdownAbs(item: RiskItem) {
 }
 
 function sortableValue(item: RiskItem, sortKey: SortKey) {
+  if (sortKey === 'winRate') return item.winRatePercent;
   if (sortKey === 'ratio') return riskRatio(item);
   if (sortKey === 'drawdown') return drawdownAbs(item);
   return item.returnPercent;
@@ -155,6 +157,7 @@ export default function RiskPage({
   fundEstimates,
   marketLoading,
   fundLoading = false,
+  onStatusMessageChange,
 }: Props) {
   const [range, setRange] = useState<RiskRangeKey>('ytd');
   const [category, setCategory] = useState<CategoryKey>('index');
@@ -206,7 +209,16 @@ export default function RiskPage({
       });
   }, [category, etfFilter, fundEstimates, marketReturns, range, sortDirection, sortKey]);
 
-  const loading = returnsLoading || marketLoading || fundLoading;
+  const loading = category === 'fund'
+    ? fundLoading
+    : category === 'all'
+      ? returnsLoading || marketLoading || fundLoading
+      : returnsLoading || marketLoading;
+
+  useEffect(() => {
+    onStatusMessageChange?.(loading ? '风险数据加载中...' : '');
+    return () => onStatusMessageChange?.('');
+  }, [loading, onStatusMessageChange]);
 
   function updateSort(nextKey: SortKey) {
     setSortDirection((currentDirection) => nextDirection(sortKey, currentDirection, nextKey));
@@ -313,7 +325,15 @@ export default function RiskPage({
                   {sortLabel('收益回撤比', 'ratio')}
                 </button>
               </th>
-              <th>胜率</th>
+              <th aria-sort={sortKey === 'winRate' ? (sortDirection === 'desc' ? 'descending' : 'ascending') : 'none'}>
+                <button
+                  type="button"
+                  className={`${styles.sortHeaderButton} ${sortKey === 'winRate' ? styles.sortHeaderButtonActive : ''}`}
+                  onClick={() => updateSort('winRate')}
+                >
+                  {sortLabel('胜率', 'winRate')}
+                </button>
+              </th>
               <th>分类</th>
               <th>截至</th>
             </tr>
@@ -350,10 +370,6 @@ export default function RiskPage({
           </tbody>
         </table>
       </section>
-      {loading && items.length > 0 && (
-        <p className={styles.refreshing}>风险数据更新中...</p>
-      )}
-
       <p className={styles.note}>
         * 风险页基于历史收盘价和官方净值计算最大回撤；收益回撤比为区间收益除以最大回撤绝对值，胜率为区间内上涨天数占比，仅供参考。
       </p>

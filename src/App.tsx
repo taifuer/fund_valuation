@@ -139,6 +139,7 @@ export default function App() {
   const [fundSearchQuery, setFundSearchQuery] = useState('');
   const [addingFund, setAddingFund] = useState(false);
   const [fundManageMessage, setFundManageMessage] = useState('');
+  const [pageStatusMessage, setPageStatusMessage] = useState('');
 
   const sortedEstimates = useMemo(() => {
     const sorted = [...fundEstimates].sort((a, b) => {
@@ -161,6 +162,10 @@ export default function App() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  useEffect(() => {
+    setPageStatusMessage('');
+  }, [activePage]);
 
   function navigatePage(page: PageKey) {
     const path = PAGE_PATHS[page];
@@ -299,7 +304,12 @@ export default function App() {
 
   return (
     <div className={styles.app}>
-      <Header fxRates={fxRates} activePage={activePage} onPageChange={navigatePage} />
+      <Header
+        fxRates={fxRates}
+        activePage={activePage}
+        onPageChange={navigatePage}
+        statusMessage={pageStatusMessage}
+      />
       {error && <div className={styles.error}>{error}</div>}
       {activePage === 'overview' ? (
         <>
@@ -423,6 +433,7 @@ export default function App() {
           marketStates={marketStates}
           marketLoading={marketLoading}
           fundLoading={fundLoading}
+          onStatusMessageChange={setPageStatusMessage}
         />
       ) : (
         <RiskPage
@@ -430,6 +441,7 @@ export default function App() {
           marketStates={marketStates}
           marketLoading={marketLoading}
           fundLoading={fundLoading}
+          onStatusMessageChange={setPageStatusMessage}
         />
       )}
       <footer className={styles.footer}>
