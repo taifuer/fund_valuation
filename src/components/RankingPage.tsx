@@ -262,7 +262,7 @@ export default function RankingPage({
             </div>
           </div>
         )}
-        <div className={`${styles.controlBlock} ${styles.rangeControl}`} aria-label="排行区间">
+        <div className={`${styles.controlBlock} ${styles.rangeControl}`} aria-label="收益区间">
           <div className={styles.segmented}>
             {RANGES.map((item) => (
               <button
@@ -285,8 +285,8 @@ export default function RankingPage({
             <col className={styles.nameCol} />
             <col className={styles.returnCol} />
             <col className={styles.valueCol} />
-            <col className={styles.categoryCol} />
             <col className={styles.statusCol} />
+            <col className={styles.categoryCol} />
             <col className={styles.dateCol} />
           </colgroup>
           <thead>
@@ -311,20 +311,20 @@ export default function RankingPage({
                   {sortLabel('现值', 'value')}
                 </button>
               </th>
-              <th>分类</th>
               <th>状态</th>
+              <th>分类</th>
               <th>截至</th>
             </tr>
           </thead>
           <tbody>
             {loading && items.length === 0 && (
               <tr>
-                <td colSpan={7} className={styles.empty}>排行数据加载中...</td>
+                <td colSpan={7} className={styles.empty}>收益数据加载中...</td>
               </tr>
             )}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={7} className={styles.empty}>暂无排行数据</td>
+                <td colSpan={7} className={styles.empty}>暂无收益数据</td>
               </tr>
             )}
             {items.map((item, index) => {
@@ -338,8 +338,8 @@ export default function RankingPage({
                   </td>
                   <td className={`${styles.percent} ${up ? styles.up : styles.down}`}>{formatPercent(item.returnPercent)}</td>
                   <td className={styles.value}>{formatValue(item.currentValue)}</td>
-                  <td><span className={styles.category}>{item.categoryLabel}</span></td>
                   <td className={styles.source}>{item.sourceLabel}</td>
+                  <td><span className={styles.category}>{item.categoryLabel}</span></td>
                   <td className={styles.dateRange}>{formatAsOf(item)}</td>
                 </tr>
               );
@@ -347,9 +347,12 @@ export default function RankingPage({
           </tbody>
         </table>
       </section>
+      {loading && items.length > 0 && (
+        <p className={styles.refreshing}>收益数据更新中...</p>
+      )}
 
       <p className={styles.note}>
-        * 最新排行可能包含盘中行情；基金排行使用已披露官方净值。数据可能存在延迟或误差，以官方披露为准。
+        * 最新收益可能包含盘中行情；基金收益使用已披露官方净值。数据可能存在延迟或误差，以官方披露为准。
       </p>
     </main>
   );

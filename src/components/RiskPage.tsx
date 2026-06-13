@@ -5,7 +5,7 @@ import type { FundEstimate } from '../hooks/useQuotes';
 import type { FundReturnRangeKey, IndexConfig, MarketReturnSummary, MarketStateData } from '../types';
 import styles from './RankingPage.module.css';
 
-type RiskRangeKey = 'ytd' | '1m' | '3m' | '6m' | '1y' | '3y';
+type RiskRangeKey = 'ytd' | '1w' | '1m' | '3m' | '6m' | '1y' | '3y';
 type CategoryKey = 'all' | 'index' | 'asset' | 'etf' | 'fund';
 type EtfFilterKey = 'all' | 'index' | 'sector';
 type SortKey = 'return' | 'drawdown' | 'ratio';
@@ -26,11 +26,13 @@ interface RiskItem {
   categoryLabel: string;
   returnPercent: number | null;
   maxDrawdownPercent: number | null;
+  winRatePercent: number | null;
   endDate?: string;
 }
 
 const RANGES: Array<{ key: RiskRangeKey; label: string }> = [
   { key: 'ytd', label: '今年' },
+  { key: '1w', label: '近1周' },
   { key: '1m', label: '近1月' },
   { key: '3m', label: '近3月' },
   { key: '6m', label: '近半年' },
@@ -80,6 +82,7 @@ function makeMarketItems(
       categoryLabel,
       returnPercent: rangeReturn?.returnPercent ?? null,
       maxDrawdownPercent: rangeReturn?.maxDrawdownPercent ?? null,
+      winRatePercent: rangeReturn?.winRatePercent ?? null,
       endDate: rangeReturn?.endDate,
     };
   });
@@ -96,6 +99,7 @@ function makeFundItems(funds: FundEstimate[], range: RiskRangeKey): RiskItem[] {
       categoryLabel: '基金',
       returnPercent: rangeReturn?.returnPercent ?? null,
       maxDrawdownPercent: rangeReturn?.maxDrawdownPercent ?? null,
+      winRatePercent: rangeReturn?.winRatePercent ?? null,
       endDate: rangeReturn?.endDate ?? estimate.officialNAV?.navDate,
     };
   });
@@ -274,6 +278,7 @@ export default function RiskPage({
             <col className={styles.returnCol} />
             <col className={styles.riskCol} />
             <col className={styles.ratioCol} />
+            <col className={styles.winRateCol} />
             <col className={styles.categoryCol} />
             <col className={styles.dateCol} />
           </colgroup>
@@ -308,6 +313,7 @@ export default function RiskPage({
                   {sortLabel('收益回撤比', 'ratio')}
                 </button>
               </th>
+              <th>胜率</th>
               <th>分类</th>
               <th>截至</th>
             </tr>
@@ -315,12 +321,12 @@ export default function RiskPage({
           <tbody>
             {loading && items.length === 0 && (
               <tr>
-                <td colSpan={7} className={styles.empty}>风险数据加载中...</td>
+                <td colSpan={8} className={styles.empty}>风险数据加载中...</td>
               </tr>
             )}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={7} className={styles.empty}>暂无风险数据</td>
+                <td colSpan={8} className={styles.empty}>暂无风险数据</td>
               </tr>
             )}
             {items.map((item, index) => {
@@ -332,9 +338,10 @@ export default function RiskPage({
                     <strong>{item.name}</strong>
                     <span>{item.symbol}</span>
                   </td>
-                  <td className={`${styles.percent} ${up ? styles.up : styles.down}`}>{formatPercent(item.returnPercent)}</td>
-                  <td className={styles.risk}>{formatMetricPercent(item.maxDrawdownPercent)}</td>
+                  <td className={`${styles.riskReturn} ${up ? styles.up : styles.down}`}>{formatPercent(item.returnPercent)}</td>
+                  <td className={styles.drawdown}>{formatMetricPercent(item.maxDrawdownPercent)}</td>
                   <td className={styles.ratio}>{formatRatio(item)}</td>
+                  <td className={styles.winRate}>{formatMetricPercent(item.winRatePercent)}</td>
                   <td><span className={styles.category}>{item.categoryLabel}</span></td>
                   <td className={styles.dateRange}>{item.endDate ?? '--'}</td>
                 </tr>
@@ -343,9 +350,12 @@ export default function RiskPage({
           </tbody>
         </table>
       </section>
+      {loading && items.length > 0 && (
+        <p className={styles.refreshing}>风险数据更新中...</p>
+      )}
 
       <p className={styles.note}>
-        * 风险页基于历史收盘价和官方净值计算最大回撤；收益回撤比为区间收益除以最大回撤绝对值，仅供参考。
+        * 风险页基于历史收盘价和官方净值计算最大回撤；收益回撤比为区间收益除以最大回撤绝对值，胜率为区间内上涨天数占比，仅供参考。
       </p>
     </main>
   );

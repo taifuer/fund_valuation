@@ -21,7 +21,7 @@ const FUND_DISPLAY_MODE_KEY = 'fund_valuation:fund_display_mode';
 
 const PAGE_PATHS: Record<PageKey, string> = {
   overview: '/',
-  ranking: '/ranking',
+  ranking: '/returns',
   risk: '/risk',
 };
 
@@ -64,7 +64,7 @@ function writeFundDisplayMode(value: FundDisplayMode) {
 }
 
 function pageFromPathname(pathname: string): PageKey {
-  if (pathname === '/ranking') return 'ranking';
+  if (pathname === '/returns' || pathname === '/ranking') return 'ranking';
   if (pathname === '/risk') return 'risk';
   return 'overview';
 }

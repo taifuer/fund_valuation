@@ -36,6 +36,8 @@ _UPSTREAM_LOCKS: dict[str, threading.Lock] = {}
 _UPSTREAM_LOCKS_GUARD = threading.Lock()
 _RATE_LIMIT_BUCKETS: dict[str, deque[float]] = {}
 _RATE_LIMIT_GUARD = threading.Lock()
+_RESPONSE_CACHE: dict[str, tuple[float, int, str, bytes]] = {}
+_RESPONSE_CACHE_GUARD = threading.Lock()
 
 FUND_CODE_RE = re.compile(r"^\d{6}$")
 SINA_SYMBOL_RE = re.compile(r"^[A-Za-z0-9_]{1,40}$")
@@ -62,6 +64,7 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "fundpurchase_refresh": (10, 60),
     "markethistory": (120, 60),
     "markethistory_refresh": (20, 60),
+    "marketreturns": (120, 60),
     "fundbacktest": (60, 60),
     "fundbacktest_refresh": (6, 60),
 }
@@ -1352,17 +1355,28 @@ def history_risk_metrics(points: list[tuple[str, float]], start_date: str, end_d
         if start_date <= date <= end_date and value > 0
     ]
     if len(window) < 2:
-        return {"maxDrawdownPercent": None}
+        return {"maxDrawdownPercent": None, "winRatePercent": None}
 
     peak = window[0]
     max_drawdown = 0.0
+    positive_days = 0
+    comparable_days = 0
     for value in window:
         peak = max(peak, value)
         if peak > 0:
             max_drawdown = min(max_drawdown, (value - peak) / peak * 100)
+    for previous, current in zip(window, window[1:]):
+        if previous <= 0:
+            continue
+        comparable_days += 1
+        if current > previous:
+            positive_days += 1
+
+    win_rate = positive_days / comparable_days * 100 if comparable_days else None
 
     return {
         "maxDrawdownPercent": round(max_drawdown, 2),
+        "winRatePercent": round(win_rate, 2) if win_rate is not None else None,
     }
 
 
@@ -1983,6 +1997,54 @@ def json_response(payload: Any, *, status: int = 200) -> Response:
     )
 
 
+def response_cache_get(cache_key: str, ttl_seconds: int) -> Response | None:
+    if should_refresh() or ttl_seconds <= 0:
+        return None
+    now = time.monotonic()
+    with _RESPONSE_CACHE_GUARD:
+        cached = _RESPONSE_CACHE.get(cache_key)
+        if not cached:
+            return None
+        expires_at, status, content_type, body = cached
+        if now >= expires_at:
+            _RESPONSE_CACHE.pop(cache_key, None)
+            return None
+    response = bytes_response(body, status=status, content_type=content_type)
+    response.headers["X-Cache"] = "HIT"
+    return response
+
+
+def response_cache_set(cache_key: str, response: Response, ttl_seconds: int) -> Response:
+    if ttl_seconds <= 0 or response.status_code != 200:
+        return response
+    body = response.get_data()
+    content_type = response.content_type or "application/json"
+    with _RESPONSE_CACHE_GUARD:
+        _RESPONSE_CACHE[cache_key] = (
+            time.monotonic() + ttl_seconds,
+            response.status_code,
+            content_type,
+            body,
+        )
+    response.headers["X-Cache"] = "MISS"
+    return response
+
+
+def cached_json_response(cache_key: str, ttl_seconds: int, payload_factory: Any) -> Response:
+    cached = response_cache_get(cache_key, ttl_seconds)
+    if cached is not None:
+        return cached
+    return response_cache_set(cache_key, json_response(payload_factory()), ttl_seconds)
+
+
+def cached_text_response(cache_key: str, ttl_seconds: int, text_factory: Any) -> Response:
+    cached = response_cache_get(cache_key, ttl_seconds)
+    if cached is not None:
+        return cached
+    text, status = text_factory()
+    return response_cache_set(cache_key, text_response(text, status=status), ttl_seconds)
+
+
 @app.after_request
 def add_cors_headers(response: Response) -> Response:
     response.headers["Access-Control-Allow-Origin"] = "*"
@@ -2012,17 +2074,19 @@ def sina() -> Response:
         pattern=SINA_SYMBOL_RE,
         max_symbols=MAX_SINA_SYMBOLS_PER_REQUEST,
     )))
-    url = f"https://hq.sinajs.cn/list={symbols}"
-    status, content_type, body = fetch_upstream(
-        url,
-        referer="https://finance.sina.com.cn/",
-        content_type="text/plain; charset=utf-8",
-        cache_key=f"sina:{symbols}",
-        kind="sina",
-        ttl_seconds=30,
-    )
-    del content_type
-    return text_response(decode_body(body), status=status)
+    def build() -> tuple[str, int]:
+        url = f"https://hq.sinajs.cn/list={symbols}"
+        status, content_type, body = fetch_upstream(
+            url,
+            referer="https://finance.sina.com.cn/",
+            content_type="text/plain; charset=utf-8",
+            cache_key=f"sina:{symbols}",
+            kind="sina",
+            ttl_seconds=30,
+        )
+        del content_type
+        return decode_body(body), status
+    return cached_text_response(f"api:sina:{symbols}", 15, build)
 
 
 @app.get("/api/marketstates")
@@ -2042,23 +2106,28 @@ def market_states() -> Response:
 def fund_nav() -> Response:
     enforce_rate_limit("fundnav")
     codes = require_fund_codes()
-    results: dict[str, Any] = {}
-    for code in codes:
-        url = f"https://fundgz.1234567.com.cn/js/{quote(code)}.js"
-        status, _, body = fetch_upstream(
-            url,
-            referer="https://fund.eastmoney.com/",
-            content_type="text/plain; charset=utf-8",
-            cache_key=f"fundnav:{code}",
-            kind="fundnav",
-            ttl_seconds=60,
-        )
-        if status >= 400:
-            continue
-        parsed = parse_jsonp_call(decode_body(body), "jsonpgz")
-        if parsed:
-            results[code] = parsed
-    return json_response(results)
+    cache_key = f"api:fundnav:{','.join(sorted(codes))}"
+
+    def build() -> dict[str, Any]:
+        results: dict[str, Any] = {}
+        for code in codes:
+            url = f"https://fundgz.1234567.com.cn/js/{quote(code)}.js"
+            status, _, body = fetch_upstream(
+                url,
+                referer="https://fund.eastmoney.com/",
+                content_type="text/plain; charset=utf-8",
+                cache_key=f"fundnav:{code}",
+                kind="fundnav",
+                ttl_seconds=60,
+            )
+            if status >= 400:
+                continue
+            parsed = parse_jsonp_call(decode_body(body), "jsonpgz")
+            if parsed:
+                results[code] = parsed
+        return results
+
+    return cached_json_response(cache_key, 60, build)
 
 
 @app.get("/api/fundholdings")
@@ -2141,16 +2210,21 @@ def fund_history() -> Response:
 def fund_returns() -> Response:
     enforce_rate_limit("fundreturns")
     codes = require_fund_codes()
-    results: dict[str, Any] = {}
-    for code in codes:
-        try:
-            auto_refresh_fund_history_if_stale(code, FUND_HISTORY_AUTO_REFRESH_ROWS)
-        except Exception:
-            pass
-        summary = read_fund_return_summary_from_db(code)
-        if summary:
-            results[code] = summary
-    return json_response(results)
+    cache_key = f"api:fundreturns:{','.join(sorted(codes))}"
+
+    def build() -> dict[str, Any]:
+        results: dict[str, Any] = {}
+        for code in codes:
+            try:
+                auto_refresh_fund_history_if_stale(code, FUND_HISTORY_AUTO_REFRESH_ROWS)
+            except Exception:
+                pass
+            summary = read_fund_return_summary_from_db(code)
+            if summary:
+                results[code] = summary
+        return results
+
+    return cached_json_response(cache_key, 5 * 60, build)
 
 
 @app.get("/api/fundprofiles")
@@ -2306,18 +2380,33 @@ def market_history() -> Response:
 
 @app.get("/api/marketreturns")
 def market_returns() -> Response:
+    enforce_rate_limit("marketreturns")
     items = request.args.get("items", "")
-    results: dict[str, Any] = {}
+    normalized_items: list[str] = []
     for item in [part for part in items.split(",") if part]:
         pieces = item.split(":", 1)
         if len(pieces) != 2:
             continue
         source, symbol = pieces
-        ensure_market_history_for_returns(source, symbol)
-        summary = read_market_return_summary_from_db(source, symbol)
-        if summary:
-            results[item] = summary
-    return json_response(results)
+        if source not in {"sina-cn", "sina-us", "sina-futures", "tencent-hk"}:
+            continue
+        if not MARKET_HISTORY_SYMBOL_RE.fullmatch(symbol):
+            continue
+        normalized_items.append(f"{source}:{symbol}")
+    normalized_items = sorted(dict.fromkeys(normalized_items))
+    cache_key = f"api:marketreturns:{','.join(normalized_items)}"
+
+    def build() -> dict[str, Any]:
+        results: dict[str, Any] = {}
+        for item in normalized_items:
+            source, symbol = item.split(":", 1)
+            ensure_market_history_for_returns(source, symbol)
+            summary = read_market_return_summary_from_db(source, symbol)
+            if summary:
+                results[item] = summary
+        return results
+
+    return cached_json_response(cache_key, 5 * 60, build)
 
 
 def main() -> None:

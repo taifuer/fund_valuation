@@ -77,6 +77,7 @@ export interface FundRangeReturn {
   label: string;
   returnPercent: number;
   maxDrawdownPercent?: number | null;
+  winRatePercent?: number | null;
   startDate: string;
   endDate: string;
   startNav: number;
@@ -176,6 +177,7 @@ export interface MarketRangeReturn {
   label: string;
   returnPercent: number;
   maxDrawdownPercent?: number | null;
+  winRatePercent?: number | null;
   startDate: string;
   endDate: string;
   startClose: number;

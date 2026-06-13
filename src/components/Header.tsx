@@ -47,10 +47,10 @@ export default function Header({ fxRates, activePage, onPageChange }: Props) {
             <div>
               <h1 className={styles.title}>
                 <button type="button" className={styles.titleButton} onClick={reloadToTop}>
-                  全球基金估值看板
+                  全球资产看板
                 </button>
               </h1>
-              <div className={styles.subtitle}>QDII Active Funds · Market Assets</div>
+              <div className={styles.subtitle}>Funds · ETF · Market Assets</div>
             </div>
           </div>
           <nav className={styles.nav} aria-label="页面切换">
@@ -66,7 +66,7 @@ export default function Header({ fxRates, activePage, onPageChange }: Props) {
               className={`${styles.navButton} ${activePage === 'ranking' ? styles.navButtonActive : ''}`}
               onClick={() => onPageChange('ranking')}
             >
-              排行
+              收益
             </button>
             <button
               type="button"

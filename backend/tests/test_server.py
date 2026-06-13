@@ -47,6 +47,8 @@ class ServerDataRefreshTests(unittest.TestCase):
             )
         with server._RATE_LIMIT_GUARD:
             server._RATE_LIMIT_BUCKETS.clear()
+        with server._RESPONSE_CACHE_GUARD:
+            server._RESPONSE_CACHE.clear()
 
     def test_fetch_upstream_uses_cache_until_force_refresh(self) -> None:
         bodies = [b"old", b"new"]
@@ -424,6 +426,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         ytd = response.get_json()["016664"]["ranges"]["ytd"]
         self.assertEqual(ytd["returnPercent"], 10.0)
         self.assertEqual(ytd["maxDrawdownPercent"], -25.0)
+        self.assertEqual(ytd["winRatePercent"], 66.67)
         self.assertNotIn("volatilityPercent", ytd)
 
     def test_fund_holdings_refresh_parses_and_stores_top_holdings(self) -> None:

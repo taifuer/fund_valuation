@@ -678,6 +678,9 @@ export async function fetchMarketHistory(config: MarketHistoryConfig): Promise<M
   }
 }
 
+const MARKET_RETURN_SUMMARY_TTL_MS = 5 * 60 * 1000;
+const marketReturnSummaryCache = new Map<string, { summary: MarketReturnSummary; fetchedAt: number }>();
+
 export async function fetchMarketReturnSummaries(
   configs: MarketHistoryConfig[],
 ): Promise<Map<string, MarketReturnSummary>> {
@@ -685,15 +688,31 @@ export async function fetchMarketReturnSummaries(
   const unique = [...new Map(configs.map((config) => [`${config.source}:${config.symbol}`, config])).values()];
   if (unique.length === 0) return results;
 
+  const now = Date.now();
+  const missing: MarketHistoryConfig[] = [];
+  for (const config of unique) {
+    const key = `${config.source}:${config.symbol}`;
+    const cached = marketReturnSummaryCache.get(key);
+    if (cached && now - cached.fetchedAt < MARKET_RETURN_SUMMARY_TTL_MS) {
+      results.set(key, cached.summary);
+    } else {
+      missing.push(config);
+    }
+  }
+  if (missing.length === 0) return results;
+
   try {
-    const items = unique.map((config) => `${config.source}:${config.symbol}`).join(',');
+    const items = missing.map((config) => `${config.source}:${config.symbol}`).join(',');
     const res = await fetch(apiUrl(`/api/marketreturns?items=${encodeURIComponent(items)}`));
     if (!res.ok) return results;
     const json = await res.json();
-    for (const config of unique) {
+    for (const config of missing) {
       const key = `${config.source}:${config.symbol}`;
       const raw: MarketReturnSummary | undefined = json[key];
-      if (raw) results.set(key, raw);
+      if (raw) {
+        marketReturnSummaryCache.set(key, { summary: raw, fetchedAt: Date.now() });
+        results.set(key, raw);
+      }
     }
   } catch { /* skip */ }
 

@@ -80,7 +80,7 @@
   border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
-  min-width: 980px;
+  min-width: 860px;
 }
 
 .table thead {
@@ -95,35 +95,37 @@
 .table td {
   box-sizing: border-box;
   min-width: 0;
-  padding: 10px 16px;
+  padding: 10px 12px;
   text-align: left;
   vertical-align: middle;
 }
 
-.rankCol { width: 8%; }
-.nameCol { width: 29%; }
+.rankCol { width: 7%; }
+.nameCol { width: 24%; }
 .returnCol { width: 13%; }
 .riskCol { width: 13%; }
 .ratioCol { width: 13%; }
+.winRateCol { width: 11%; }
 .valueCol { width: 13%; }
-.categoryCol { width: 11%; }
-.statusCol { width: 12%; }
-.dateCol { width: 14%; }
+.categoryCol { width: 12%; }
+.statusCol { width: 13%; }
+.dateCol { width: 18%; }
 
-.riskTable .rankCol { width: 8%; }
-.riskTable .nameCol { width: 29%; }
-.riskTable .returnCol { width: 13%; }
-.riskTable .riskCol { width: 13%; }
+.riskTable .rankCol { width: 7%; }
+.riskTable .nameCol { width: 22%; }
+.riskTable .returnCol { width: 11%; }
+.riskTable .riskCol { width: 12%; }
 .riskTable .ratioCol { width: 13%; }
+.riskTable .winRateCol { width: 10%; }
 .riskTable .categoryCol { width: 11%; }
-.riskTable .dateCol { width: 13%; }
+.riskTable .dateCol { width: 14%; }
 
 .rankingTable th:nth-child(3),
 .rankingTable td:nth-child(3),
 .rankingTable th:nth-child(4),
 .rankingTable td:nth-child(4),
-.rankingTable th:nth-child(6),
-.rankingTable td:nth-child(6),
+.rankingTable th:nth-child(5),
+.rankingTable td:nth-child(5),
 .rankingTable th:nth-child(7),
 .rankingTable td:nth-child(7),
 .riskTable th:nth-child(3),
@@ -132,22 +134,24 @@
 .riskTable td:nth-child(4),
 .riskTable th:nth-child(5),
 .riskTable td:nth-child(5),
-.riskTable th:nth-child(7),
-.riskTable td:nth-child(7) {
+.riskTable th:nth-child(6),
+.riskTable td:nth-child(6),
+.riskTable th:nth-child(8),
+.riskTable td:nth-child(8) {
   text-align: right;
 }
 
-.rankingTable th:nth-child(5),
-.rankingTable td:nth-child(5),
-.riskTable th:nth-child(6),
-.riskTable td:nth-child(6) {
+.rankingTable th:nth-child(6),
+.rankingTable td:nth-child(6),
+.riskTable th:nth-child(7),
+.riskTable td:nth-child(7) {
   text-align: center;
 }
 
 .sortHeaderButton {
   align-items: center;
   background: transparent;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 5px;
   color: inherit;
   cursor: pointer;
@@ -157,18 +161,20 @@
   justify-content: inherit;
   line-height: 20px;
   max-width: 100%;
-  padding: 0 4px;
+  padding: 0 6px;
   white-space: nowrap;
 }
 
 .sortHeaderButton:hover {
-  background: #e2e8f0;
+  background: #eef2f7;
   color: #0f172a;
 }
 
 .sortHeaderButtonActive {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: #f1f5f9;
+  border-color: #dbe4f0;
+  color: #1e293b;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
 }
 
 .sortHeaderButton:focus-visible {
@@ -240,7 +246,9 @@
 .source,
 .value,
 .risk,
-.ratio {
+.ratio,
+.winRate,
+.riskReturn {
   color: #94a3b8;
   font-size: 12px;
 }
@@ -249,9 +257,18 @@
 .source,
 .value,
 .risk,
-.ratio {
+.ratio,
+.winRate,
+.riskReturn,
+.drawdown {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.drawdown {
+  color: #334155;
+  font-size: 14px;
+  font-weight: 800;
 }
 
 .category {
@@ -294,6 +311,14 @@
   margin: 10px 2px 0;
 }
 
+.refreshing {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 8px 2px 0;
+  text-align: right;
+}
+
 @media (max-width: 720px) {
   .page {
     padding: 8px 12px 28px;
@@ -318,5 +343,19 @@
   .categoryControl .segmented,
   .subControl .segmented {
     width: 100%;
+  }
+
+  .table {
+    min-width: 760px;
+  }
+
+  .table th,
+  .table td {
+    padding: 9px 8px;
+  }
+
+  .rank {
+    min-width: 28px;
+    padding: 0 5px;
   }
 }

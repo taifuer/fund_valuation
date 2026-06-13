@@ -117,6 +117,12 @@ function normalizeFundFxRate(rate: FxRateData): FxRateData {
   return rate;
 }
 
+function fundCacheKey(funds: Fund[]): string {
+  return funds
+    .map((fund) => `${fund.code}:${fund.name}:${fund.holdings.length}:${fund.profile ? '1' : '0'}`)
+    .join('|');
+}
+
 export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false, loadFundReturns = false) {
   const [quotes, setQuotes] = useState<Map<string, QuoteData>>(new Map());
   const [fundEstimates, setFundEstimates] = useState<FundEstimate[]>([]);
@@ -134,17 +140,25 @@ export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false, loadFu
     returnSummariesLoaded: false,
   });
   const slowFundDataFetchedAtRef = useRef(0);
+  const fundCacheKeyRef = useRef('');
 
   useEffect(() => {
     mountedRef.current = true;
-    slowFundDataRef.current = {
-      navs: new Map(),
-      purchaseStatuses: new Map(),
-      returnSummaries: new Map(),
-      detailsLoaded: false,
-      returnSummariesLoaded: false,
-    };
-    slowFundDataFetchedAtRef.current = 0;
+    const currentFundKey = fundCacheKey(funds);
+    const fundsChanged = fundCacheKeyRef.current !== currentFundKey;
+    const hasMarketSnapshot = quotes.size > 0;
+    const hasFundSnapshot = fundEstimates.length > 0;
+    if (fundsChanged) {
+      slowFundDataRef.current = {
+        navs: new Map(),
+        purchaseStatuses: new Map(),
+        returnSummaries: new Map(),
+        detailsLoaded: false,
+        returnSummariesLoaded: false,
+      };
+      slowFundDataFetchedAtRef.current = 0;
+      fundCacheKeyRef.current = currentFundKey;
+    }
     let effectiveFundsCache: Fund[] | null = null;
     const indexSymbols = INDICES.map((i) => i.sinaSymbol);
     const assetSymbols = MARKET_ASSETS.map((i) => i.sinaSymbol);
@@ -400,9 +414,9 @@ export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false, loadFu
       }
     }
 
-    loadMarket(true);
+    loadMarket(fundsChanged || !hasMarketSnapshot);
     window.setTimeout(() => {
-      if (mountedRef.current) void loadFunds(true);
+      if (mountedRef.current) void loadFunds(fundsChanged || !hasFundSnapshot);
     }, 0);
     const marketTimer = window.setInterval(() => loadMarket(false), 30_000);
     const fundTimer = window.setInterval(() => loadFunds(false), 30_000);
