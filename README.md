@@ -133,27 +133,27 @@ npm run preview   # 预览生产构建
 
 ### 概览
 
-![概览 1](./demo/overview1.png)
-
-![概览 2](./demo/overview2.png)
+![概览](./demo/overview.png)
 
 ### 收益
 
 ![收益](./demo/rank.png)
 
-### 股票走势
+### 风险
+
+![风险](./demo/risk.png)
+
+### 详情
+
+#### 股票走势
 
 ![股票走势](./demo/stock_history.png)
 
-### 基金详情
-
-![基金详情](./demo/fund_detail.png)
-
-### 基金走势
+#### 基金走势
 
 ![基金走势](./demo/fund_history.png)
 
-### 基金净值
+#### 基金净值
 
 ![基金净值](./demo/fund_value.png)
 
