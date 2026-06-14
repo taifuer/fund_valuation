@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchMarketReturnSummaries } from '../api';
 import { MARKET_ASSETS, RANKING_ETFS, RANKING_INDEX_ETFS, RANKING_INDICES, RANKING_SECTOR_ETFS } from '../constants';
+import { useFundReturnData } from '../hooks/usePageData';
 import type { FundEstimate } from '../hooks/useQuotes';
-import type { FundReturnRangeKey, IndexConfig, MarketReturnSummary, MarketStateData } from '../types';
+import type { Fund, FundReturnRangeKey, IndexConfig, MarketReturnSummary, MarketStateData } from '../types';
 import styles from './RankingPage.module.css';
 
 type RiskRangeKey = 'ytd' | '1w' | '1m' | '3m' | '6m' | '1y' | '3y';
@@ -12,10 +13,9 @@ type SortKey = 'return' | 'drawdown' | 'ratio' | 'winRate';
 type SortDirection = 'desc' | 'asc';
 
 interface Props {
-  fundEstimates: FundEstimate[];
+  funds: Fund[];
   marketStates?: Map<string, MarketStateData>;
   marketLoading: boolean;
-  fundLoading?: boolean;
   onStatusMessageChange?: (message: string) => void;
 }
 
@@ -154,9 +154,8 @@ function rankStyle(index: number) {
 }
 
 export default function RiskPage({
-  fundEstimates,
+  funds,
   marketLoading,
-  fundLoading = false,
   onStatusMessageChange,
 }: Props) {
   const [range, setRange] = useState<RiskRangeKey>('ytd');
@@ -166,6 +165,8 @@ export default function RiskPage({
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
   const [returnsLoading, setReturnsLoading] = useState(false);
+  const shouldLoadFunds = category === 'fund' || category === 'all';
+  const fundData = useFundReturnData(funds, shouldLoadFunds);
 
   useEffect(() => {
     let cancelled = false;
@@ -189,7 +190,7 @@ export default function RiskPage({
       ...makeMarketItems(MARKET_ASSETS, 'asset', '资产', range, marketReturns),
       ...makeMarketItems(RANKING_INDEX_ETFS, 'etf', '指数ETF', range, marketReturns),
       ...makeMarketItems(RANKING_SECTOR_ETFS, 'etf', '行业ETF', range, marketReturns),
-      ...makeFundItems(fundEstimates, range),
+      ...makeFundItems(fundData.fundEstimates, range),
     ];
 
     return allItems
@@ -207,12 +208,12 @@ export default function RiskPage({
         if (bValue == null) return -1;
         return sortDirection === 'desc' ? bValue - aValue : aValue - bValue;
       });
-  }, [category, etfFilter, fundEstimates, marketReturns, range, sortDirection, sortKey]);
+  }, [category, etfFilter, fundData.fundEstimates, marketReturns, range, sortDirection, sortKey]);
 
   const loading = category === 'fund'
-    ? fundLoading
+    ? fundData.loading
     : category === 'all'
-      ? returnsLoading || marketLoading || fundLoading
+      ? returnsLoading || marketLoading || fundData.loading
       : returnsLoading || marketLoading;
 
   useEffect(() => {

@@ -13,7 +13,7 @@ import {
   fetchFxRates,
   fetchMarketStates,
 } from '../api';
-import { INDICES, MARKET_ASSETS, ETF_ASSETS, FUNDS, RANKING_INDICES, RANKING_ETFS } from '../constants';
+import { INDICES, MARKET_ASSETS, ETF_ASSETS, FUNDS } from '../constants';
 import { getMarketState } from '../marketHours';
 
 const DISPLAY_FX_CURRENCIES = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
@@ -124,7 +124,12 @@ function fundCacheKey(funds: Fund[]): string {
     .join('|');
 }
 
-export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false, loadFundReturns = false) {
+export function useQuotes(
+  funds: Fund[] = FUNDS,
+  loadFundDetails = false,
+  loadFundReturns = false,
+  enabled = true,
+) {
   const [quotes, setQuotes] = useState<Map<string, QuoteData>>(new Map());
   const [fundEstimates, setFundEstimates] = useState<FundEstimate[]>([]);
   const [fxRates, setFxRates] = useState<Map<string, FxRateData>>(new Map());
@@ -145,6 +150,13 @@ export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false, loadFu
 
   useEffect(() => {
     mountedRef.current = true;
+    if (!enabled) {
+      setMarketLoading(false);
+      setFundLoading(false);
+      return () => {
+        mountedRef.current = false;
+      };
+    }
     const currentFundKey = fundCacheKey(funds);
     const fundsChanged = fundCacheKeyRef.current !== currentFundKey;
     const hasMarketSnapshot = quotes.size > 0;
@@ -164,16 +176,12 @@ export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false, loadFu
     const indexSymbols = INDICES.map((i) => i.sinaSymbol);
     const assetSymbols = MARKET_ASSETS.map((i) => i.sinaSymbol);
     const etfSymbols = ETF_ASSETS.map((i) => i.sinaSymbol);
-    const rankingIndexSymbols = RANKING_INDICES.map((i) => i.sinaSymbol);
-    const rankingEtfSymbols = RANKING_ETFS.map((i) => i.sinaSymbol);
     const futuresSymbols = INDICES.flatMap((i) => i.futures?.sinaSymbol ?? []);
     const marketSymbols = [...new Set([
       ...indexSymbols,
       ...futuresSymbols,
       ...assetSymbols,
       ...etfSymbols,
-      ...rankingIndexSymbols,
-      ...rankingEtfSymbols,
     ])];
 
     async function resolveEffectiveFunds(): Promise<Fund[]> {
@@ -429,7 +437,7 @@ export function useQuotes(funds: Fund[] = FUNDS, loadFundDetails = false, loadFu
       window.clearInterval(marketTimer);
       window.clearInterval(fundTimer);
     };
-  }, [funds, loadFundDetails, loadFundReturns]);
+  }, [enabled, funds, loadFundDetails, loadFundReturns]);
 
   return {
     quotes,

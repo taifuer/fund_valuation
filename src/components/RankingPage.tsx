@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { fetchMarketReturnSummaries } from '../api';
 import { MARKET_ASSETS, RANKING_ETFS, RANKING_INDEX_ETFS, RANKING_INDICES, RANKING_SECTOR_ETFS } from '../constants';
 import { getMarketState } from '../marketHours';
+import { useFundReturnData } from '../hooks/usePageData';
 import type { FundEstimate } from '../hooks/useQuotes';
-import type { FundReturnRangeKey, IndexConfig, MarketReturnSummary, MarketStateData, QuoteData } from '../types';
+import type { Fund, FundReturnRangeKey, IndexConfig, MarketReturnSummary, MarketStateData, QuoteData } from '../types';
 import styles from './RankingPage.module.css';
 
 type RankingRangeKey = 'today' | '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | 'ytd';
@@ -14,10 +15,9 @@ type SortKey = 'return' | 'value';
 
 interface Props {
   quotes: Map<string, QuoteData>;
-  fundEstimates: FundEstimate[];
+  funds: Fund[];
   marketStates?: Map<string, MarketStateData>;
   marketLoading: boolean;
-  fundLoading?: boolean;
   onStatusMessageChange?: (message: string) => void;
 }
 
@@ -162,10 +162,9 @@ function nextDirection(currentKey: SortKey, currentDirection: SortDirection, nex
 
 export default function RankingPage({
   quotes,
-  fundEstimates,
+  funds,
   marketStates = new Map(),
   marketLoading,
-  fundLoading = false,
   onStatusMessageChange,
 }: Props) {
   const [range, setRange] = useState<RankingRangeKey>('today');
@@ -175,6 +174,8 @@ export default function RankingPage({
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
   const [returnsLoading, setReturnsLoading] = useState(false);
+  const shouldLoadFunds = category === 'fund';
+  const fundData = useFundReturnData(funds, shouldLoadFunds);
 
   useEffect(() => {
     let cancelled = false;
@@ -198,7 +199,7 @@ export default function RankingPage({
       ...makeMarketItems(MARKET_ASSETS, 'asset', '资产', range, quotes, marketReturns, marketStates),
       ...makeMarketItems(RANKING_INDEX_ETFS, 'etf', '指数ETF', range, quotes, marketReturns, marketStates),
       ...makeMarketItems(RANKING_SECTOR_ETFS, 'etf', '行业ETF', range, quotes, marketReturns, marketStates),
-      ...makeFundItems(fundEstimates, range),
+      ...makeFundItems(fundData.fundEstimates, range),
     ];
     return allItems
       .filter((item) => (category === 'all' ? item.category !== 'fund' : item.category === category))
@@ -215,10 +216,10 @@ export default function RankingPage({
         if (bValue == null) return -1;
         return sortDirection === 'desc' ? bValue - aValue : aValue - bValue;
       });
-  }, [category, etfFilter, fundEstimates, marketReturns, marketStates, quotes, range, sortDirection, sortKey]);
+  }, [category, etfFilter, fundData.fundEstimates, marketReturns, marketStates, quotes, range, sortDirection, sortKey]);
 
   const loading = category === 'fund'
-    ? fundLoading
+    ? fundData.loading
     : marketLoading || (range !== 'today' && returnsLoading);
 
   useEffect(() => {

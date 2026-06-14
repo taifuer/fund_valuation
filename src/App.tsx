@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useQuotes, type FundEstimate } from './hooks/useQuotes';
+import { useHeaderFxRates, useRankingMarketData } from './hooks/usePageData';
 import { fetchFundNavs, fetchSinaFundNavs } from './api';
 import { FUNDS } from './constants';
 import type { Fund } from './types';
@@ -132,8 +133,17 @@ export default function App() {
   const { quotes, fundEstimates, fxRates, marketStates, marketLoading, fundLoading, error } = useQuotes(
     funds,
     fundDisplayMode === 'detail',
-    activePage === 'ranking' || activePage === 'risk',
+    false,
+    activePage === 'overview',
   );
+  const headerFxRates = useHeaderFxRates();
+  const rankingMarketData = useRankingMarketData(activePage === 'ranking');
+  const activeFxRates = headerFxRates.size > 0 ? headerFxRates : fxRates;
+  const activeError = activePage === 'overview'
+    ? error
+    : activePage === 'ranking'
+      ? rankingMarketData.error
+      : null;
   const [sortMode, setSortMode] = useState<SortMode>('estimate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [fundCollapsed, setFundCollapsed] = useState(() => readCollapsedFlag(FUND_SECTION_COLLAPSED_KEY));
@@ -306,12 +316,12 @@ export default function App() {
   return (
     <div className={styles.app}>
       <Header
-        fxRates={fxRates}
+        fxRates={activeFxRates}
         activePage={activePage}
         onPageChange={navigatePage}
         statusMessage={pageStatusMessage}
       />
-      {error && <div className={styles.error}>{error}</div>}
+      {activeError && <div className={styles.error}>{activeError}</div>}
       {activePage === 'overview' ? (
         <>
           <IndexCards quotes={quotes} marketStates={marketStates} loading={marketLoading} />
@@ -430,21 +440,19 @@ export default function App() {
       ) : activePage === 'ranking' ? (
         <Suspense fallback={<div className={styles.pageFallback}>收益页面加载中...</div>}>
           <RankingPage
-            quotes={quotes}
-            fundEstimates={fundEstimates}
-            marketStates={marketStates}
-            marketLoading={marketLoading}
-            fundLoading={fundLoading}
+            quotes={rankingMarketData.quotes}
+            funds={funds}
+            marketStates={rankingMarketData.marketStates}
+            marketLoading={rankingMarketData.loading}
             onStatusMessageChange={setPageStatusMessage}
           />
         </Suspense>
       ) : (
         <Suspense fallback={<div className={styles.pageFallback}>风险页面加载中...</div>}>
           <RiskPage
-            fundEstimates={fundEstimates}
-            marketStates={marketStates}
-            marketLoading={marketLoading}
-            fundLoading={fundLoading}
+            funds={funds}
+            marketStates={new Map()}
+            marketLoading={false}
             onStatusMessageChange={setPageStatusMessage}
           />
         </Suspense>
