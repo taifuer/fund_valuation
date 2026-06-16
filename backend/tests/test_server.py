@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -137,6 +138,76 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(first.headers.get("X-Cache"), "MISS")
         self.assertEqual(second.headers.get("X-Cache"), "HIT")
         self.assertEqual(len(calls), 2)
+
+    def test_sina_proxy_overrides_stale_asia_indices_from_eastmoney(self) -> None:
+        sina_body = (
+            'var hq_str_b_TWSE="台湾台北指数,25580.32,-443.53,-1.70,9/26/2025,2025-09-26";\n'
+            'var hq_str_int_nikkei="日经指数,44946.64,-408.35,-0.90";\n'
+        ).encode("gb18030")
+        twii_payload = {
+            "data": {
+                "f43": 4580919,
+                "f57": "TWII",
+                "f58": "台湾加权",
+                "f60": 4539699,
+                "f86": 1781587520,
+                "f169": 41220,
+                "f170": 91,
+            }
+        }
+        n225_payload = {
+            "data": {
+                "f43": 6940450,
+                "f57": "N225",
+                "f58": "日经225",
+                "f60": 6950450,
+                "f86": 1781587520,
+                "f169": -10000,
+                "f170": -14,
+            }
+        }
+
+        def fake_fetch(url: str, **_kwargs: object) -> tuple[int, str, bytes]:
+            return 200, "text/plain; charset=utf-8", sina_body
+
+        def fake_eastmoney(url: str, **_kwargs: object) -> dict[str, object] | None:
+            if "100.TWII" in url:
+                return twii_payload
+            if "100.N225" in url:
+                return n225_payload
+            return None
+
+        with (
+            patch.object(server, "fetch_upstream", side_effect=fake_fetch),
+            patch.object(server, "fetch_eastmoney_json", side_effect=fake_eastmoney),
+        ):
+            response = server.app.test_client().get("/api/sina?list=int_nikkei,b_TWSE")
+
+        text = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('var hq_str_int_nikkei="日经225,69404.50,-100.00,-0.14,2026-06-16";', text)
+        self.assertIn('var hq_str_b_TWSE="台湾加权,45809.19,412.20,0.91,2026-06-16";', text)
+
+    def test_eastmoney_global_quote_falls_back_to_latest_daily_kline(self) -> None:
+        kline_payload = {
+            "data": {
+                "name": "日经225",
+                "klines": [
+                    "2026-06-15,66783.22,69317.50,69682.23,66783.22,0,0.00,4.39,4.99,3297.46,0.00",
+                    "2026-06-16,69288.91,69404.50,70020.68,69095.67,0,0.00,1.33,0.13,87.00,0.00",
+                ],
+            }
+        }
+
+        def fake_eastmoney(url: str, **_kwargs: object) -> dict[str, object] | None:
+            if "stock/get" in url:
+                return None
+            return kline_payload
+
+        with patch.object(server, "fetch_eastmoney_json", side_effect=fake_eastmoney):
+            line = server.eastmoney_global_quote_line("int_nikkei")
+
+        self.assertEqual(line, 'var hq_str_int_nikkei="日经225,69404.50,87.00,0.13,2026-06-16";')
 
     def test_fund_api_rejects_invalid_codes_before_upstream_fetch(self) -> None:
         with patch.object(server, "fetch_upstream") as fetch:

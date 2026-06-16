@@ -102,6 +102,12 @@ function marketStateLabel(state: DisplayState): string {
   return '已收盘';
 }
 
+function futuresPriceComparable(spot?: QuoteData, futures?: QuoteData): boolean {
+  if (!spot || !futures || spot.price <= 0 || futures.price <= 0) return false;
+  const ratio = futures.price / spot.price;
+  return ratio >= 0.85 && ratio <= 1.15;
+}
+
 function Card({
   idx,
   data,
@@ -119,7 +125,7 @@ function Card({
   loading: boolean;
   onOpenHistory?: (quote: QuoteData) => void;
 }) {
-  if (loading || !data) {
+  if (loading) {
     return (
       <div className={`${styles.card} ${idx.history ? styles.cardClickable : ''}`}>
         <div className={styles.label}>{idx.name}</div>
@@ -128,12 +134,29 @@ function Card({
       </div>
     );
   }
+  if (!data) {
+    return (
+      <div className={`${styles.card} ${idx.history ? styles.cardClickable : ''}`}>
+        <span className={`${styles.state} ${styles.stateStale}`}>无行情</span>
+        <div className={styles.label}>{idx.name}</div>
+        <div className={styles.price}>--</div>
+        <div className={styles.change}>--</div>
+        <span className={styles.quoteDate}>--</span>
+      </div>
+    );
+  }
   const state = marketStates.get(idx.sinaSymbol)?.state ?? getMarketState(idx.sinaSymbol);
   const futuresState = idx.futures
     ? marketStates.get(idx.futures.sinaSymbol)?.state ?? getMarketState(idx.futures.sinaSymbol)
     : 'closed';
   const futuresFresh = futuresData ? Date.now() - futuresData.fetchedAt < 90_000 : false;
-  const useFutures = state !== 'live' && futuresData && futuresState === 'live' && futuresFresh;
+  const useFutures = (
+    state !== 'live' &&
+    futuresData &&
+    futuresState === 'live' &&
+    futuresFresh &&
+    futuresPriceComparable(data, futuresData)
+  );
   const displayData = useFutures ? futuresData : data;
   const up = displayData.change >= 0;
   const fresh = Date.now() - displayData.fetchedAt < 90_000 && quoteTimeFresh(displayData);

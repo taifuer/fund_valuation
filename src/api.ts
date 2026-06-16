@@ -181,19 +181,23 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
       price = parseFloat(fields[1]) || 0;
       previousClose = price - (parseFloat(fields[2]) || 0);
       changePct = parseFloat(fields[3]) || 0;
+      let hasExplicitIntlDate = false;
       // b_KOSPI has Korea local time; convert it to Beijing time.
       if (rawSymbol === 'b_KOSPI' && fields[6] && fields[7]) {
         date = localDatetimeToBeijing(fields[6], fields[7], 9);
+        hasExplicitIntlDate = true;
       } else {
         // b_TWSE may only include date; int_nikkei currently has no date/time in Sina's short quote.
         for (let i = fields.length - 1; i >= 4; i--) {
           if (/^\d{4}-\d{2}-\d{2}$/.test(fields[i])) {
             date = fields[i];
+            hasExplicitIntlDate = true;
             break;
           }
         }
       }
       if (!date || isStale(date)) {
+        if (hasExplicitIntlDate) return null;
         date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }

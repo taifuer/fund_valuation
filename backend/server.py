@@ -19,6 +19,7 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
+import requests
 from flask import Flask, Response, g, jsonify, request
 from werkzeug.exceptions import HTTPException, TooManyRequests
 
@@ -73,6 +74,10 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
 }
 
 BACKTEST_MODEL_VERSION = "top_holdings_v1"
+EASTMONEY_GLOBAL_QUOTES: dict[str, tuple[str, str]] = {
+    "int_nikkei": ("100.N225", "日经指数"),
+    "b_TWSE": ("100.TWII", "台湾台北指数"),
+}
 
 
 def now_ms() -> int:
@@ -608,6 +613,155 @@ def decode_body(body: bytes) -> str:
         except UnicodeDecodeError:
             continue
     return body.decode("utf-8", errors="replace")
+
+
+def beijing_datetime_from_timestamp(timestamp: int) -> datetime:
+    return datetime.fromtimestamp(timestamp, tz=ZoneInfo("Asia/Shanghai"))
+
+
+def scaled_eastmoney_value(raw: Any, scale: int = 100) -> float | None:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if value <= -1_000_000_000:
+        return None
+    return value / scale
+
+
+def fetch_eastmoney_json(
+    url: str,
+    *,
+    cache_key: str,
+    kind: str,
+    ttl_seconds: int,
+) -> dict[str, Any] | None:
+    cached = cache_get(cache_key, ttl_seconds)
+    if cached:
+        try:
+            return json.loads(decode_body(cached[2]))
+        except json.JSONDecodeError:
+            return None
+
+    lock = upstream_lock(cache_key)
+    with lock:
+        cached = cache_get(cache_key, ttl_seconds)
+        if cached:
+            try:
+                return json.loads(decode_body(cached[2]))
+            except json.JSONDecodeError:
+                return None
+
+        headers = {
+            **DEFAULT_HEADERS,
+            "Accept": "application/json,text/plain,*/*",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Connection": "close",
+            "Referer": "https://quote.eastmoney.com/",
+        }
+        try:
+            response = requests.get(url, headers=headers, timeout=12)
+            if response.status_code >= 400:
+                stale = cache_any(cache_key)
+                if stale:
+                    return json.loads(decode_body(stale[2]))
+                return None
+            body = response.content
+            content_type = response.headers.get("Content-Type") or "application/json; charset=utf-8"
+            cache_put(cache_key, url, response.status_code, content_type, body)
+            write_raw(kind, cache_key, body)
+            return response.json()
+        except (requests.RequestException, json.JSONDecodeError):
+            stale = cache_any(cache_key)
+            if stale:
+                try:
+                    return json.loads(decode_body(stale[2]))
+                except json.JSONDecodeError:
+                    return None
+            return None
+
+
+def eastmoney_global_quote_line(symbol: str) -> str | None:
+    config = EASTMONEY_GLOBAL_QUOTES.get(symbol)
+    if not config:
+        return None
+    secid, fallback_name = config
+    fields = "f43,f57,f58,f60,f86,f169,f170"
+    url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={quote(secid)}&fields={fields}"
+    payload = fetch_eastmoney_json(
+        url,
+        cache_key=f"eastmoney-global:{secid}",
+        kind="eastmoney-global",
+        ttl_seconds=30,
+    )
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if isinstance(data, dict):
+        price = scaled_eastmoney_value(data.get("f43"))
+        change = scaled_eastmoney_value(data.get("f169"))
+        change_percent = scaled_eastmoney_value(data.get("f170"))
+        timestamp = data.get("f86")
+        if price is not None and change is not None and change_percent is not None:
+            try:
+                updated_at = beijing_datetime_from_timestamp(int(timestamp))
+            except (TypeError, ValueError, OSError):
+                updated_at = datetime.now(ZoneInfo("Asia/Shanghai"))
+            if abs((datetime.now(ZoneInfo("Asia/Shanghai")) - updated_at).days) <= 7:
+                name = str(data.get("f58") or fallback_name)
+                date = updated_at.date().isoformat()
+                return f'var hq_str_{symbol}="{name},{price:.2f},{change:.2f},{change_percent:.2f},{date}";'
+
+    return eastmoney_global_kline_quote_line(symbol, secid, fallback_name)
+
+
+def eastmoney_global_kline_quote_line(symbol: str, secid: str, fallback_name: str) -> str | None:
+    query = urlencode({
+        "secid": secid,
+        "fields1": "f1,f2,f3,f4,f5,f6",
+        "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
+        "klt": "101",
+        "fqt": "0",
+        "end": "20500101",
+        "lmt": "2",
+    })
+    url = f"https://push2his.eastmoney.com/api/qt/stock/kline/get?{query}"
+    payload = fetch_eastmoney_json(
+        url,
+        cache_key=f"eastmoney-global-kline:{secid}",
+        kind="eastmoney-global-kline",
+        ttl_seconds=30,
+    )
+    data = payload.get("data") if isinstance(payload, dict) else None
+    klines = data.get("klines") if isinstance(data, dict) else None
+    if not isinstance(klines, list) or not klines:
+        return None
+    fields = str(klines[-1]).split(",")
+    if len(fields) < 10:
+        return None
+    try:
+        date = fields[0]
+        price = float(fields[2])
+        change_percent = float(fields[8])
+        change = float(fields[9])
+    except (TypeError, ValueError):
+        return None
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+        return None
+    if abs((datetime.now(ZoneInfo("Asia/Shanghai")).date() - datetime.fromisoformat(date).date()).days) > 7:
+        return None
+    name = str(data.get("name") or fallback_name) if isinstance(data, dict) else fallback_name
+    return f'var hq_str_{symbol}="{name},{price:.2f},{change:.2f},{change_percent:.2f},{date}";'
+
+
+def append_eastmoney_global_quotes(text: str, symbols: list[str]) -> str:
+    lines = [text.rstrip()] if text.strip() else []
+    for symbol in sorted(set(symbols)):
+        try:
+            line = eastmoney_global_quote_line(symbol)
+        except Exception:
+            line = None
+        if line:
+            lines.append(line)
+    return "\n".join(line for line in lines if line) + ("\n" if lines else "")
 
 
 def parse_jsonp_call(text: str, name: str) -> Any | None:
@@ -2161,11 +2315,12 @@ def health() -> Response:
 @app.get("/api/sina")
 def sina() -> Response:
     enforce_rate_limit("sina")
-    symbols = ",".join(sorted(require_symbol_list(
+    symbol_list = sorted(require_symbol_list(
         "list",
         pattern=SINA_SYMBOL_RE,
         max_symbols=MAX_SINA_SYMBOLS_PER_REQUEST,
-    )))
+    ))
+    symbols = ",".join(symbol_list)
     def build() -> tuple[str, int]:
         url = f"https://hq.sinajs.cn/list={symbols}"
         status, content_type, body = fetch_upstream(
@@ -2177,7 +2332,7 @@ def sina() -> Response:
             ttl_seconds=30,
         )
         del content_type
-        return decode_body(body), status
+        return append_eastmoney_global_quotes(decode_body(body), symbol_list), status
     return cached_text_response(f"api:sina:{symbols}", 15, build)
 
 
@@ -2230,6 +2385,7 @@ def dashboard() -> Response:
             )
             if status < 400:
                 sina_text = decode_body(body)
+        sina_text = append_eastmoney_global_quotes(sina_text, symbols)
 
         fx_text = ""
         fx_symbols = {
