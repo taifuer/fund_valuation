@@ -6,7 +6,9 @@ import html
 import json
 import os
 import re
+import shutil
 import sqlite3
+import subprocess
 import threading
 import time
 from collections import deque
@@ -41,6 +43,8 @@ _RATE_LIMIT_BUCKETS: dict[str, deque[float]] = {}
 _RATE_LIMIT_GUARD = threading.Lock()
 _RESPONSE_CACHE: dict[str, tuple[float, int, str, bytes]] = {}
 _RESPONSE_CACHE_GUARD = threading.Lock()
+_EASTMONEY_SESSION = requests.Session()
+_EASTMONEY_SESSION.trust_env = False
 
 FUND_CODE_RE = re.compile(r"^\d{6}$")
 SINA_SYMBOL_RE = re.compile(r"^[A-Za-z0-9_]{1,40}$")
@@ -77,6 +81,9 @@ BACKTEST_MODEL_VERSION = "top_holdings_v1"
 EASTMONEY_GLOBAL_QUOTES: dict[str, tuple[str, str]] = {
     "int_nikkei": ("100.N225", "日经指数"),
     "b_TWSE": ("100.TWII", "台湾台北指数"),
+}
+SINA_GLOBAL_FALLBACK_QUOTES: dict[str, tuple[str, str]] = {
+    "b_TWSE": ("znb_TWJQ", "台湾加权"),
 }
 
 
@@ -447,6 +454,42 @@ def parse_market_now(raw: str | None) -> datetime:
     return parsed
 
 
+def first_session_start_minutes(sessions: list[list[str]] | list[tuple[str, str]]) -> int | None:
+    starts: list[int] = []
+    for start_raw, _end_raw in sessions:
+        try:
+            starts.append(parse_hhmm(str(start_raw)))
+        except (TypeError, ValueError):
+            continue
+    return min(starts) if starts else None
+
+
+def previous_trading_day(market: str, local: datetime) -> str | None:
+    for days_back in range(1, 15):
+        candidate = local - timedelta(days=days_back)
+        row = market_calendar_row(market, candidate.strftime("%Y-%m-%d"))
+        if row and row["status"] in {"open", "half_day"}:
+            return str(row["date"])
+    return None
+
+
+def expected_quote_date_for_symbol(symbol: str, now: datetime | None = None) -> str | None:
+    market = market_key_for_symbol(symbol)
+    if not market or market not in MARKET_CALENDARS:
+        return None
+    current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+    calendar = MARKET_CALENDARS[market]
+    local = current.astimezone(ZoneInfo(str(calendar["timezone"])))
+    day = local.strftime("%Y-%m-%d")
+    row = market_calendar_row(market, day)
+    if row and row["status"] in {"open", "half_day"}:
+        first_start = first_session_start_minutes(row["sessions"])
+        minutes = local.hour * 60 + local.minute
+        if first_start is not None and minutes >= first_start:
+            return day
+    return previous_trading_day(market, local)
+
+
 def us_futures_state(now: datetime) -> str:
     local = now.astimezone(ZoneInfo("America/New_York"))
     minutes = local.hour * 60 + local.minute
@@ -660,18 +703,16 @@ def fetch_eastmoney_json(
             "Referer": "https://quote.eastmoney.com/",
         }
         try:
-            response = requests.get(url, headers=headers, timeout=12)
-            if response.status_code >= 400:
+            body, status, content_type = fetch_eastmoney_body(url, headers)
+            if status >= 400:
                 stale = cache_any(cache_key)
                 if stale:
                     return json.loads(decode_body(stale[2]))
                 return None
-            body = response.content
-            content_type = response.headers.get("Content-Type") or "application/json; charset=utf-8"
-            cache_put(cache_key, url, response.status_code, content_type, body)
+            cache_put(cache_key, url, status, content_type, body)
             write_raw(kind, cache_key, body)
-            return response.json()
-        except (requests.RequestException, json.JSONDecodeError):
+            return json.loads(decode_body(body))
+        except (requests.RequestException, subprocess.SubprocessError, json.JSONDecodeError, OSError):
             stale = cache_any(cache_key)
             if stale:
                 try:
@@ -679,6 +720,58 @@ def fetch_eastmoney_json(
                 except json.JSONDecodeError:
                     return None
             return None
+
+
+def fetch_eastmoney_body(url: str, headers: dict[str, str]) -> tuple[bytes, int, str]:
+    curl_bin = shutil.which("curl")
+    if curl_bin:
+        command = [curl_bin, "--noproxy", "*", "-sS", "-L", "--max-time", "4"]
+        for key, value in headers.items():
+            command.extend(["-H", f"{key}: {value}"])
+        command.append(url)
+        result = subprocess.run(command, capture_output=True, check=False, timeout=5)
+        if result.returncode == 0 and result.stdout:
+            return result.stdout, 200, "application/json; charset=utf-8"
+        return b"", 599, "application/json; charset=utf-8"
+
+    response = _EASTMONEY_SESSION.get(url, headers=headers, timeout=4)
+    return response.content, response.status_code, response.headers.get("Content-Type") or "application/json; charset=utf-8"
+
+
+def sina_global_fallback_quote_line(symbol: str) -> str | None:
+    config = SINA_GLOBAL_FALLBACK_QUOTES.get(symbol)
+    if not config:
+        return None
+    fallback_symbol, fallback_name = config
+    status, _content_type, body = fetch_upstream(
+        f"https://hq.sinajs.cn/list={fallback_symbol}",
+        referer="https://finance.sina.com.cn/",
+        content_type="text/plain; charset=gb18030",
+        cache_key=f"sina-global-fallback:{fallback_symbol}",
+        kind="sina-global-fallback",
+        ttl_seconds=30,
+    )
+    if status >= 400:
+        return None
+    match = re.search(rf'var\s+hq_str_{re.escape(fallback_symbol)}="([^"]*)"', decode_body(body))
+    if not match:
+        return None
+    fields = match.group(1).split(",")
+    if len(fields) < 8:
+        return None
+    try:
+        price = float(fields[1])
+        change = float(fields[2])
+        change_percent = float(fields[3])
+    except (TypeError, ValueError):
+        return None
+    date = next((field for field in fields[4:] if re.match(r"^\d{4}-\d{2}-\d{2}$", field)), "")
+    if not date:
+        return None
+    expected_date = expected_quote_date_for_symbol(symbol)
+    if expected_date and date < expected_date:
+        return None
+    return f'var hq_str_{symbol}="{fallback_name},{price:.2f},{change:.2f},{change_percent:.2f},{date}";'
 
 
 def eastmoney_global_quote_line(symbol: str) -> str | None:
@@ -705,9 +798,13 @@ def eastmoney_global_quote_line(symbol: str) -> str | None:
                 updated_at = beijing_datetime_from_timestamp(int(timestamp))
             except (TypeError, ValueError, OSError):
                 updated_at = datetime.now(ZoneInfo("Asia/Shanghai"))
-            if abs((datetime.now(ZoneInfo("Asia/Shanghai")) - updated_at).days) <= 7:
+            expected_date = expected_quote_date_for_symbol(symbol)
+            date = updated_at.date().isoformat()
+            if expected_date and date >= expected_date:
                 name = str(data.get("f58") or fallback_name)
-                date = updated_at.date().isoformat()
+                return f'var hq_str_{symbol}="{name},{price:.2f},{change:.2f},{change_percent:.2f},{date}";'
+            if not expected_date and abs((datetime.now(ZoneInfo("Asia/Shanghai")) - updated_at).days) <= 7:
+                name = str(data.get("f58") or fallback_name)
                 return f'var hq_str_{symbol}="{name},{price:.2f},{change:.2f},{change_percent:.2f},{date}";'
 
     return eastmoney_global_kline_quote_line(symbol, secid, fallback_name)
@@ -746,7 +843,10 @@ def eastmoney_global_kline_quote_line(symbol: str, secid: str, fallback_name: st
         return None
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
         return None
-    if abs((datetime.now(ZoneInfo("Asia/Shanghai")).date() - datetime.fromisoformat(date).date()).days) > 7:
+    expected_date = expected_quote_date_for_symbol(symbol)
+    if expected_date and date < expected_date:
+        return None
+    if not expected_date and abs((datetime.now(ZoneInfo("Asia/Shanghai")).date() - datetime.fromisoformat(date).date()).days) > 7:
         return None
     name = str(data.get("name") or fallback_name) if isinstance(data, dict) else fallback_name
     return f'var hq_str_{symbol}="{name},{price:.2f},{change:.2f},{change_percent:.2f},{date}";'
@@ -756,7 +856,7 @@ def append_eastmoney_global_quotes(text: str, symbols: list[str]) -> str:
     lines = [text.rstrip()] if text.strip() else []
     for symbol in sorted(set(symbols)):
         try:
-            line = eastmoney_global_quote_line(symbol)
+            line = sina_global_fallback_quote_line(symbol) or eastmoney_global_quote_line(symbol)
         except Exception:
             line = None
         if line:
