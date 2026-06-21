@@ -18,8 +18,8 @@ function formatTime() {
 
 interface Props {
   fxRates: Map<string, FxRateData>;
-  activePage: 'overview' | 'ranking' | 'risk';
-  onPageChange: (page: 'overview' | 'ranking' | 'risk') => void;
+  activePage: 'overview' | 'funds' | 'ranking' | 'risk';
+  onPageChange: (page: 'overview' | 'funds' | 'ranking' | 'risk') => void;
   statusMessage?: string;
 }
 
@@ -61,6 +61,13 @@ export default function Header({ fxRates, activePage, onPageChange, statusMessag
               onClick={() => onPageChange('overview')}
             >
               概览
+            </button>
+            <button
+              type="button"
+              className={`${styles.navButton} ${activePage === 'funds' ? styles.navButtonActive : ''}`}
+              onClick={() => onPageChange('funds')}
+            >
+              基金
             </button>
             <button
               type="button"

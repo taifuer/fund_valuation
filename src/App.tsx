@@ -1,9 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useQuotes, type FundEstimate } from './hooks/useQuotes';
 import { useHeaderFxRates, useRankingMarketData } from './hooks/usePageData';
-import { fetchFundNavs, fetchSinaFundNavs } from './api';
+import { fetchFundHistory, fetchFundNavs, fetchSinaFundNavs } from './api';
 import { FUNDS } from './constants';
-import type { Fund } from './types';
+import type { Fund, FundNavData } from './types';
 import Header from './components/Header';
 import IndexCards from './components/IndexCards';
 import FundCard from './components/FundCard';
@@ -15,7 +15,7 @@ const RiskPage = lazy(() => import('./components/RiskPage'));
 type SortMode = 'estimate' | 'official';
 type SortDirection = 'desc' | 'asc';
 type FundDisplayMode = 'compact' | 'detail';
-type PageKey = 'overview' | 'ranking' | 'risk';
+type PageKey = 'overview' | 'funds' | 'ranking' | 'risk';
 
 const FUND_SECTION_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_section';
 const FUND_MANAGER_KEY = 'fund_valuation:managed_funds';
@@ -23,9 +23,15 @@ const FUND_DISPLAY_MODE_KEY = 'fund_valuation:fund_display_mode';
 
 const PAGE_PATHS: Record<PageKey, string> = {
   overview: '/',
+  funds: '/funds',
   ranking: '/returns',
   risk: '/risk',
 };
+
+interface FundSummary {
+  fund: Fund;
+  nav: FundNavData | null;
+}
 
 interface ManagedFundSettings {
   hiddenDefaultCodes: string[];
@@ -66,6 +72,7 @@ function writeFundDisplayMode(value: FundDisplayMode) {
 }
 
 function pageFromPathname(pathname: string): PageKey {
+  if (pathname === '/funds' || pathname === '/fund') return 'funds';
   if (pathname === '/returns' || pathname === '/ranking') return 'ranking';
   if (pathname === '/risk') return 'risk';
   return 'overview';
@@ -117,6 +124,81 @@ function sortValue(estimate: FundEstimate, mode: SortMode): number | null {
   return estimate.computedChange;
 }
 
+function formatDate(yyyymmdd: string): string {
+  if (!yyyymmdd) return '--';
+  const m = yyyymmdd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[1]}/${m[2]}/${m[3]}`;
+  return yyyymmdd;
+}
+
+function fundSummarySortValue(summary: FundSummary): number | null {
+  return summary.nav?.officialChange ?? null;
+}
+
+function summaryRankClass(index: number): string {
+  if (index === 0) return styles.summaryRankGold;
+  if (index === 1) return styles.summaryRankSilver;
+  if (index === 2) return styles.summaryRankBronze;
+  return '';
+}
+
+function FundSummaryCards({
+  funds,
+  summaries,
+  loading,
+  onOpenFunds,
+}: {
+  funds: Fund[];
+  summaries: FundSummary[];
+  loading: boolean;
+  onOpenFunds: () => void;
+}) {
+  return (
+    <section className={styles.summarySection}>
+      <div className={styles.summaryHeader}>
+        <div className={styles.summaryTitle}>
+          <span>基金</span>
+          <span className={styles.count}>· {funds.length}只 · T-1 净值</span>
+        </div>
+        <button type="button" className={styles.summaryAction} onClick={onOpenFunds}>
+          查看估值
+        </button>
+      </div>
+      {loading && summaries.length === 0 ? (
+        <div className={styles.fundLoading}>基金净值加载中...</div>
+      ) : (
+        <div className={styles.summaryGrid}>
+          {summaries.map((summary, index) => {
+            const change = summary.nav?.officialChange ?? null;
+            const up = (change ?? 0) >= 0;
+            return (
+              <button
+                type="button"
+                key={summary.fund.code}
+                className={styles.summaryCard}
+                onClick={onOpenFunds}
+              >
+                <div className={`${styles.summaryRank} ${summaryRankClass(index)}`}>#{index + 1}</div>
+                <div className={styles.summaryName}>{summary.fund.name}</div>
+                <div className={styles.summaryValue}>
+                  {summary.nav ? summary.nav.nav.toFixed(4) : '--'}
+                </div>
+                <div className={up ? styles.summaryChangeUp : styles.summaryChangeDown}>
+                  {change == null ? '--' : `${up ? '+' : ''}${change.toFixed(2)}%`}
+                </div>
+                <span className={styles.summaryCode}>{summary.fund.code}</span>
+                <div className={styles.summaryMeta}>
+                  <span>{formatDate(summary.nav?.navDate ?? '')}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function App() {
   const [managedFunds, setManagedFunds] = useState<ManagedFundSettings>(() => readManagedFundSettings());
   const [fundDisplayMode, setFundDisplayMode] = useState<FundDisplayMode>(() => readFundDisplayMode());
@@ -134,15 +216,17 @@ export default function App() {
     funds,
     fundDisplayMode === 'detail',
     false,
-    activePage === 'overview',
+    activePage === 'funds',
   );
   const headerFxRates = useHeaderFxRates();
-  const rankingMarketData = useRankingMarketData(activePage === 'ranking');
+  const marketPageData = useRankingMarketData(activePage === 'overview' || activePage === 'ranking');
   const activeFxRates = headerFxRates.size > 0 ? headerFxRates : fxRates;
   const activeError = activePage === 'overview'
-    ? error
+    ? marketPageData.error
+    : activePage === 'funds'
+      ? error
     : activePage === 'ranking'
-      ? rankingMarketData.error
+      ? marketPageData.error
       : null;
   const [sortMode, setSortMode] = useState<SortMode>('estimate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -151,6 +235,8 @@ export default function App() {
   const [addingFund, setAddingFund] = useState(false);
   const [fundManageMessage, setFundManageMessage] = useState('');
   const [pageStatusMessage, setPageStatusMessage] = useState('');
+  const [fundSummaries, setFundSummaries] = useState<Map<string, FundNavData>>(new Map());
+  const [fundSummaryLoading, setFundSummaryLoading] = useState(false);
 
   const sortedEstimates = useMemo(() => {
     const sorted = [...fundEstimates].sort((a, b) => {
@@ -165,6 +251,17 @@ export default function App() {
   }, [fundEstimates, sortMode, sortDirection]);
 
   const sortLabel = sortMode === 'official' ? '按 T-1 已出净值排序' : '按实时估算涨跌排序';
+  const overviewFundSummaries = useMemo(() => {
+    const items = funds.map((fund) => ({ fund, nav: fundSummaries.get(fund.code) ?? null }));
+    return items.sort((a, b) => {
+      const aValue = fundSummarySortValue(a);
+      const bValue = fundSummarySortValue(b);
+      if (aValue === null && bValue === null) return a.fund.name.localeCompare(b.fund.name);
+      if (aValue === null) return 1;
+      if (bValue === null) return -1;
+      return bValue - aValue;
+    });
+  }, [fundSummaries, funds]);
 
   useEffect(() => {
     function handlePopState() {
@@ -177,6 +274,60 @@ export default function App() {
   useEffect(() => {
     setPageStatusMessage('');
   }, [activePage]);
+
+  useEffect(() => {
+    if (activePage === 'funds' && fundCollapsed) {
+      setFundCollapsed(false);
+      writeCollapsedFlag(FUND_SECTION_COLLAPSED_KEY, false);
+    }
+  }, [activePage, fundCollapsed]);
+
+  useEffect(() => {
+    if (activePage !== 'overview') return;
+    let cancelled = false;
+    async function loadFundSummaries() {
+      const codes = funds.map((fund) => fund.code);
+      if (codes.length === 0) {
+        setFundSummaries(new Map());
+        return;
+      }
+      setFundSummaryLoading(true);
+      try {
+        const history = await fetchFundHistory(codes);
+        if (cancelled) return;
+        const merged = new Map<string, FundNavData>();
+        for (const [code, hist] of history) {
+          const fund = funds.find((item) => item.code === code);
+          merged.set(code, {
+            code,
+            name: fund?.name ?? code,
+            navDate: hist.navDate,
+            nav: hist.nav,
+            officialChange: hist.officialChange,
+            estimatedNav: hist.nav,
+            estimatedChange: 0,
+          });
+        }
+        const missingCodes = codes.filter((code) => !merged.has(code));
+        if (missingCodes.length > 0) {
+          const navs = await fetchFundNavs(missingCodes);
+          if (cancelled) return;
+          for (const [code, nav] of navs) {
+            merged.set(code, nav);
+          }
+        }
+        setFundSummaries(merged);
+      } finally {
+        if (!cancelled) setFundSummaryLoading(false);
+      }
+    }
+    void loadFundSummaries();
+    const timer = window.setInterval(loadFundSummaries, 5 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activePage, funds]);
 
   function navigatePage(page: PageKey) {
     const path = PAGE_PATHS[page];
@@ -324,7 +475,16 @@ export default function App() {
       {activeError && <div className={styles.error}>{activeError}</div>}
       {activePage === 'overview' ? (
         <>
-          <IndexCards quotes={quotes} marketStates={marketStates} loading={marketLoading} />
+          <IndexCards quotes={marketPageData.quotes} marketStates={marketPageData.marketStates} loading={marketPageData.loading} />
+          <FundSummaryCards
+            funds={funds}
+            summaries={overviewFundSummaries}
+            loading={fundSummaryLoading}
+            onOpenFunds={() => navigatePage('funds')}
+          />
+        </>
+      ) : activePage === 'funds' ? (
+        <>
           <div className={styles.fundSection}>
             <div className={styles.sectionHeader}>
               <button
@@ -440,10 +600,10 @@ export default function App() {
       ) : activePage === 'ranking' ? (
         <Suspense fallback={<div className={styles.pageFallback}>收益页面加载中...</div>}>
           <RankingPage
-            quotes={rankingMarketData.quotes}
+            quotes={marketPageData.quotes}
             funds={funds}
-            marketStates={rankingMarketData.marketStates}
-            marketLoading={rankingMarketData.loading}
+            marketStates={marketPageData.marketStates}
+            marketLoading={marketPageData.loading}
             onStatusMessageChange={setPageStatusMessage}
           />
         </Suspense>

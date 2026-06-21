@@ -135,6 +135,10 @@ npm run preview   # 预览生产构建
 
 ![概览](./demo/overview.png)
 
+### 基金
+
+![基金](./demo/fund.png)
+
 ### 收益
 
 ![收益](./demo/rank.png)
