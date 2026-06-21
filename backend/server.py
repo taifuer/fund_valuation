@@ -43,6 +43,8 @@ _RATE_LIMIT_BUCKETS: dict[str, deque[float]] = {}
 _RATE_LIMIT_GUARD = threading.Lock()
 _RESPONSE_CACHE: dict[str, tuple[float, int, str, bytes]] = {}
 _RESPONSE_CACHE_GUARD = threading.Lock()
+_MARKET_HISTORY_REFRESHING: set[str] = set()
+_MARKET_HISTORY_REFRESH_GUARD = threading.Lock()
 _EASTMONEY_SESSION = requests.Session()
 _EASTMONEY_SESSION.trust_env = False
 
@@ -55,6 +57,7 @@ MAX_MARKET_STATE_SYMBOLS_PER_REQUEST = 160
 MAX_FUND_HISTORY_REFRESH_ROWS = 3000
 FUND_HISTORY_AUTO_REFRESH_ROWS = 80
 HISTORY_AUTO_REFRESH_TTL_MS = 30 * 60 * 1000
+MARKET_RETURNS_CACHE_TTL_SECONDS = 30 * 60
 
 RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "sina": (240, 60),
@@ -1377,7 +1380,7 @@ def prewarm_response_cache() -> None:
         response_cache_set(
             f"api:marketreturns:{','.join(market_items)}",
             json_response(market_payload),
-            5 * 60,
+            MARKET_RETURNS_CACHE_TTL_SECONDS,
         )
 
     print(
@@ -1892,6 +1895,36 @@ def ensure_market_history_for_returns(source: str, symbol: str) -> None:
         pass
 
 
+def refresh_market_history_background(source: str, symbol: str) -> None:
+    key = f"{source}:{symbol}"
+    try:
+        ensure_market_history_for_returns(source, symbol)
+        response_cache_clear_prefix("api:marketreturns:")
+    finally:
+        with _MARKET_HISTORY_REFRESH_GUARD:
+            _MARKET_HISTORY_REFRESHING.discard(key)
+
+
+def schedule_market_history_refresh(source: str, symbol: str) -> None:
+    key = f"{source}:{symbol}"
+    with _MARKET_HISTORY_REFRESH_GUARD:
+        if key in _MARKET_HISTORY_REFRESHING:
+            return
+        _MARKET_HISTORY_REFRESHING.add(key)
+    worker = threading.Thread(
+        target=refresh_market_history_background,
+        args=(source, symbol),
+        daemon=True,
+        name=f"market-history-refresh:{key}",
+    )
+    worker.start()
+
+
+def market_history_should_refresh_for_returns(source: str, symbol: str) -> bool:
+    latest_date, fetched_at = latest_market_history_meta(source, symbol)
+    return not latest_date or history_needs_auto_refresh(latest_date, fetched_at)
+
+
 def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, Any] | None:
     rows = read_market_history_from_db(source, symbol)
     points = [
@@ -2348,6 +2381,13 @@ def response_cache_set(cache_key: str, response: Response, ttl_seconds: int) -> 
         )
     response.headers["X-Cache"] = "MISS"
     return response
+
+
+def response_cache_clear_prefix(prefix: str) -> None:
+    with _RESPONSE_CACHE_GUARD:
+        for key in list(_RESPONSE_CACHE):
+            if key.startswith(prefix):
+                _RESPONSE_CACHE.pop(key, None)
 
 
 def cached_json_response(cache_key: str, ttl_seconds: int, payload_factory: Any) -> Response:
@@ -2824,13 +2864,14 @@ def market_returns() -> Response:
         results: dict[str, Any] = {}
         for item in normalized_items:
             source, symbol = item.split(":", 1)
-            ensure_market_history_for_returns(source, symbol)
             summary = read_market_return_summary_from_db(source, symbol)
             if summary:
                 results[item] = summary
+            if market_history_should_refresh_for_returns(source, symbol):
+                schedule_market_history_refresh(source, symbol)
         return results
 
-    return cached_json_response(cache_key, 5 * 60, build)
+    return cached_json_response(cache_key, MARKET_RETURNS_CACHE_TTL_SECONDS, build)
 
 
 def main() -> None:

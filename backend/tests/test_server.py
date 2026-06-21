@@ -50,6 +50,8 @@ class ServerDataRefreshTests(unittest.TestCase):
             server._RATE_LIMIT_BUCKETS.clear()
         with server._RESPONSE_CACHE_GUARD:
             server._RESPONSE_CACHE.clear()
+        with server._MARKET_HISTORY_REFRESH_GUARD:
+            server._MARKET_HISTORY_REFRESHING.clear()
 
     def test_fetch_upstream_uses_cache_until_force_refresh(self) -> None:
         bodies = [b"old", b"new"]
@@ -745,7 +747,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         rows = server.read_market_history_from_db("sina-us", ".INX")
         self.assertEqual(rows[-1]["date"], "2026-05-19")
 
-    def test_market_returns_updates_stale_sqlite_rows_before_calculation(self) -> None:
+    def test_market_returns_returns_cached_rows_and_schedules_stale_refresh(self) -> None:
         server.store_market_history(
             "sina-us",
             ".INX",
@@ -756,45 +758,29 @@ class ServerDataRefreshTests(unittest.TestCase):
                 "UPDATE market_history SET fetched_at = ? WHERE source = ? AND symbol = ?",
                 (server.now_ms() - server.HISTORY_AUTO_REFRESH_TTL_MS - 1, "sina-us", ".INX"),
             )
-        upstream_body = b'var _=([{"d":"2026-05-19","c":"120"}]);'
-
-        def fake_fetch_upstream(*_args: object, **kwargs: object) -> tuple[int, str, bytes]:
-            self.assertIs(kwargs.get("force_refresh"), True)
-            return 200, "application/json; charset=utf-8", upstream_body
-
-        with patch.object(server, "fetch_upstream", side_effect=fake_fetch_upstream):
+        scheduled: list[tuple[str, str]] = []
+        with patch.object(server, "schedule_market_history_refresh", side_effect=lambda source, symbol: scheduled.append((source, symbol))):
             response = server.app.test_client().get("/api/marketreturns?items=sina-us:.INX")
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         summary = payload["sina-us:.INX"]
-        self.assertEqual(summary["endDate"], "2026-05-19")
-        self.assertEqual(summary["returnPercent"], 20.0)
-        self.assertEqual(summary["ranges"]["ytd"]["returnPercent"], 20.0)
-        self.assertIn("1m", summary["ranges"])
+        self.assertEqual(summary["endDate"], "2026-05-14")
+        self.assertEqual(summary["returnPercent"], 10.0)
+        self.assertEqual(summary["ranges"]["ytd"]["returnPercent"], 10.0)
+        self.assertEqual(scheduled, [("sina-us", ".INX")])
 
-    def test_market_returns_fetches_missing_sqlite_rows_before_calculation(self) -> None:
-        upstream_body = (
-            b'[{"day":"2025-12-31","close":"100"},'
-            b'{"day":"2026-05-19","close":"120"}]'
-        )
-
-        def fake_fetch_upstream(*_args: object, **kwargs: object) -> tuple[int, str, bytes]:
-            self.assertIs(kwargs.get("force_refresh"), True)
-            return 200, "application/json; charset=utf-8", upstream_body
-
-        with patch.object(server, "fetch_upstream", side_effect=fake_fetch_upstream):
+    def test_market_returns_schedules_missing_sqlite_rows_without_blocking(self) -> None:
+        scheduled: list[tuple[str, str]] = []
+        with patch.object(server, "schedule_market_history_refresh", side_effect=lambda source, symbol: scheduled.append((source, symbol))):
             response = server.app.test_client().get("/api/marketreturns?items=sina-cn:sh000688")
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
-        summary = payload["sina-cn:sh000688"]
-        self.assertEqual(summary["endDate"], "2026-05-19")
-        self.assertEqual(summary["ranges"]["ytd"]["returnPercent"], 20.0)
-        rows = server.read_market_history_from_db("sina-cn", "sh000688")
-        self.assertEqual(rows[-1]["date"], "2026-05-19")
+        self.assertNotIn("sina-cn:sh000688", payload)
+        self.assertEqual(scheduled, [("sina-cn", "sh000688")])
 
-    def test_market_returns_fetches_tencent_hk_history(self) -> None:
+    def test_market_history_refresh_fetches_tencent_hk_history(self) -> None:
         upstream_body = (
             b'{"code":0,"data":{"hkHSTECH":{"day":['
             b'["2025-12-31","4400.00","4500.00","4510.00","4390.00","1000"],'
@@ -807,11 +793,11 @@ class ServerDataRefreshTests(unittest.TestCase):
             return 200, "application/json; charset=utf-8", upstream_body
 
         with patch.object(server, "fetch_upstream", side_effect=fake_fetch_upstream):
-            response = server.app.test_client().get("/api/marketreturns?items=tencent-hk:hkHSTECH")
+            server.ensure_market_history_for_returns("tencent-hk", "hkHSTECH")
 
-        self.assertEqual(response.status_code, 200)
-        payload = response.get_json()
-        summary = payload["tencent-hk:hkHSTECH"]
+        summary = server.read_market_return_summary_from_db("tencent-hk", "hkHSTECH")
+        self.assertIsNotNone(summary)
+        assert summary is not None
         self.assertEqual(summary["endDate"], "2026-06-11")
         self.assertEqual(summary["ranges"]["ytd"]["returnPercent"], 10.0)
         rows = server.read_market_history_from_db("tencent-hk", "hkHSTECH")

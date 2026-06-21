@@ -55,10 +55,22 @@ const ETF_FILTERS: Array<{ key: EtfFilterKey; label: string }> = [
   { key: 'sector', label: '行业ETF' },
 ];
 
-function marketConfigs() {
-  return [...RANKING_INDICES, ...MARKET_ASSETS, ...RANKING_ETFS]
+function historyConfigs(configs: IndexConfig[]) {
+  return configs
     .map((item) => item.history)
     .filter((history): history is NonNullable<IndexConfig['history']> => history != null);
+}
+
+function marketConfigs(category: CategoryKey, etfFilter: EtfFilterKey) {
+  if (category === 'fund') return [];
+  if (category === 'index') return historyConfigs(RANKING_INDICES);
+  if (category === 'asset') return historyConfigs(MARKET_ASSETS);
+  if (category === 'etf') {
+    if (etfFilter === 'index') return historyConfigs(RANKING_INDEX_ETFS);
+    if (etfFilter === 'sector') return historyConfigs(RANKING_SECTOR_ETFS);
+    return historyConfigs(RANKING_ETFS);
+  }
+  return historyConfigs([...RANKING_INDICES, ...MARKET_ASSETS, ...RANKING_ETFS]);
 }
 
 function marketReturnKey(item: IndexConfig) {
@@ -167,14 +179,26 @@ export default function RiskPage({
   const [returnsLoading, setReturnsLoading] = useState(false);
   const shouldLoadFunds = category === 'fund' || category === 'all';
   const fundData = useFundReturnData(funds, shouldLoadFunds);
+  const selectedMarketConfigs = useMemo(
+    () => marketConfigs(category, etfFilter),
+    [category, etfFilter],
+  );
+  const selectedMarketConfigKey = useMemo(
+    () => selectedMarketConfigs.map((config) => `${config.source}:${config.symbol}`).join('|'),
+    [selectedMarketConfigs],
+  );
 
   useEffect(() => {
     let cancelled = false;
     async function loadReturns() {
+      if (selectedMarketConfigs.length === 0) {
+        setReturnsLoading(false);
+        return;
+      }
       setReturnsLoading(true);
-      const summaries = await fetchMarketReturnSummaries(marketConfigs());
+      const summaries = await fetchMarketReturnSummaries(selectedMarketConfigs);
       if (!cancelled) {
-        setMarketReturns(summaries);
+        setMarketReturns((prev) => new Map([...prev, ...summaries]));
         setReturnsLoading(false);
       }
     }
@@ -182,7 +206,7 @@ export default function RiskPage({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedMarketConfigKey, selectedMarketConfigs]);
 
   const items = useMemo(() => {
     const allItems = [
