@@ -45,6 +45,8 @@ _RESPONSE_CACHE: dict[str, tuple[float, int, str, bytes]] = {}
 _RESPONSE_CACHE_GUARD = threading.Lock()
 _MARKET_HISTORY_REFRESHING: set[str] = set()
 _MARKET_HISTORY_REFRESH_GUARD = threading.Lock()
+_FUND_NAV_REFRESHING: set[str] = set()
+_FUND_NAV_REFRESH_GUARD = threading.Lock()
 _EASTMONEY_SESSION = requests.Session()
 _EASTMONEY_SESSION.trust_env = False
 
@@ -58,10 +60,12 @@ MAX_FUND_HISTORY_REFRESH_ROWS = 3000
 FUND_HISTORY_AUTO_REFRESH_ROWS = 80
 HISTORY_AUTO_REFRESH_TTL_MS = 30 * 60 * 1000
 MARKET_RETURNS_CACHE_TTL_SECONDS = 30 * 60
+FUND_NAV_CACHE_TTL_SECONDS = 60
 
 RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "sina": (240, 60),
     "dashboard": (180, 60),
+    "overview": (180, 60),
     "marketstates": (240, 60),
     "fundnav": (120, 60),
     "fundholdings": (80, 60),
@@ -1390,6 +1394,100 @@ def prewarm_response_cache() -> None:
     )
 
 
+def fund_nav_upstream_cache_key(code: str) -> str:
+    return f"fundnav:{code}"
+
+
+def fund_nav_api_cache_key(codes: list[str]) -> str:
+    return f"api:fundnav:{','.join(sorted(codes))}"
+
+
+def parse_cached_fund_nav(code: str, max_age_seconds: int) -> Any | None:
+    cached = cache_get(fund_nav_upstream_cache_key(code), max_age_seconds)
+    if not cached:
+        return None
+    status, _content_type, body = cached
+    if status >= 400:
+        return None
+    return parse_jsonp_call(decode_body(body), "jsonpgz")
+
+
+def read_cached_fund_nav_payload(codes: list[str], max_age_seconds: int) -> dict[str, Any]:
+    results: dict[str, Any] = {}
+    for code in codes:
+        parsed = parse_cached_fund_nav(code, max_age_seconds)
+        if parsed:
+            results[code] = parsed
+    return results
+
+
+def fetch_fund_nav_one(code: str, *, force_refresh: bool = False) -> tuple[str, Any | None]:
+    url = f"https://fundgz.1234567.com.cn/js/{quote(code)}.js"
+    status, _, body = fetch_upstream(
+        url,
+        referer="https://fund.eastmoney.com/",
+        content_type="text/plain; charset=utf-8",
+        cache_key=fund_nav_upstream_cache_key(code),
+        kind="fundnav",
+        ttl_seconds=FUND_NAV_CACHE_TTL_SECONDS,
+        force_refresh=force_refresh,
+    )
+    if status >= 400:
+        return code, None
+    return code, parse_jsonp_call(decode_body(body), "jsonpgz")
+
+
+def fetch_fund_nav_payload(codes: list[str], *, force_refresh: bool = False) -> dict[str, Any]:
+    results: dict[str, Any] = {}
+    if not codes:
+        return results
+    max_workers = min(8, len(codes))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(fetch_fund_nav_one, code, force_refresh=force_refresh) for code in codes]
+        for future in as_completed(futures):
+            code, parsed = future.result()
+            if parsed:
+                results[code] = parsed
+    return results
+
+
+def schedule_fund_nav_refresh(codes: list[str]) -> None:
+    normalized_codes = sorted(dict.fromkeys(codes))
+    if not normalized_codes:
+        return
+    refresh_key = ",".join(normalized_codes)
+    with _FUND_NAV_REFRESH_GUARD:
+        if refresh_key in _FUND_NAV_REFRESHING:
+            return
+        _FUND_NAV_REFRESHING.add(refresh_key)
+
+    def refresh() -> None:
+        try:
+            with app.app_context():
+                payload = fetch_fund_nav_payload(normalized_codes, force_refresh=True)
+                if payload:
+                    response_cache_set(
+                        fund_nav_api_cache_key(normalized_codes),
+                        json_response(payload),
+                        FUND_NAV_CACHE_TTL_SECONDS,
+                    )
+        except Exception as exc:
+            print(f"[fundnav-refresh] failed for {refresh_key}: {exc}", flush=True)
+        finally:
+            with _FUND_NAV_REFRESH_GUARD:
+                _FUND_NAV_REFRESHING.discard(refresh_key)
+
+    thread = threading.Thread(target=refresh, name=f"fundnav-refresh-{hashlib.sha1(refresh_key.encode()).hexdigest()[:8]}", daemon=True)
+    thread.start()
+
+
+def prewarm_fund_nav_cache_async() -> None:
+    fund_codes = configured_fund_codes_from_constants()
+    if not fund_codes:
+        return
+    schedule_fund_nav_refresh(fund_codes)
+
+
 def purchase_status_date(raw_date: str, show_days: list[Any]) -> str:
     if re.match(r"^\d{4}-\d{2}-\d{2}$", raw_date):
         return raw_date
@@ -1648,6 +1746,24 @@ def read_fund_history_from_db(code: str, page_size: int, page_index: int) -> lis
         }
         for date, nav, change_percent in rows
     ]
+
+
+def read_fund_overview_summary_from_db(code: str) -> dict[str, Any] | None:
+    rows = read_fund_history_from_db(code, 2, 1)
+    if len(rows) < 2:
+        return None
+    try:
+        nav = float(rows[0]["DWJZ"])
+        previous_nav = float(rows[1]["DWJZ"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    official_change = ((nav - previous_nav) / previous_nav) * 100 if previous_nav else 0
+    return {
+        "code": code,
+        "navDate": rows[0]["FSRQ"],
+        "nav": nav,
+        "officialChange": round(official_change, 2),
+    }
 
 
 FUND_RETURN_RANGES: dict[str, tuple[str, int | None]] = {
@@ -2495,6 +2611,53 @@ def market_states() -> Response:
     return cached_json_response(cache_key, 15, build)
 
 
+def build_dashboard_payload(symbols: list[str], currencies: list[str], now_arg: str) -> dict[str, Any]:
+    sina_text = ""
+    if symbols:
+        joined_symbols = ",".join(symbols)
+        status, _, body = fetch_upstream(
+            f"https://hq.sinajs.cn/list={joined_symbols}",
+            referer="https://finance.sina.com.cn/",
+            content_type="text/plain; charset=utf-8",
+            cache_key=f"sina:{joined_symbols}",
+            kind="sina",
+            ttl_seconds=30,
+        )
+        if status < 400:
+            sina_text = decode_body(body)
+    sina_text = append_eastmoney_global_quotes(sina_text, symbols)
+
+    fx_text = ""
+    fx_symbols = {
+        "USD": "fx_susdcny",
+        "EUR": "fx_seurcny",
+        "JPY": "fx_sjpycny",
+        "KRW": "fx_skrwcny",
+        "HKD": "fx_shkdcny",
+    }
+    requested_fx_symbols = [fx_symbols[currency] for currency in currencies if currency in fx_symbols]
+    if requested_fx_symbols:
+        joined_fx_symbols = ",".join(requested_fx_symbols)
+        status, _, body = fetch_upstream(
+            f"https://hq.sinajs.cn/list={joined_fx_symbols}",
+            referer="https://finance.sina.com.cn/",
+            content_type="text/plain; charset=utf-8",
+            cache_key=f"sina:{joined_fx_symbols}",
+            kind="sina",
+            ttl_seconds=30,
+        )
+        if status < 400:
+            fx_text = decode_body(body)
+
+    ensure_market_calendar_seeded()
+    now = parse_market_now(now_arg)
+    return {
+        "quotesText": sina_text,
+        "fxText": fx_text,
+        "marketStates": {symbol: market_state_for_symbol(symbol, now) for symbol in symbols},
+    }
+
+
 @app.get("/api/dashboard")
 def dashboard() -> Response:
     enforce_rate_limit("dashboard")
@@ -2511,51 +2674,34 @@ def dashboard() -> Response:
     now_arg = request.args.get("now", "")
     cache_key = f"api:dashboard:{now_arg}:{','.join(currencies)}:{','.join(symbols)}"
 
+    return cached_json_response(cache_key, 15, lambda: build_dashboard_payload(symbols, currencies, now_arg))
+
+
+@app.get("/api/overview")
+def overview() -> Response:
+    enforce_rate_limit("overview")
+    symbols = sorted(require_symbol_list(
+        "symbols",
+        pattern=SINA_SYMBOL_RE,
+        max_symbols=MAX_SINA_SYMBOLS_PER_REQUEST,
+    ))
+    currencies = sorted(dict.fromkeys(
+        currency
+        for currency in request.args.get("currencies", "").split(",")
+        if currency in {"USD", "EUR", "JPY", "KRW", "HKD"}
+    ))
+    fund_codes = require_fund_codes("fundCodes")
+    now_arg = request.args.get("now", "")
+    cache_key = f"api:overview:{now_arg}:{','.join(currencies)}:{','.join(fund_codes)}:{','.join(symbols)}"
+
     def build() -> dict[str, Any]:
-        sina_text = ""
-        if symbols:
-            joined_symbols = ",".join(symbols)
-            status, _, body = fetch_upstream(
-                f"https://hq.sinajs.cn/list={joined_symbols}",
-                referer="https://finance.sina.com.cn/",
-                content_type="text/plain; charset=utf-8",
-                cache_key=f"sina:{joined_symbols}",
-                kind="sina",
-                ttl_seconds=30,
-            )
-            if status < 400:
-                sina_text = decode_body(body)
-        sina_text = append_eastmoney_global_quotes(sina_text, symbols)
-
-        fx_text = ""
-        fx_symbols = {
-            "USD": "fx_susdcny",
-            "EUR": "fx_seurcny",
-            "JPY": "fx_sjpycny",
-            "KRW": "fx_skrwcny",
-            "HKD": "fx_shkdcny",
+        payload = build_dashboard_payload(symbols, currencies, now_arg)
+        payload["fundSummaries"] = {
+            code: summary
+            for code in fund_codes
+            if (summary := read_fund_overview_summary_from_db(code))
         }
-        requested_fx_symbols = [fx_symbols[currency] for currency in currencies if currency in fx_symbols]
-        if requested_fx_symbols:
-            joined_fx_symbols = ",".join(requested_fx_symbols)
-            status, _, body = fetch_upstream(
-                f"https://hq.sinajs.cn/list={joined_fx_symbols}",
-                referer="https://finance.sina.com.cn/",
-                content_type="text/plain; charset=utf-8",
-                cache_key=f"sina:{joined_fx_symbols}",
-                kind="sina",
-                ttl_seconds=30,
-            )
-            if status < 400:
-                fx_text = decode_body(body)
-
-        ensure_market_calendar_seeded()
-        now = parse_market_now(now_arg)
-        return {
-            "quotesText": sina_text,
-            "fxText": fx_text,
-            "marketStates": {symbol: market_state_for_symbol(symbol, now) for symbol in symbols},
-        }
+        return payload
 
     return cached_json_response(cache_key, 15, build)
 
@@ -2564,34 +2710,34 @@ def dashboard() -> Response:
 def fund_nav() -> Response:
     enforce_rate_limit("fundnav")
     codes = require_fund_codes()
-    cache_key = f"api:fundnav:{','.join(sorted(codes))}"
+    cache_key = fund_nav_api_cache_key(codes)
+    cached = response_cache_get(cache_key, FUND_NAV_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return cached
 
-    def build() -> dict[str, Any]:
-        def fetch_one(code: str) -> tuple[str, Any | None]:
-            url = f"https://fundgz.1234567.com.cn/js/{quote(code)}.js"
-            status, _, body = fetch_upstream(
-                url,
-                referer="https://fund.eastmoney.com/",
-                content_type="text/plain; charset=utf-8",
-                cache_key=f"fundnav:{code}",
-                kind="fundnav",
-                ttl_seconds=60,
-            )
-            if status >= 400:
-                return code, None
-            return code, parse_jsonp_call(decode_body(body), "jsonpgz")
+    lock = upstream_lock(f"response:{cache_key}")
+    with lock:
+        cached = response_cache_get(cache_key, FUND_NAV_CACHE_TTL_SECONDS)
+        if cached is not None:
+            return cached
 
-        results: dict[str, Any] = {}
-        max_workers = min(8, len(codes))
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(fetch_one, code) for code in codes]
-            for future in as_completed(futures):
-                code, parsed = future.result()
-                if parsed:
-                    results[code] = parsed
-        return results
+        fresh_payload = read_cached_fund_nav_payload(codes, FUND_NAV_CACHE_TTL_SECONDS)
+        if len(fresh_payload) == len(codes):
+            return response_cache_set(cache_key, json_response(fresh_payload), FUND_NAV_CACHE_TTL_SECONDS)
 
-    return cached_json_response(cache_key, 60, build)
+        stale_payload = read_cached_fund_nav_payload(codes, 0)
+        if len(stale_payload) == len(codes):
+            schedule_fund_nav_refresh(codes)
+            response = json_response(stale_payload)
+            response.headers["X-Cache"] = "STALE"
+            response.headers["Cache-Control"] = "public, max-age=5"
+            return response
+
+        return response_cache_set(
+            cache_key,
+            json_response(fetch_fund_nav_payload(codes)),
+            FUND_NAV_CACHE_TTL_SECONDS,
+        )
 
 
 @app.get("/api/fundholdings")
@@ -2885,6 +3031,7 @@ def main() -> None:
     if os.environ.get("FUND_VALUATION_PREWARM", "1") != "0":
         with app.app_context():
             prewarm_response_cache()
+            prewarm_fund_nav_cache_async()
     print(f"Flask backend listening on http://{args.host}:{args.port}")
     print(f"SQLite database: {DB_PATH}")
     app.run(host=args.host, port=args.port, debug=args.debug, threaded=True)

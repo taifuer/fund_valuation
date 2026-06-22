@@ -4,6 +4,7 @@ import { INDICES, MARKET_ASSETS, ETF_ASSETS } from '../constants';
 import { fetchMarketReturnSummaries } from '../api';
 import { getMarketState, type MarketState } from '../marketHours';
 import MarketHistoryModal from './MarketHistoryModal';
+import { shouldUseFuturesQuote } from './IndexCards.logic';
 import styles from './IndexCards.module.css';
 
 interface Props {
@@ -102,12 +103,6 @@ function marketStateLabel(state: DisplayState): string {
   return '已收盘';
 }
 
-function futuresPriceComparable(spot?: QuoteData, futures?: QuoteData): boolean {
-  if (!spot || !futures || spot.price <= 0 || futures.price <= 0) return false;
-  const ratio = futures.price / spot.price;
-  return ratio >= 0.85 && ratio <= 1.15;
-}
-
 function Card({
   idx,
   data,
@@ -149,15 +144,13 @@ function Card({
   const futuresState = idx.futures
     ? marketStates.get(idx.futures.sinaSymbol)?.state ?? getMarketState(idx.futures.sinaSymbol)
     : 'closed';
-  const futuresFresh = futuresData ? Date.now() - futuresData.fetchedAt < 90_000 : false;
-  const useFutures = (
-    state !== 'live' &&
-    futuresData &&
-    futuresState === 'live' &&
-    futuresFresh &&
-    futuresPriceComparable(data, futuresData)
-  );
-  const displayData = useFutures ? futuresData : data;
+  const useFutures = shouldUseFuturesQuote({
+    spot: data,
+    futures: futuresData,
+    spotState: state,
+    futuresState,
+  });
+  const displayData = useFutures && futuresData ? futuresData : data;
   const up = displayData.change >= 0;
   const fresh = Date.now() - displayData.fetchedAt < 90_000 && quoteTimeFresh(displayData);
   const displayState = useFutures

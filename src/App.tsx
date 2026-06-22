@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useQuotes, type FundEstimate } from './hooks/useQuotes';
-import { useHeaderFxRates, useRankingMarketData } from './hooks/usePageData';
-import { fetchFundHistory, fetchFundNavs, fetchSinaFundNavs } from './api';
+import { useHeaderFxRates, useOverviewData, useRankingMarketData } from './hooks/usePageData';
+import { fetchFundNavs, fetchSinaFundNavs } from './api';
 import { FUNDS } from './constants';
 import type { Fund, FundNavData } from './types';
 import Header from './components/Header';
@@ -18,6 +18,7 @@ type FundDisplayMode = 'compact' | 'detail';
 type PageKey = 'overview' | 'funds' | 'ranking' | 'risk';
 
 const FUND_SECTION_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_section';
+const FUND_SUMMARY_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_summary';
 const FUND_MANAGER_KEY = 'fund_valuation:managed_funds';
 const FUND_DISPLAY_MODE_KEY = 'fund_valuation:fund_display_mode';
 
@@ -146,25 +147,39 @@ function FundSummaryCards({
   funds,
   summaries,
   loading,
+  collapsed,
+  onToggle,
   onOpenFunds,
 }: {
   funds: Fund[];
   summaries: FundSummary[];
   loading: boolean;
+  collapsed: boolean;
+  onToggle: () => void;
   onOpenFunds: () => void;
 }) {
   return (
     <section className={styles.summarySection}>
       <div className={styles.summaryHeader}>
-        <div className={styles.summaryTitle}>
-          <span>基金</span>
-          <span className={styles.count}>· {funds.length}只 · T-1 净值</span>
+        <div className={styles.summaryHeaderLeft}>
+          <button
+            type="button"
+            className={styles.sectionTitleButton}
+            aria-expanded={!collapsed}
+            onClick={onToggle}
+          >
+            <span className={styles.toggleIcon}>{collapsed ? '+' : '-'}</span>
+            <span>基金</span>
+            <span className={styles.count}>· {funds.length} · T-1 净值 ·</span>
+          </button>
+          <div className={styles.summaryTitle}>
+            <button type="button" className={styles.summaryAction} onClick={onOpenFunds}>
+              查看估值
+            </button>
+          </div>
         </div>
-        <button type="button" className={styles.summaryAction} onClick={onOpenFunds}>
-          查看估值
-        </button>
       </div>
-      {loading && summaries.length === 0 ? (
+      {collapsed ? null : loading && summaries.length === 0 ? (
         <div className={styles.fundLoading}>基金净值加载中...</div>
       ) : (
         <div className={styles.summaryGrid}>
@@ -218,11 +233,14 @@ export default function App() {
     false,
     activePage === 'funds',
   );
-  const headerFxRates = useHeaderFxRates();
-  const marketPageData = useRankingMarketData(activePage === 'overview' || activePage === 'ranking');
-  const activeFxRates = headerFxRates.size > 0 ? headerFxRates : fxRates;
+  const overviewData = useOverviewData(funds, activePage === 'overview');
+  const headerFxRates = useHeaderFxRates(activePage !== 'overview');
+  const marketPageData = useRankingMarketData(activePage === 'ranking');
+  const activeFxRates = activePage === 'overview' && overviewData.fxRates.size > 0
+    ? overviewData.fxRates
+    : headerFxRates.size > 0 ? headerFxRates : fxRates;
   const activeError = activePage === 'overview'
-    ? marketPageData.error
+    ? overviewData.error
     : activePage === 'funds'
       ? error
     : activePage === 'ranking'
@@ -231,12 +249,11 @@ export default function App() {
   const [sortMode, setSortMode] = useState<SortMode>('estimate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [fundCollapsed, setFundCollapsed] = useState(() => readCollapsedFlag(FUND_SECTION_COLLAPSED_KEY));
+  const [fundSummaryCollapsed, setFundSummaryCollapsed] = useState(() => readCollapsedFlag(FUND_SUMMARY_COLLAPSED_KEY));
   const [fundSearchQuery, setFundSearchQuery] = useState('');
   const [addingFund, setAddingFund] = useState(false);
   const [fundManageMessage, setFundManageMessage] = useState('');
   const [pageStatusMessage, setPageStatusMessage] = useState('');
-  const [fundSummaries, setFundSummaries] = useState<Map<string, FundNavData>>(new Map());
-  const [fundSummaryLoading, setFundSummaryLoading] = useState(false);
 
   const sortedEstimates = useMemo(() => {
     const sorted = [...fundEstimates].sort((a, b) => {
@@ -252,7 +269,7 @@ export default function App() {
 
   const sortLabel = sortMode === 'official' ? '按 T-1 已出净值排序' : '按实时估算涨跌排序';
   const overviewFundSummaries = useMemo(() => {
-    const items = funds.map((fund) => ({ fund, nav: fundSummaries.get(fund.code) ?? null }));
+    const items = funds.map((fund) => ({ fund, nav: overviewData.fundSummaries.get(fund.code) ?? null }));
     return items.sort((a, b) => {
       const aValue = fundSummarySortValue(a);
       const bValue = fundSummarySortValue(b);
@@ -261,7 +278,7 @@ export default function App() {
       if (bValue === null) return -1;
       return bValue - aValue;
     });
-  }, [fundSummaries, funds]);
+  }, [overviewData.fundSummaries, funds]);
 
   useEffect(() => {
     function handlePopState() {
@@ -281,53 +298,6 @@ export default function App() {
       writeCollapsedFlag(FUND_SECTION_COLLAPSED_KEY, false);
     }
   }, [activePage, fundCollapsed]);
-
-  useEffect(() => {
-    if (activePage !== 'overview') return;
-    let cancelled = false;
-    async function loadFundSummaries() {
-      const codes = funds.map((fund) => fund.code);
-      if (codes.length === 0) {
-        setFundSummaries(new Map());
-        return;
-      }
-      setFundSummaryLoading(true);
-      try {
-        const history = await fetchFundHistory(codes);
-        if (cancelled) return;
-        const merged = new Map<string, FundNavData>();
-        for (const [code, hist] of history) {
-          const fund = funds.find((item) => item.code === code);
-          merged.set(code, {
-            code,
-            name: fund?.name ?? code,
-            navDate: hist.navDate,
-            nav: hist.nav,
-            officialChange: hist.officialChange,
-            estimatedNav: hist.nav,
-            estimatedChange: 0,
-          });
-        }
-        const missingCodes = codes.filter((code) => !merged.has(code));
-        if (missingCodes.length > 0) {
-          const navs = await fetchFundNavs(missingCodes);
-          if (cancelled) return;
-          for (const [code, nav] of navs) {
-            merged.set(code, nav);
-          }
-        }
-        setFundSummaries(merged);
-      } finally {
-        if (!cancelled) setFundSummaryLoading(false);
-      }
-    }
-    void loadFundSummaries();
-    const timer = window.setInterval(loadFundSummaries, 5 * 60 * 1000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [activePage, funds]);
 
   function navigatePage(page: PageKey) {
     const path = PAGE_PATHS[page];
@@ -459,6 +429,14 @@ export default function App() {
     });
   }
 
+  function toggleFundSummary() {
+    setFundSummaryCollapsed((prev) => {
+      const next = !prev;
+      writeCollapsedFlag(FUND_SUMMARY_COLLAPSED_KEY, next);
+      return next;
+    });
+  }
+
   function updateFundDisplayMode(value: FundDisplayMode) {
     setFundDisplayMode(value);
     writeFundDisplayMode(value);
@@ -475,11 +453,13 @@ export default function App() {
       {activeError && <div className={styles.error}>{activeError}</div>}
       {activePage === 'overview' ? (
         <>
-          <IndexCards quotes={marketPageData.quotes} marketStates={marketPageData.marketStates} loading={marketPageData.loading} />
+          <IndexCards quotes={overviewData.quotes} marketStates={overviewData.marketStates} loading={overviewData.loading} />
           <FundSummaryCards
             funds={funds}
             summaries={overviewFundSummaries}
-            loading={fundSummaryLoading}
+            loading={overviewData.fundLoading}
+            collapsed={fundSummaryCollapsed}
+            onToggle={toggleFundSummary}
             onOpenFunds={() => navigatePage('funds')}
           />
         </>

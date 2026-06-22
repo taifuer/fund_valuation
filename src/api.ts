@@ -13,6 +13,7 @@ import type {
   MarketReturnSummary,
   MarketStateData,
 } from './types';
+import { globalFutureReferencePrice } from './quoteMath';
 
 type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'crypto' | 'fund' | 'fx';
 
@@ -163,8 +164,10 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
           session = 'post';
         }
       }
-      if (!date || isStale(date)) {
+      if (!date) {
         date = beijingDatetimeFromTimestamp(fetchedAt);
+        dateReliable = false;
+      } else if (isStale(date)) {
         dateReliable = false;
       }
       break;
@@ -217,7 +220,7 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
     case 'global_future':
       if (fields.length < 13) return null;
       price = parseFloat(fields[0]) || 0;
-      previousClose = parseFloat(fields[8]) || price;
+      previousClose = globalFutureReferencePrice(fields[8], fields[7], price);
       changePct = previousClose ? ((price - previousClose) / previousClose) * 100 : 0;
       date = combineBeijingDateTime(fields[12] || '', fields[6] || '');
       if (isStale(date)) {
@@ -434,7 +437,48 @@ export interface DashboardSnapshot {
   marketStates: Map<string, MarketStateData>;
 }
 
+export interface OverviewSnapshot extends DashboardSnapshot {
+  fundSummaries: Map<string, FundNavData>;
+}
+
 const dashboardSnapshotPending = new Map<string, Promise<DashboardSnapshot | null>>();
+const overviewSnapshotPending = new Map<string, Promise<OverviewSnapshot | null>>();
+
+function parseDashboardSnapshotPayload(
+  json: { quotesText?: unknown; fxText?: unknown; marketStates?: Record<string, MarketStateData> },
+  symbols: string[],
+  fetchedAt: number,
+): DashboardSnapshot {
+  const quotes = new Map<string, QuoteData>();
+  const fxRates = new Map<string, FxRateData>([[
+    'CNY',
+    { currency: 'CNY', pair: 'CNY/CNY', rate: 1, changePercent: 0, date: beijingDate(), time: '00:00:00', datetime: `${beijingDate()} 00:00:00`, fetchedAt },
+  ]]);
+  const marketStates = new Map<string, MarketStateData>();
+
+  for (const line of String(json.quotesText ?? '').split('\n')) {
+    const parsed = parseSinaVar(line.trim(), fetchedAt);
+    if (parsed) {
+      quoteCache.set(parsed.symbol, parsed.data);
+      quotes.set(parsed.symbol, parsed.data);
+    }
+  }
+
+  for (const line of String(json.fxText ?? '').split('\n')) {
+    const parsed = parseSinaFx(line.trim(), fetchedAt);
+    if (parsed) {
+      fxRateCache.set(parsed.currency, parsed);
+      fxRates.set(parsed.currency, parsed);
+    }
+  }
+
+  for (const symbol of symbols) {
+    const raw = json.marketStates?.[symbol];
+    if (raw) marketStates.set(symbol, raw);
+  }
+
+  return { quotes, fxRates, marketStates };
+}
 
 export async function fetchDashboardSnapshot(
   symbols: string[],
@@ -456,40 +500,60 @@ export async function fetchDashboardSnapshot(
     if (!res.ok) return null;
     const json = await res.json();
     const fetchedAt = Date.now();
-    const quotes = new Map<string, QuoteData>();
-    const fxRates = new Map<string, FxRateData>([[
-      'CNY',
-      { currency: 'CNY', pair: 'CNY/CNY', rate: 1, changePercent: 0, date: beijingDate(), time: '00:00:00', datetime: `${beijingDate()} 00:00:00`, fetchedAt },
-    ]]);
-    const marketStates = new Map<string, MarketStateData>();
-
-    for (const line of String(json.quotesText ?? '').split('\n')) {
-      const parsed = parseSinaVar(line.trim(), fetchedAt);
-      if (parsed) {
-        quoteCache.set(parsed.symbol, parsed.data);
-        quotes.set(parsed.symbol, parsed.data);
-      }
-    }
-
-    for (const line of String(json.fxText ?? '').split('\n')) {
-      const parsed = parseSinaFx(line.trim(), fetchedAt);
-      if (parsed) {
-        fxRateCache.set(parsed.currency, parsed);
-        fxRates.set(parsed.currency, parsed);
-      }
-    }
-
-    for (const symbol of uniqueSymbols) {
-      const raw: MarketStateData | undefined = json.marketStates?.[symbol];
-      if (raw) marketStates.set(symbol, raw);
-    }
-
-    return { quotes, fxRates, marketStates };
+    return parseDashboardSnapshotPayload(json, uniqueSymbols, fetchedAt);
   })().catch(() => null).finally(() => {
     dashboardSnapshotPending.delete(cacheKey);
   });
 
   dashboardSnapshotPending.set(cacheKey, request);
+  return request;
+}
+
+export async function fetchOverviewSnapshot(
+  symbols: string[],
+  currencies: string[],
+  fundCodes: string[],
+): Promise<OverviewSnapshot | null> {
+  const uniqueSymbols = [...new Set(symbols.filter(Boolean))];
+  const uniqueCurrencies = [...new Set(currencies.filter((currency) => currency !== 'CNY'))];
+  const uniqueFundCodes = [...new Set(fundCodes.filter(Boolean))];
+  if (uniqueSymbols.length > 160 || uniqueFundCodes.length > 50) return null;
+  const cacheKey = `${uniqueSymbols.join(',')}|${uniqueCurrencies.join(',')}|${uniqueFundCodes.join(',')}`;
+  const pending = overviewSnapshotPending.get(cacheKey);
+  if (pending) return pending;
+
+  const request = (async () => {
+    const params = new URLSearchParams({
+      symbols: uniqueSymbols.join(','),
+      currencies: uniqueCurrencies.join(','),
+      fundCodes: uniqueFundCodes.join(','),
+    });
+    const res = await fetch(apiUrl(`/api/overview?${params.toString()}`));
+    if (!res.ok) return null;
+    const json = await res.json();
+    const fetchedAt = Date.now();
+    const snapshot = parseDashboardSnapshotPayload(json, uniqueSymbols, fetchedAt);
+    const fundSummaries = new Map<string, FundNavData>();
+    for (const code of uniqueFundCodes) {
+      const raw = json.fundSummaries?.[code];
+      if (!raw) continue;
+      const nav = Number(raw.nav);
+      fundSummaries.set(code, {
+        code,
+        name: code,
+        navDate: String(raw.navDate ?? ''),
+        nav: Number.isFinite(nav) ? nav : 0,
+        officialChange: Number(raw.officialChange) || 0,
+        estimatedNav: Number.isFinite(nav) ? nav : 0,
+        estimatedChange: 0,
+      });
+    }
+    return { ...snapshot, fundSummaries };
+  })().catch(() => null).finally(() => {
+    overviewSnapshotPending.delete(cacheKey);
+  });
+
+  overviewSnapshotPending.set(cacheKey, request);
   return request;
 }
 

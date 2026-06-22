@@ -7,9 +7,10 @@ import {
   fetchFundReturnSummaries,
   fetchFxRates,
   fetchMarketStates,
+  fetchOverviewSnapshot,
   fetchSinaFundNavs,
 } from '../api';
-import { MARKET_ASSETS, RANKING_ETFS, RANKING_INDICES } from '../constants';
+import { ETF_ASSETS, INDICES, MARKET_ASSETS, RANKING_ETFS, RANKING_INDICES } from '../constants';
 import type { Fund, FundNavData, FundReturnSummary, FxRateData, MarketStateData, QuoteData } from '../types';
 import type { FundEstimate } from './useQuotes';
 
@@ -93,10 +94,11 @@ function emptyFundEstimate(
   };
 }
 
-export function useHeaderFxRates() {
+export function useHeaderFxRates(enabled = true) {
   const [fxRates, setFxRates] = useState<Map<string, FxRateData>>(new Map());
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     async function load() {
       const rates = await fetchFxRates(DISPLAY_FX_CURRENCIES);
@@ -109,9 +111,112 @@ export function useHeaderFxRates() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [enabled]);
 
   return fxRates;
+}
+
+export function useOverviewData(funds: Fund[], enabled: boolean) {
+  const [quotes, setQuotes] = useState<Map<string, QuoteData>>(new Map());
+  const [fxRates, setFxRates] = useState<Map<string, FxRateData>>(new Map());
+  const [marketStates, setMarketStates] = useState<Map<string, MarketStateData>>(new Map());
+  const [fundSummaries, setFundSummaries] = useState<Map<string, FundNavData>>(new Map());
+  const [loading, setLoading] = useState(false);
+  const [fundLoading, setFundLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const symbols = useMemo(() => (
+    [...new Set([
+      ...INDICES.map((item) => item.sinaSymbol),
+      ...INDICES.flatMap((item) => item.futures?.sinaSymbol ?? []),
+      ...MARKET_ASSETS.map((item) => item.sinaSymbol),
+      ...ETF_ASSETS.map((item) => item.sinaSymbol),
+    ])]
+  ), []);
+  const fundKey = useMemo(() => funds.map((fund) => fund.code).join(','), [funds]);
+
+  useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      setFundLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    async function load(showLoading = false) {
+      if (showLoading) {
+        setLoading(true);
+        setFundLoading(true);
+      }
+      setError(null);
+      const fundCodes = funds.map((fund) => fund.code);
+      try {
+        const snapshot = await fetchOverviewSnapshot(symbols, DISPLAY_FX_CURRENCIES, fundCodes);
+        let quoteData: Map<string, QuoteData>;
+        let fxData: Map<string, FxRateData>;
+        let stateData: Map<string, MarketStateData>;
+        let summaryData: Map<string, FundNavData>;
+
+        if (snapshot && snapshot.quotes.size > 0) {
+          quoteData = snapshot.quotes;
+          fxData = snapshot.fxRates;
+          stateData = snapshot.marketStates;
+          summaryData = snapshot.fundSummaries;
+        } else {
+          const [dashboard, history] = await Promise.all([
+            fetchDashboardSnapshot(symbols, DISPLAY_FX_CURRENCIES),
+            fetchFundHistory(fundCodes),
+          ]);
+          quoteData = dashboard?.quotes ?? new Map();
+          fxData = dashboard?.fxRates ?? new Map();
+          stateData = dashboard?.marketStates ?? new Map();
+          summaryData = new Map();
+          for (const [code, hist] of history) {
+            const fund = funds.find((item) => item.code === code);
+            summaryData.set(code, {
+              code,
+              name: fund?.name ?? code,
+              navDate: hist.navDate,
+              nav: hist.nav,
+              officialChange: hist.officialChange,
+              estimatedNav: hist.nav,
+              estimatedChange: 0,
+            });
+          }
+        }
+
+        const missingCodes = fundCodes.filter((code) => !summaryData.has(code));
+        if (missingCodes.length > 0) {
+          const navs = await fetchFundNavs(missingCodes);
+          for (const [code, nav] of navs) {
+            summaryData.set(code, nav);
+          }
+        }
+
+        if (cancelled) return;
+        setQuotes((prev) => new Map([...prev, ...quoteData]));
+        setFxRates((prev) => new Map([...prev, ...fxData]));
+        setMarketStates((prev) => new Map([...prev, ...stateData]));
+        setFundSummaries(summaryData);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : '概览数据加载失败');
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setFundLoading(false);
+        }
+      }
+    }
+
+    void load(true);
+    const timer = window.setInterval(() => load(false), 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [enabled, fundKey, funds, symbols]);
+
+  return { quotes, fxRates, marketStates, fundSummaries, loading, fundLoading, error };
 }
 
 export function useRankingMarketData(enabled: boolean) {
@@ -123,6 +228,7 @@ export function useRankingMarketData(enabled: boolean) {
   const symbols = useMemo(() => (
     [...new Set([
       ...RANKING_INDICES.map((item) => item.sinaSymbol),
+      ...INDICES.flatMap((item) => item.futures?.sinaSymbol ?? []),
       ...MARKET_ASSETS.map((item) => item.sinaSymbol),
       ...RANKING_ETFS.map((item) => item.sinaSymbol),
     ])]

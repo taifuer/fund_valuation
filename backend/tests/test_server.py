@@ -52,6 +52,8 @@ class ServerDataRefreshTests(unittest.TestCase):
             server._RESPONSE_CACHE.clear()
         with server._MARKET_HISTORY_REFRESH_GUARD:
             server._MARKET_HISTORY_REFRESHING.clear()
+        with server._FUND_NAV_REFRESH_GUARD:
+            server._FUND_NAV_REFRESHING.clear()
 
     def test_fetch_upstream_uses_cache_until_force_refresh(self) -> None:
         bodies = [b"old", b"new"]
@@ -140,6 +142,35 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(first.headers.get("X-Cache"), "MISS")
         self.assertEqual(second.headers.get("X-Cache"), "HIT")
         self.assertEqual(len(calls), 2)
+
+    def test_overview_aggregates_market_fx_and_fund_summary(self) -> None:
+        server.store_fund_history(
+            "016664",
+            [
+                {"FSRQ": "2026-05-21", "DWJZ": "3.0848", "JZZZL": "-0.83"},
+                {"FSRQ": "2026-05-20", "DWJZ": "3.1106", "JZZZL": "-0.28"},
+            ],
+        )
+        quote_body = 'var hq_str_s_sh000001="上证指数,3000,10,0.33";'.encode("gb18030")
+        fx_body = 'var hq_str_fx_susdcny="美元人民币,7.1000,0,0,0,0,0,0,0,09:30:00,0.12,2026-06-12";'.encode("gb18030")
+
+        def fake_fetch(url: str, **_kwargs: object) -> tuple[int, str, bytes]:
+            if "fx_susdcny" in url:
+                return 200, "text/plain; charset=utf-8", fx_body
+            return 200, "text/plain; charset=utf-8", quote_body
+
+        with patch.object(server, "fetch_upstream", side_effect=fake_fetch):
+            response = server.app.test_client().get(
+                "/api/overview?symbols=s_sh000001&currencies=USD&fundCodes=016664&now=2026-05-26T10:00:00%2B08:00"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIn("上证指数", payload["quotesText"])
+        self.assertIn("美元人民币", payload["fxText"])
+        self.assertEqual(payload["marketStates"]["s_sh000001"]["state"], "live")
+        self.assertEqual(payload["fundSummaries"]["016664"]["navDate"], "2026-05-21")
+        self.assertAlmostEqual(payload["fundSummaries"]["016664"]["officialChange"], -0.83, places=2)
 
     def test_sina_proxy_overrides_stale_asia_indices_from_eastmoney(self) -> None:
         sina_body = (
@@ -262,6 +293,41 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 429)
+
+    def test_fund_nav_returns_stale_cache_and_schedules_refresh(self) -> None:
+        body = b'jsonpgz({"fundcode":"016664","name":"test","dwjz":"1.0000","jzrq":"2026-05-21"});'
+        server.cache_put(
+            "fundnav:016664",
+            "https://fundgz.1234567.com.cn/js/016664.js",
+            200,
+            "text/plain; charset=utf-8",
+            body,
+        )
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute(
+                "UPDATE response_cache SET fetched_at = ? WHERE cache_key = ?",
+                (server.now_ms() - (server.FUND_NAV_CACHE_TTL_SECONDS + 1) * 1000, "fundnav:016664"),
+            )
+
+        with (
+            patch.object(server, "fetch_upstream", side_effect=AssertionError("unexpected upstream fetch")),
+            patch.object(server, "schedule_fund_nav_refresh") as schedule_refresh,
+        ):
+            response = server.app.test_client().get("/api/fundnav?codes=016664")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("X-Cache"), "STALE")
+        self.assertEqual(response.get_json()["016664"]["fundcode"], "016664")
+        schedule_refresh.assert_called_once_with(["016664"])
+
+    def test_prewarm_fund_nav_cache_async_schedules_default_funds(self) -> None:
+        with (
+            patch.object(server, "configured_fund_codes_from_constants", return_value=["016664", "118001"]),
+            patch.object(server, "schedule_fund_nav_refresh") as schedule_refresh,
+        ):
+            server.prewarm_fund_nav_cache_async()
+
+        schedule_refresh.assert_called_once_with(["016664", "118001"])
 
     def test_fund_history_refresh_caps_upstream_target_count(self) -> None:
         with patch.object(server, "fetch_and_store_fund_history") as fetch_history:
