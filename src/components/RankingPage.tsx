@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fetchMarketReturnSummaries } from '../api';
 import { MARKET_ASSETS, RANKING_ETFS, RANKING_INDEX_ETFS, RANKING_INDICES, RANKING_SECTOR_ETFS } from '../constants';
 import { getMarketState } from '../marketHours';
+import { rankingStateLabel } from '../displayStatus';
 import { useFundReturnData } from '../hooks/usePageData';
 import type { FundEstimate } from '../hooks/useQuotes';
 import type { Fund, FundReturnRangeKey, IndexConfig, MarketReturnSummary, MarketStateData, QuoteData } from '../types';
@@ -105,7 +106,7 @@ function makeMarketItems(
       currentValue: range === 'today' ? quote?.price ?? null : rangeReturn?.endClose ?? summary?.endClose ?? null,
       startDate: range === 'today' ? quote?.time?.slice(0, 10) : rangeReturn?.startDate,
       endDate: range === 'today' ? quote?.time?.slice(0, 10) : rangeReturn?.endDate,
-      sourceLabel: range === 'today' ? marketStateLabel(state) : '收盘价',
+      sourceLabel: range === 'today' ? rankingStateLabel(state) : '收盘价',
     };
   });
 }
@@ -153,14 +154,6 @@ function rankStyle(index: number) {
   if (index === 1) return styles.silver;
   if (index === 2) return styles.bronze;
   return '';
-}
-
-function marketStateLabel(state: MarketStateData['state']) {
-  if (state === 'live') return '开盘中';
-  if (state === 'break') return '午间休市';
-  if (state === 'holiday') return '假期休市';
-  if (state === 'weekend') return '周末休市';
-  return '已收盘';
 }
 
 function sortableValue(item: RankingItem, sortKey: SortKey) {

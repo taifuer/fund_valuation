@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import type { QuoteData, IndexConfig, MarketReturnSummary, MarketStateData } from '../types';
 import { INDICES, MARKET_ASSETS, ETF_ASSETS } from '../constants';
 import { fetchMarketReturnSummaries } from '../api';
-import { getMarketState, type MarketState } from '../marketHours';
+import {
+  displayStateLabel,
+  quoteDisplayState,
+  quoteDisplayTime,
+  quoteMarketState,
+  type QuoteDisplayState,
+} from '../displayStatus';
 import MarketHistoryModal from './MarketHistoryModal';
 import { shouldUseFuturesQuote } from './IndexCards.logic';
 import styles from './IndexCards.module.css';
@@ -43,66 +49,6 @@ function writeCollapsedGroups(value: Record<string, boolean>) {
   } catch { /* skip */ }
 }
 
-function formatQuoteDate(date: string): string {
-  const datetimeMatch = date.match(/^\d{4}-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
-  if (datetimeMatch) return `${datetimeMatch[1]}/${datetimeMatch[2]} ${datetimeMatch[3]}:${datetimeMatch[4]}`;
-  const match = date.match(/^\d{4}-(\d{2})-(\d{2})$/);
-  return match ? `${match[1]}/${match[2]}` : date || '--';
-}
-
-function beijingTimestamp(date: string): number | null {
-  const match = date.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);
-  if (!match) return null;
-  const timestamp = new Date(
-    `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6] ?? '00'}+08:00`,
-  ).getTime();
-  return Number.isNaN(timestamp) ? null : timestamp;
-}
-
-function quoteTimeFresh(data: QuoteData): boolean {
-  if (data.symbol !== 'fx_sbtcusd') return true;
-  const timestamp = beijingTimestamp(data.time);
-  if (timestamp == null) return false;
-  return Math.abs(Date.now() - timestamp) <= 10 * 60 * 1000;
-}
-
-function closeTime(sinaSymbol: string): string | null {
-  if (sinaSymbol.startsWith('s_')) return '15:00';
-  if (sinaSymbol.startsWith('gb_')) return '04:00';
-  if (sinaSymbol.startsWith('hk')) return '16:10';
-  if (sinaSymbol === 'int_nikkei') return '14:30';
-  if (sinaSymbol === 'b_KOSPI') return '14:30';
-  if (sinaSymbol === 'b_TWSE') return '13:30';
-  if (sinaSymbol === 'hf_HSI') return '03:00';
-  if (sinaSymbol === 'hf_NK') return '04:15';
-  if (sinaSymbol.startsWith('hf_')) return '05:00';
-  return null;
-}
-
-function closeTimeLabel(sinaSymbol: string, quoteTime: string): string | null {
-  const time = closeTime(sinaSymbol);
-  if (!time) return null;
-  const dateMatch = quoteTime.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!dateMatch) return time;
-  return `${dateMatch[2]}/${dateMatch[3]} ${time}`;
-}
-
-type DisplayState = 'futuresLive' | 'live' | 'stale' | MarketState;
-
-function shouldUseCloseTimeLabel(state: DisplayState): boolean {
-  return state === 'closed' || state === 'holiday' || state === 'weekend';
-}
-
-function marketStateLabel(state: DisplayState): string {
-  if (state === 'futuresLive') return '期货 LIVE';
-  if (state === 'live') return 'LIVE';
-  if (state === 'stale') return '延迟';
-  if (state === 'break') return '午间休市';
-  if (state === 'holiday') return '假期休市';
-  if (state === 'weekend') return '周末休市';
-  return '已收盘';
-}
-
 function Card({
   idx,
   data,
@@ -140,9 +86,9 @@ function Card({
       </div>
     );
   }
-  const state = marketStates.get(idx.sinaSymbol)?.state ?? getMarketState(idx.sinaSymbol);
+  const state = quoteMarketState(idx.sinaSymbol, marketStates);
   const futuresState = idx.futures
-    ? marketStates.get(idx.futures.sinaSymbol)?.state ?? getMarketState(idx.futures.sinaSymbol)
+    ? quoteMarketState(idx.futures.sinaSymbol, marketStates)
     : 'closed';
   const useFutures = shouldUseFuturesQuote({
     spot: data,
@@ -152,17 +98,19 @@ function Card({
   });
   const displayData = useFutures && futuresData ? futuresData : data;
   const up = displayData.change >= 0;
-  const fresh = Date.now() - displayData.fetchedAt < 90_000 && quoteTimeFresh(displayData);
-  const displayState = useFutures
-    ? 'futuresLive'
-    : state === 'live' && fresh
-      ? 'live'
-      : state === 'live'
-        ? 'stale'
-        : state;
-  const quoteTimeLabel = shouldUseCloseTimeLabel(displayState)
-    ? closeTimeLabel(displayData.symbol, displayData.time) ?? formatQuoteDate(displayData.time)
-    : formatQuoteDate(displayData.time);
+  const displayState = quoteDisplayState({
+    quote: displayData,
+    marketState: useFutures && idx.futures ? futuresState : state,
+    futuresLive: useFutures,
+  });
+  const displayTime = quoteDisplayTime(displayData, displayState, { useCloseTimeWhenClosed: true });
+
+  function stateClassName(currentState: QuoteDisplayState): string {
+    if (currentState === 'futuresLive') return styles.stateFutures;
+    if (currentState === 'live' || currentState === 'pre' || currentState === 'post') return styles.stateLive;
+    if (currentState === 'stale') return styles.stateStale;
+    return styles.stateClosed;
+  }
 
   return (
     <button
@@ -172,17 +120,9 @@ function Card({
       disabled={!idx.history}
     >
       <span
-        className={`${styles.state} ${
-          displayState === 'futuresLive'
-            ? styles.stateFutures
-            : displayState === 'live'
-            ? styles.stateLive
-            : displayState === 'stale'
-              ? styles.stateStale
-              : styles.stateClosed
-        }`}
+        className={`${styles.state} ${stateClassName(displayState)}`}
       >
-        {marketStateLabel(displayState)}
+        {displayStateLabel(displayState)}
       </span>
       <div className={styles.label}>{useFutures ? idx.futures?.label : idx.name}</div>
       <div className={styles.price}>{displayData.price.toLocaleString()}</div>
@@ -194,8 +134,8 @@ function Card({
           今年 {ytdReturn.returnPercent >= 0 ? '+' : ''}{ytdReturn.returnPercent.toFixed(2)}%
         </span>
       )}
-      <span className={`${styles.quoteDate} ${displayData.dateReliable ? '' : styles.quoteDateEstimated}`}>
-        {quoteTimeLabel}
+      <span className={`${styles.quoteDate} ${displayTime.estimated ? styles.quoteDateEstimated : ''}`}>
+        {displayTime.label}
       </span>
     </button>
   );

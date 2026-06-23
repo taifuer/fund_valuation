@@ -44,8 +44,6 @@ interface SlowFundData {
   navs: Map<string, FundNavData>;
   purchaseStatuses: Map<string, FundPurchaseData>;
   returnSummaries: Map<string, FundReturnSummary>;
-  detailsLoaded: boolean;
-  returnSummariesLoaded: boolean;
 }
 
 function usMarketClock(now = new Date()): { weekday: string; minutes: number } {
@@ -142,10 +140,13 @@ export function useQuotes(
     navs: new Map(),
     purchaseStatuses: new Map(),
     returnSummaries: new Map(),
-    detailsLoaded: false,
-    returnSummariesLoaded: false,
   });
-  const slowFundDataFetchedAtRef = useRef(0);
+  const fundNavFetchedAtRef = useRef(0);
+  const fundPurchaseFetchedAtRef = useRef(0);
+  const fundReturnFetchedAtRef = useRef(0);
+  const effectiveFundsRef = useRef<Fund[] | null>(null);
+  const dynamicHoldingsFetchedAtRef = useRef<Map<string, number>>(new Map());
+  const dynamicProfilesFetchedAtRef = useRef<Map<string, number>>(new Map());
   const fundCacheKeyRef = useRef('');
 
   useEffect(() => {
@@ -166,13 +167,15 @@ export function useQuotes(
         navs: new Map(),
         purchaseStatuses: new Map(),
         returnSummaries: new Map(),
-        detailsLoaded: false,
-        returnSummariesLoaded: false,
       };
-      slowFundDataFetchedAtRef.current = 0;
+      fundNavFetchedAtRef.current = 0;
+      fundPurchaseFetchedAtRef.current = 0;
+      fundReturnFetchedAtRef.current = 0;
+      effectiveFundsRef.current = null;
+      dynamicHoldingsFetchedAtRef.current = new Map();
+      dynamicProfilesFetchedAtRef.current = new Map();
       fundCacheKeyRef.current = currentFundKey;
     }
-    let effectiveFundsCache: Fund[] | null = null;
     const indexSymbols = INDICES.map((i) => i.sinaSymbol);
     const assetSymbols = MARKET_ASSETS.map((i) => i.sinaSymbol);
     const etfSymbols = ETF_ASSETS.map((i) => i.sinaSymbol);
@@ -185,18 +188,25 @@ export function useQuotes(
     ])];
 
     async function resolveEffectiveFunds(): Promise<Fund[]> {
-      if (effectiveFundsCache) return effectiveFundsCache;
-      const dynamicHoldingCodes = funds
+      const now = Date.now();
+      const cachedFunds = effectiveFundsRef.current ?? funds;
+      const dynamicHoldingCodes = cachedFunds
         .filter((f) => f.holdings.length === 0)
+        .filter((f) => now - (dynamicHoldingsFetchedAtRef.current.get(f.code) ?? 0) > SLOW_DATA_TTL_MS)
         .map((f) => f.code);
       const dynamicProfileCodes = loadFundDetails
-        ? funds.filter((f) => !f.profile).map((f) => f.code)
+        ? cachedFunds
+            .filter((f) => !f.profile)
+            .filter((f) => now - (dynamicProfilesFetchedAtRef.current.get(f.code) ?? 0) > SLOW_DATA_TTL_MS)
+            .map((f) => f.code)
         : [];
       const [dynamicHoldings, dynamicProfiles] = await Promise.all([
         fetchFundHoldings(dynamicHoldingCodes),
         fetchFundProfiles(dynamicProfileCodes),
       ]);
-      const effectiveFunds = funds.map((fund) => {
+      dynamicHoldingCodes.forEach((code) => dynamicHoldingsFetchedAtRef.current.set(code, now));
+      dynamicProfileCodes.forEach((code) => dynamicProfilesFetchedAtRef.current.set(code, now));
+      const effectiveFunds = cachedFunds.map((fund) => {
         const profile = fund.profile ?? dynamicProfiles.get(fund.code);
         if (fund.holdings.length > 0) return profile && !fund.profile ? { ...fund, profile } : fund;
         const holdings = dynamicHoldings.get(fund.code) ?? [];
@@ -204,34 +214,51 @@ export function useQuotes(
           ? { ...fund, holdings: holdings.length > 0 ? holdings : fund.holdings, profile }
           : fund;
       });
-      effectiveFundsCache = effectiveFunds;
+      effectiveFundsRef.current = effectiveFunds;
       return effectiveFunds;
     }
 
     async function loadSlowFundData(effectiveFunds: Fund[], force = false): Promise<SlowFundData> {
       const now = Date.now();
-      const shouldFetch = (
-        force ||
-        slowFundDataFetchedAtRef.current === 0 ||
-        now - slowFundDataFetchedAtRef.current > SLOW_DATA_TTL_MS ||
-        (loadFundDetails && !slowFundDataRef.current.detailsLoaded) ||
-        (loadFundReturns && !slowFundDataRef.current.returnSummariesLoaded)
-      );
-      if (!shouldFetch) return slowFundDataRef.current;
-
       const fundCodes = effectiveFunds.map((f) => f.code);
+      const current = slowFundDataRef.current;
+      const missingNavCodes = fundCodes.filter((code) => !current.navs.has(code));
+      const shouldFetchNavs = (
+        force ||
+        fundNavFetchedAtRef.current === 0 ||
+        now - fundNavFetchedAtRef.current > SLOW_DATA_TTL_MS ||
+        missingNavCodes.length > 0
+      );
+      const shouldFetchPurchase = (
+        loadFundDetails &&
+        (
+          force ||
+          fundPurchaseFetchedAtRef.current === 0 ||
+          now - fundPurchaseFetchedAtRef.current > SLOW_DATA_TTL_MS
+        )
+      );
       const shouldLoadReturns = loadFundDetails || loadFundReturns;
+      const shouldFetchReturns = (
+        shouldLoadReturns &&
+        (
+          force ||
+          fundReturnFetchedAtRef.current === 0 ||
+          now - fundReturnFetchedAtRef.current > SLOW_DATA_TTL_MS
+        )
+      );
+      if (!shouldFetchNavs && !shouldFetchPurchase && !shouldFetchReturns) return current;
+
       const [navsData, historyData, purchaseStatuses, returnSummaries] = await Promise.all([
-        fetchFundNavs(fundCodes),
-        fetchFundHistory(fundCodes),
-        loadFundDetails ? fetchFundPurchaseStatuses(fundCodes) : Promise.resolve(new Map<string, FundPurchaseData>()),
-        shouldLoadReturns ? fetchFundReturnSummaries(fundCodes) : Promise.resolve(new Map<string, FundReturnSummary>()),
+        shouldFetchNavs ? fetchFundNavs(fundCodes) : Promise.resolve(new Map(current.navs)),
+        shouldFetchNavs ? fetchFundHistory(fundCodes) : Promise.resolve(new Map<string, { navDate: string; nav: number; officialChange: number }>()),
+        shouldFetchPurchase ? fetchFundPurchaseStatuses(fundCodes) : Promise.resolve(new Map(current.purchaseStatuses)),
+        shouldFetchReturns ? fetchFundReturnSummaries(fundCodes) : Promise.resolve(new Map(current.returnSummaries)),
       ]);
 
       if (!mountedRef.current) return slowFundDataRef.current;
 
       // Fallback: fetch missing fund NAVs from Sina.
-      const missingCodes = fundCodes.filter((c) => !navsData.has(c));
+      const missingCodes = shouldFetchNavs ? fundCodes.filter((c) => !navsData.has(c)) : [];
       if (missingCodes.length > 0) {
         const sinaNavs = await fetchSinaFundNavs(missingCodes);
         for (const [code, nav] of sinaNavs) {
@@ -264,13 +291,13 @@ export function useQuotes(
       }
 
       slowFundDataRef.current = {
-        navs: navsData,
-        purchaseStatuses,
-        returnSummaries,
-        detailsLoaded: loadFundDetails,
-        returnSummariesLoaded: shouldLoadReturns,
+        navs: new Map([...current.navs, ...navsData]),
+        purchaseStatuses: new Map([...current.purchaseStatuses, ...purchaseStatuses]),
+        returnSummaries: new Map([...current.returnSummaries, ...returnSummaries]),
       };
-      slowFundDataFetchedAtRef.current = Date.now();
+      if (shouldFetchNavs) fundNavFetchedAtRef.current = Date.now();
+      if (shouldFetchPurchase) fundPurchaseFetchedAtRef.current = Date.now();
+      if (shouldFetchReturns) fundReturnFetchedAtRef.current = Date.now();
       return slowFundDataRef.current;
     }
 

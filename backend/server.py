@@ -47,6 +47,17 @@ _MARKET_HISTORY_REFRESHING: set[str] = set()
 _MARKET_HISTORY_REFRESH_GUARD = threading.Lock()
 _FUND_NAV_REFRESHING: set[str] = set()
 _FUND_NAV_REFRESH_GUARD = threading.Lock()
+_UPSTREAM_HEALTH: dict[str, dict[str, Any]] = {}
+_UPSTREAM_HEALTH_GUARD = threading.Lock()
+_BACKGROUND_REFRESH_STATE: dict[str, Any] = {
+    "started": False,
+    "lastRunAt": 0,
+    "lastSuccessAt": 0,
+    "lastErrorAt": 0,
+    "lastError": "",
+    "runCount": 0,
+}
+_BACKGROUND_REFRESH_GUARD = threading.Lock()
 _EASTMONEY_SESSION = requests.Session()
 _EASTMONEY_SESSION.trust_env = False
 
@@ -61,11 +72,13 @@ FUND_HISTORY_AUTO_REFRESH_ROWS = 80
 HISTORY_AUTO_REFRESH_TTL_MS = 30 * 60 * 1000
 MARKET_RETURNS_CACHE_TTL_SECONDS = 30 * 60
 FUND_NAV_CACHE_TTL_SECONDS = 60
+BACKGROUND_REFRESH_INTERVAL_SECONDS = int(os.environ.get("FUND_VALUATION_REFRESH_INTERVAL", "900"))
 
 RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "sina": (240, 60),
     "dashboard": (180, 60),
     "overview": (180, 60),
+    "datahealth": (120, 60),
     "marketstates": (240, 60),
     "fundnav": (120, 60),
     "fundholdings": (80, 60),
@@ -599,6 +612,46 @@ def cache_any(cache_key: str) -> tuple[int, str, bytes] | None:
     return cache_get(cache_key, 0)
 
 
+def record_upstream_health(
+    *,
+    cache_key: str,
+    kind: str,
+    url: str,
+    source: str,
+    status: int | None = None,
+    error: str = "",
+) -> None:
+    now = now_ms()
+    key = cache_key
+    with _UPSTREAM_HEALTH_GUARD:
+        previous = _UPSTREAM_HEALTH.get(key, {})
+        failure_count = int(previous.get("failureCount", 0) or 0)
+        if error or source == "error":
+            failure_count += 1
+        elif source in {"network", "cache"}:
+            failure_count = 0
+
+        _UPSTREAM_HEALTH[key] = {
+            "key": key,
+            "kind": kind,
+            "cacheKey": cache_key,
+            "url": url,
+            "source": source,
+            "status": status,
+            "error": error[:240],
+            "failureCount": failure_count,
+            "lastSeenAt": now,
+            "lastSuccessAt": now if source in {"network", "cache"} and not error else previous.get("lastSuccessAt", 0),
+            "lastStaleAt": now if source == "stale" else previous.get("lastStaleAt", 0),
+            "lastErrorAt": now if error or source == "error" else previous.get("lastErrorAt", 0),
+        }
+
+        if len(_UPSTREAM_HEALTH) > 240:
+            oldest = sorted(_UPSTREAM_HEALTH.items(), key=lambda item: int(item[1].get("lastSeenAt", 0)))[:40]
+            for old_key, _ in oldest:
+                _UPSTREAM_HEALTH.pop(old_key, None)
+
+
 def upstream_lock(cache_key: str) -> threading.Lock:
     with _UPSTREAM_LOCKS_GUARD:
         lock = _UPSTREAM_LOCKS.get(cache_key)
@@ -629,6 +682,7 @@ def fetch_upstream(
     if not force_refresh:
         cached = cache_get(cache_key, ttl_seconds)
         if cached:
+            record_upstream_health(cache_key=cache_key, kind=kind, url=url, source="cache", status=cached[0])
             return cached
 
     lock = upstream_lock(cache_key)
@@ -636,6 +690,7 @@ def fetch_upstream(
         if not force_refresh:
             cached = cache_get(cache_key, ttl_seconds)
             if cached:
+                record_upstream_health(cache_key=cache_key, kind=kind, url=url, source="cache", status=cached[0])
                 return cached
 
         headers = {**DEFAULT_HEADERS, "Referer": referer}
@@ -648,11 +703,21 @@ def fetch_upstream(
             resolved_content_type = content_type or upstream_content_type
             cache_put(cache_key, url, status, resolved_content_type, body)
             write_raw(kind, cache_key, body)
+            record_upstream_health(cache_key=cache_key, kind=kind, url=url, source="network", status=status)
             return status, resolved_content_type, body
-        except URLError:
+        except URLError as exc:
             stale = cache_any(cache_key)
             if stale:
+                record_upstream_health(
+                    cache_key=cache_key,
+                    kind=kind,
+                    url=url,
+                    source="stale",
+                    status=stale[0],
+                    error=str(exc),
+                )
                 return stale
+            record_upstream_health(cache_key=cache_key, kind=kind, url=url, source="error", error=str(exc))
             raise
 
 
@@ -685,21 +750,26 @@ def fetch_eastmoney_json(
     cache_key: str,
     kind: str,
     ttl_seconds: int,
+    allow_stale_cache: bool = True,
 ) -> dict[str, Any] | None:
     cached = cache_get(cache_key, ttl_seconds)
     if cached:
+        record_upstream_health(cache_key=cache_key, kind=kind, url=url, source="cache", status=cached[0])
         try:
             return json.loads(decode_body(cached[2]))
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            record_upstream_health(cache_key=cache_key, kind=kind, url=url, source="error", status=cached[0], error=str(exc))
             return None
 
     lock = upstream_lock(cache_key)
     with lock:
         cached = cache_get(cache_key, ttl_seconds)
         if cached:
+            record_upstream_health(cache_key=cache_key, kind=kind, url=url, source="cache", status=cached[0])
             try:
                 return json.loads(decode_body(cached[2]))
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as exc:
+                record_upstream_health(cache_key=cache_key, kind=kind, url=url, source="error", status=cached[0], error=str(exc))
                 return None
 
         headers = {
@@ -712,20 +782,47 @@ def fetch_eastmoney_json(
         try:
             body, status, content_type = fetch_eastmoney_body(url, headers)
             if status >= 400:
-                stale = cache_any(cache_key)
+                stale = cache_any(cache_key) if allow_stale_cache else None
                 if stale:
+                    record_upstream_health(
+                        cache_key=cache_key,
+                        kind=kind,
+                        url=url,
+                        source="stale",
+                        status=stale[0],
+                        error=f"HTTP {status}",
+                    )
                     return json.loads(decode_body(stale[2]))
+                record_upstream_health(cache_key=cache_key, kind=kind, url=url, source="error", status=status, error=f"HTTP {status}")
                 return None
             cache_put(cache_key, url, status, content_type, body)
             write_raw(kind, cache_key, body)
+            record_upstream_health(cache_key=cache_key, kind=kind, url=url, source="network", status=status)
             return json.loads(decode_body(body))
-        except (requests.RequestException, subprocess.SubprocessError, json.JSONDecodeError, OSError):
-            stale = cache_any(cache_key)
+        except (requests.RequestException, subprocess.SubprocessError, json.JSONDecodeError, OSError) as exc:
+            stale = cache_any(cache_key) if allow_stale_cache else None
             if stale:
                 try:
+                    record_upstream_health(
+                        cache_key=cache_key,
+                        kind=kind,
+                        url=url,
+                        source="stale",
+                        status=stale[0],
+                        error=str(exc),
+                    )
                     return json.loads(decode_body(stale[2]))
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as stale_exc:
+                    record_upstream_health(
+                        cache_key=cache_key,
+                        kind=kind,
+                        url=url,
+                        source="error",
+                        status=stale[0],
+                        error=str(stale_exc),
+                    )
                     return None
+            record_upstream_health(cache_key=cache_key, kind=kind, url=url, source="error", error=str(exc))
             return None
 
 
@@ -793,6 +890,7 @@ def eastmoney_global_quote_line(symbol: str) -> str | None:
         cache_key=f"eastmoney-global:{secid}",
         kind="eastmoney-global",
         ttl_seconds=30,
+        allow_stale_cache=False,
     )
     data = payload.get("data") if isinstance(payload, dict) else None
     if isinstance(data, dict):
@@ -833,6 +931,7 @@ def eastmoney_global_kline_quote_line(symbol: str, secid: str, fallback_name: st
         cache_key=f"eastmoney-global-kline:{secid}",
         kind="eastmoney-global-kline",
         ttl_seconds=30,
+        allow_stale_cache=False,
     )
     data = payload.get("data") if isinstance(payload, dict) else None
     klines = data.get("klines") if isinstance(data, dict) else None
@@ -863,7 +962,7 @@ def append_eastmoney_global_quotes(text: str, symbols: list[str]) -> str:
     lines = [text.rstrip()] if text.strip() else []
     for symbol in sorted(set(symbols)):
         try:
-            line = sina_global_fallback_quote_line(symbol) or eastmoney_global_quote_line(symbol)
+            line = sina_global_fallback_quote_line(symbol)
         except Exception:
             line = None
         if line:
@@ -2531,6 +2630,186 @@ def cached_text_response(cache_key: str, ttl_seconds: int, text_factory: Any) ->
         return response_cache_set(cache_key, text_response(text, status=status), ttl_seconds)
 
 
+def upstream_cache_stats() -> dict[str, Any]:
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute("SELECT cache_key, fetched_at FROM response_cache").fetchall()
+    by_kind: dict[str, int] = {}
+    latest_at = 0
+    for cache_key, fetched_at in rows:
+        kind = str(cache_key).split(":", 1)[0] or "unknown"
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+        latest_at = max(latest_at, int(fetched_at or 0))
+    return {"total": len(rows), "byKind": by_kind, "latestAt": latest_at}
+
+
+def fund_history_health() -> dict[str, Any]:
+    codes = configured_fund_codes_from_constants()
+    missing: list[str] = []
+    stale: list[str] = []
+    latest_dates: list[str] = []
+    for code in codes:
+        latest_date, fetched_at = latest_fund_history_meta(code)
+        if not latest_date:
+            missing.append(code)
+            continue
+        latest_dates.append(latest_date)
+        if history_needs_auto_refresh(latest_date, fetched_at):
+            stale.append(code)
+    return {
+        "total": len(codes),
+        "missing": len(missing),
+        "stale": len(stale),
+        "sampleMissing": missing[:5],
+        "sampleStale": stale[:5],
+        "latestDate": max(latest_dates) if latest_dates else "",
+    }
+
+
+def market_history_health() -> dict[str, Any]:
+    items = configured_market_return_items_from_constants()
+    missing: list[str] = []
+    stale: list[str] = []
+    latest_dates: list[str] = []
+    for item in items:
+        source, symbol = item.split(":", 1)
+        latest_date, fetched_at = latest_market_history_meta(source, symbol)
+        if not latest_date:
+            missing.append(item)
+            continue
+        latest_dates.append(latest_date)
+        if history_needs_auto_refresh(latest_date, fetched_at):
+            stale.append(item)
+    return {
+        "total": len(items),
+        "missing": len(missing),
+        "stale": len(stale),
+        "sampleMissing": missing[:5],
+        "sampleStale": stale[:5],
+        "latestDate": max(latest_dates) if latest_dates else "",
+    }
+
+
+def upstream_health_snapshot() -> dict[str, Any]:
+    with _UPSTREAM_HEALTH_GUARD:
+        rows = sorted(_UPSTREAM_HEALTH.values(), key=lambda item: int(item.get("lastSeenAt", 0)), reverse=True)
+    stale_count = sum(1 for item in rows if item.get("source") == "stale")
+    error_count = sum(1 for item in rows if item.get("error") or item.get("source") == "error")
+    issue_rows = [
+        item for item in rows
+        if item.get("source") in {"stale", "error"} or item.get("error")
+    ]
+    return {
+        "total": len(rows),
+        "staleCount": stale_count,
+        "errorCount": error_count,
+        "issueCount": len(issue_rows),
+        "issues": issue_rows[:8],
+        "recent": rows[:12],
+    }
+
+
+def background_refresh_state_snapshot() -> dict[str, Any]:
+    with _BACKGROUND_REFRESH_GUARD:
+        return dict(_BACKGROUND_REFRESH_STATE)
+
+
+def build_data_health_payload() -> dict[str, Any]:
+    upstream = upstream_health_snapshot()
+    fund_history_state = fund_history_health()
+    market_history_state = market_history_health()
+    degraded = (
+        upstream["errorCount"] > 0
+        or upstream["staleCount"] > 0
+        or fund_history_state["missing"] > 0
+        or fund_history_state["stale"] > 0
+        or market_history_state["missing"] > 0
+        or market_history_state["stale"] > 0
+    )
+    return {
+        "status": "degraded" if degraded else "ok",
+        "updatedAt": now_ms(),
+        "upstream": upstream,
+        "cache": upstream_cache_stats(),
+        "fundHistory": fund_history_state,
+        "marketHistory": market_history_state,
+        "backgroundRefresh": background_refresh_state_snapshot(),
+    }
+
+
+def mark_background_refresh(**updates: Any) -> None:
+    with _BACKGROUND_REFRESH_GUARD:
+        _BACKGROUND_REFRESH_STATE.update(updates)
+
+
+def refresh_configured_fund_history() -> list[str]:
+    errors: list[str] = []
+    for code in configured_fund_codes_from_constants():
+        try:
+            latest_date, _fetched_at = latest_fund_history_meta(code)
+            if latest_date:
+                auto_refresh_fund_history_if_stale(code, FUND_HISTORY_AUTO_REFRESH_ROWS)
+            else:
+                fetch_and_store_fund_history(code, FUND_HISTORY_AUTO_REFRESH_ROWS, refresh=True)
+        except Exception as exc:
+            errors.append(f"fund {code}: {exc}")
+    return errors
+
+
+def refresh_configured_market_history() -> list[str]:
+    errors: list[str] = []
+    for item in configured_market_return_items_from_constants():
+        try:
+            source, symbol = item.split(":", 1)
+            if market_history_should_refresh_for_returns(source, symbol):
+                schedule_market_history_refresh(source, symbol)
+        except Exception as exc:
+            errors.append(f"market {item}: {exc}")
+    return errors
+
+
+def run_background_refresh_once() -> None:
+    now = now_ms()
+    with _BACKGROUND_REFRESH_GUARD:
+        _BACKGROUND_REFRESH_STATE["lastRunAt"] = now
+        _BACKGROUND_REFRESH_STATE["runCount"] = int(_BACKGROUND_REFRESH_STATE.get("runCount", 0) or 0) + 1
+
+    errors: list[str] = []
+    errors.extend(refresh_configured_fund_history())
+    errors.extend(refresh_configured_market_history())
+    try:
+        prewarm_response_cache()
+    except Exception as exc:
+        errors.append(f"prewarm: {exc}")
+    try:
+        prewarm_fund_nav_cache_async()
+    except Exception as exc:
+        errors.append(f"fundnav: {exc}")
+
+    response_cache_clear_prefix("api:datahealth")
+    if errors:
+        mark_background_refresh(lastErrorAt=now_ms(), lastError="; ".join(errors[:5])[:480])
+    else:
+        mark_background_refresh(lastSuccessAt=now_ms(), lastError="")
+
+
+def background_refresh_loop() -> None:
+    with app.app_context():
+        while True:
+            run_background_refresh_once()
+            time.sleep(max(BACKGROUND_REFRESH_INTERVAL_SECONDS, 60))
+
+
+def start_background_refresh_scheduler() -> None:
+    if os.environ.get("FUND_VALUATION_BACKGROUND_REFRESH", "1") == "0":
+        return
+    with _BACKGROUND_REFRESH_GUARD:
+        if _BACKGROUND_REFRESH_STATE.get("started"):
+            return
+        _BACKGROUND_REFRESH_STATE["started"] = True
+    worker = threading.Thread(target=background_refresh_loop, daemon=True, name="fund-valuation-refresh")
+    worker.start()
+
+
 @app.before_request
 def mark_request_start() -> None:
     g.request_started_at = time.perf_counter()
@@ -2566,6 +2845,12 @@ def handle_error(exc: Exception) -> Response:
 @app.get("/api/health")
 def health() -> Response:
     return jsonify({"ok": True, "db": str(DB_PATH)})
+
+
+@app.get("/api/datahealth")
+def data_health() -> Response:
+    enforce_rate_limit("datahealth")
+    return cached_json_response("api:datahealth", 30, build_data_health_payload)
 
 
 @app.get("/api/sina")
@@ -3032,6 +3317,8 @@ def main() -> None:
         with app.app_context():
             prewarm_response_cache()
             prewarm_fund_nav_cache_async()
+    if not args.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        start_background_refresh_scheduler()
     print(f"Flask backend listening on http://{args.host}:{args.port}")
     print(f"SQLite database: {DB_PATH}")
     app.run(host=args.host, port=args.port, debug=args.debug, threaded=True)

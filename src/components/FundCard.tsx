@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState } from 'react';
 import type { Fund, FundRangeReturn, FundReturnRangeKey, FundReturnSummary, MarketStateData, QuoteData } from '../types';
 import type { FundEstimate } from '../hooks/useQuotes';
-import { getMarketState } from '../marketHours';
+import { quoteDisplayState, quoteDisplayTime, quoteMarketState } from '../displayStatus';
 import styles from './FundCard.module.css';
 
 const HoldingsTable = lazy(() => import('./HoldingsTable'));
@@ -56,46 +56,15 @@ function purchaseStatusClass(status: string): string {
   return 'purchaseOpen';
 }
 
-function formatQuoteDate(date: string): string {
-  const datetimeMatch = date.match(/^\d{4}-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
-  if (datetimeMatch) return `${datetimeMatch[1]}/${datetimeMatch[2]} ${datetimeMatch[3]}:${datetimeMatch[4]}`;
-  return formatDate(date);
-}
-
-function closeTime(sinaSymbol: string): string | null {
-  if (sinaSymbol.startsWith('s_')) return '15:00';
-  if (sinaSymbol.startsWith('gb_')) return '04:00';
-  if (sinaSymbol.startsWith('hk')) return '16:10';
-  if (sinaSymbol.startsWith('kr')) return '14:30';
-  if (sinaSymbol.startsWith('sh') || sinaSymbol.startsWith('sz')) return '15:00';
-  if (sinaSymbol === 'int_nikkei') return '14:30';
-  if (sinaSymbol === 'b_KOSPI') return '14:30';
-  if (sinaSymbol === 'b_TWSE') return '13:30';
-  if (sinaSymbol === 'hf_HSI') return '03:00';
-  if (sinaSymbol === 'hf_NK') return '04:15';
-  if (sinaSymbol.startsWith('hf_')) return '05:00';
-  return null;
-}
-
 function quoteTimeCandidate(
   quote: QuoteData,
   closed: boolean,
   marketStates: Map<string, MarketStateData>,
 ): { label: string; sort: string } | null {
-  const state = marketStates.get(quote.symbol)?.state ?? getMarketState(quote.symbol);
-  if (closed && state !== 'break') {
-    const time = closeTime(quote.symbol);
-    const dateMatch = quote.time.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (time && dateMatch) {
-      return {
-        label: `${dateMatch[2]}/${dateMatch[3]} ${time}`,
-        sort: `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]} ${time}:00`,
-      };
-    }
-  }
-
-  const label = formatQuoteDate(quote.time);
-  return label ? { label, sort: quote.time || String(quote.fetchedAt) } : null;
+  const marketState = quoteMarketState(quote.symbol, marketStates);
+  const state = quoteDisplayState({ quote, marketState });
+  const displayTime = quoteDisplayTime(quote, state, { useCloseTimeWhenClosed: closed && state !== 'break' });
+  return displayTime.label ? { label: displayTime.label, sort: displayTime.sort } : null;
 }
 
 function estimateTimeLabel(

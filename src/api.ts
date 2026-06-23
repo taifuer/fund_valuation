@@ -441,6 +441,55 @@ export interface OverviewSnapshot extends DashboardSnapshot {
   fundSummaries: Map<string, FundNavData>;
 }
 
+export interface DataHealth {
+  status: 'ok' | 'degraded';
+  updatedAt: number;
+  upstream: {
+    total: number;
+    staleCount: number;
+    errorCount: number;
+    issueCount?: number;
+    issues?: Array<{
+      key: string;
+      kind: string;
+      cacheKey: string;
+      source: string;
+      status?: number | null;
+      error?: string;
+      failureCount?: number;
+    }>;
+  };
+  cache: {
+    total: number;
+    byKind: Record<string, number>;
+    latestAt: number;
+  };
+  fundHistory: {
+    total: number;
+    missing: number;
+    stale: number;
+    sampleMissing?: string[];
+    sampleStale?: string[];
+    latestDate: string;
+  };
+  marketHistory: {
+    total: number;
+    missing: number;
+    stale: number;
+    sampleMissing?: string[];
+    sampleStale?: string[];
+    latestDate: string;
+  };
+  backgroundRefresh: {
+    started: boolean;
+    lastRunAt: number;
+    lastSuccessAt: number;
+    lastErrorAt: number;
+    lastError: string;
+    runCount: number;
+  };
+}
+
 const dashboardSnapshotPending = new Map<string, Promise<DashboardSnapshot | null>>();
 const overviewSnapshotPending = new Map<string, Promise<OverviewSnapshot | null>>();
 
@@ -555,6 +604,16 @@ export async function fetchOverviewSnapshot(
 
   overviewSnapshotPending.set(cacheKey, request);
   return request;
+}
+
+export async function fetchDataHealth(): Promise<DataHealth | null> {
+  try {
+    const res = await fetch(apiUrl('/api/datahealth'));
+    if (!res.ok) return null;
+    return await res.json() as DataHealth;
+  } catch {
+    return null;
+  }
 }
 
 interface EastMoneyFundRaw {

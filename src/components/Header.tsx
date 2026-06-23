@@ -25,7 +25,12 @@ interface Props {
 
 const FX_ORDER = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
 
-export default function Header({ fxRates, activePage, onPageChange, statusMessage = '' }: Props) {
+export default function Header({
+  fxRates,
+  activePage,
+  onPageChange,
+  statusMessage = '',
+}: Props) {
   const [time, setTime] = useState(formatTime());
   const displayRates = FX_ORDER.map((currency) => fxRates.get(currency)).filter((rate): rate is FxRateData => rate != null);
 
@@ -89,8 +94,10 @@ export default function Header({ fxRates, activePage, onPageChange, statusMessag
       <div className={styles.statusBar}>
         <div className={styles.meta}>
           <div className={styles.datetime}>
-            <span className={styles.live} />
-            {time}（北京时间）
+            <span>
+              <span className={styles.live} />
+              {time}（北京时间）
+            </span>
           </div>
           {displayRates.length > 0 && (
             <div className={styles.fxRow}>

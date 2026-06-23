@@ -1,5 +1,11 @@
 import type { Holding, MarketStateData, QuoteData } from '../types';
-import { getMarketState, type MarketState } from '../marketHours';
+import {
+  displayStateLabel,
+  quoteDisplayState,
+  quoteDisplayTime,
+  quoteMarketState,
+  type QuoteDisplayState,
+} from '../displayStatus';
 import styles from './HoldingsTable.module.css';
 
 interface Props {
@@ -13,24 +19,11 @@ interface Props {
   marketStates?: Map<string, MarketStateData>;
 }
 
-function formatQuoteDate(date: string): string {
-  const datetimeMatch = date.match(/^\d{4}-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
-  if (datetimeMatch) return `${datetimeMatch[1]}/${datetimeMatch[2]} ${datetimeMatch[3]}:${datetimeMatch[4]}`;
-  const match = date.match(/^\d{4}-(\d{2})-(\d{2})$/);
-  return match ? `${match[1]}/${match[2]}` : date || '-';
-}
-
-type DisplayState = 'pre' | 'post' | 'stale' | MarketState;
-
-function marketStateLabel(state: DisplayState): string {
-  if (state === 'live') return 'LIVE';
-  if (state === 'pre') return '盘前';
-  if (state === 'post') return '盘后';
-  if (state === 'stale') return '延迟';
-  if (state === 'break') return '午间休市';
-  if (state === 'holiday') return '假期休市';
-  if (state === 'weekend') return '周末休市';
-  return '已收盘';
+function stateClassName(state: QuoteDisplayState): string {
+  if (state === 'live') return styles.stateLive;
+  if (state === 'pre' || state === 'post' || state === 'futuresLive') return styles.stateExtended;
+  if (state === 'stale') return styles.stateStale;
+  return styles.stateClosed;
 }
 
 export default function HoldingsTable({
@@ -82,17 +75,9 @@ export default function HoldingsTable({
               ? ((1 + q.changePercent / 100) * (1 + fxChange / 100) - 1) * 100
               : 0;
             const contrib = q ? rmbChange * h.weight : 0;
-            const state = marketStates.get(h.sinaSymbol)?.state ?? getMarketState(h.sinaSymbol);
-            const fresh = q ? Date.now() - q.fetchedAt < 90_000 : false;
-            const displayState = q?.session === 'pre' && fresh
-              ? 'pre'
-              : q?.session === 'post' && fresh
-                ? 'post'
-                : state === 'live' && fresh
-                  ? 'live'
-                  : state === 'live'
-                    ? 'stale'
-                    : state;
+            const marketState = quoteMarketState(h.sinaSymbol, marketStates);
+            const displayState = q ? quoteDisplayState({ quote: q, marketState }) : marketState;
+            const displayTime = q ? quoteDisplayTime(q, displayState, { useCloseTimeWhenClosed: true }) : null;
             return (
               <tr key={h.symbol}>
                 <td className={styles.stockCell}>
@@ -103,8 +88,8 @@ export default function HoldingsTable({
                 </td>
                 <td className={styles.right}>{(h.weight * 100).toFixed(1)}%</td>
                 <td className={styles.right}>{h.currency}</td>
-                <td className={`${styles.right} ${q?.dateReliable === false ? styles.estimatedDate : ''}`}>
-                  {q ? formatQuoteDate(q.time) : '-'}
+                <td className={`${styles.right} ${displayTime?.estimated ? styles.estimatedDate : ''}`}>
+                  {displayTime?.label ?? '-'}
                 </td>
                 <td className={styles.right}>{q ? q.price : '-'}</td>
                 <td className={`${styles.right} ${up ? styles.up : styles.down}`}>
@@ -118,17 +103,9 @@ export default function HoldingsTable({
                 </td>
                 <td className={styles.right}>
                   <span
-                    className={`${styles.stateTag} ${
-                      displayState === 'live'
-                        ? styles.stateLive
-                        : displayState === 'pre' || displayState === 'post'
-                          ? styles.stateExtended
-                        : displayState === 'stale'
-                          ? styles.stateStale
-                          : styles.stateClosed
-                    }`}
+                    className={`${styles.stateTag} ${stateClassName(displayState)}`}
                   >
-                    {marketStateLabel(displayState)}
+                    {displayStateLabel(displayState)}
                   </span>
                 </td>
               </tr>

@@ -54,6 +54,17 @@ class ServerDataRefreshTests(unittest.TestCase):
             server._MARKET_HISTORY_REFRESHING.clear()
         with server._FUND_NAV_REFRESH_GUARD:
             server._FUND_NAV_REFRESHING.clear()
+        with server._UPSTREAM_HEALTH_GUARD:
+            server._UPSTREAM_HEALTH.clear()
+        with server._BACKGROUND_REFRESH_GUARD:
+            server._BACKGROUND_REFRESH_STATE.update({
+                "started": False,
+                "lastRunAt": 0,
+                "lastSuccessAt": 0,
+                "lastErrorAt": 0,
+                "lastError": "",
+                "runCount": 0,
+            })
 
     def test_fetch_upstream_uses_cache_until_force_refresh(self) -> None:
         bodies = [b"old", b"new"]
@@ -104,6 +115,98 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(refreshed[2], b"new")
         self.assertEqual(cached_after_refresh[2], b"new")
         self.assertEqual(len(calls), 2)
+
+    def test_fetch_upstream_records_stale_fallback_health(self) -> None:
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute(
+                """
+                INSERT INTO response_cache(cache_key, url, status, content_type, body, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                ("quote:stale", "https://example.test/data", 200, "text/plain", b"stale", server.now_ms() - 90_000),
+            )
+
+        with patch.object(server, "urlopen", side_effect=server.URLError("timeout")):
+            result = server.fetch_upstream(
+                "https://example.test/data",
+                referer="https://example.test/",
+                content_type="text/plain",
+                cache_key="quote:stale",
+                kind="quote",
+                ttl_seconds=1,
+            )
+
+        self.assertEqual(result[2], b"stale")
+        snapshot = server.upstream_health_snapshot()
+        self.assertEqual(snapshot["staleCount"], 1)
+        self.assertEqual(snapshot["errorCount"], 1)
+        self.assertEqual(snapshot["issueCount"], 1)
+        self.assertIn("quote:stale", snapshot["issues"][0]["key"])
+
+    def test_eastmoney_json_can_disable_stale_fallback(self) -> None:
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute(
+                """
+                INSERT INTO response_cache(cache_key, url, status, content_type, body, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "eastmoney-global:100.N225",
+                    "https://push2.eastmoney.com/api/qt/stock/get?secid=100.N225",
+                    200,
+                    "application/json",
+                    b'{"data":{"f43":12345}}',
+                    server.now_ms() - 90_000,
+                ),
+            )
+
+        with patch.object(server, "fetch_eastmoney_body", return_value=(b"", 599, "application/json")):
+            payload = server.fetch_eastmoney_json(
+                "https://push2.eastmoney.com/api/qt/stock/get?secid=100.N225",
+                cache_key="eastmoney-global:100.N225",
+                kind="eastmoney-global",
+                ttl_seconds=1,
+                allow_stale_cache=False,
+            )
+
+        self.assertIsNone(payload)
+        snapshot = server.upstream_health_snapshot()
+        self.assertEqual(snapshot["staleCount"], 0)
+        self.assertEqual(snapshot["issueCount"], 1)
+        self.assertEqual(snapshot["issues"][0]["source"], "error")
+
+    def test_data_health_endpoint_reports_storage_state(self) -> None:
+        with (
+            patch.object(server, "configured_fund_codes_from_constants", return_value=["016664"]),
+            patch.object(server, "configured_market_return_items_from_constants", return_value=["sina-cn:sh000001"]),
+        ):
+            response = server.app.test_client().get("/api/datahealth")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "degraded")
+        self.assertEqual(payload["fundHistory"]["missing"], 1)
+        self.assertEqual(payload["marketHistory"]["missing"], 1)
+        self.assertIn("backgroundRefresh", payload)
+
+    def test_background_refresh_schedules_configured_work(self) -> None:
+        with (
+            patch.object(server, "configured_fund_codes_from_constants", return_value=["016664"]),
+            patch.object(server, "latest_fund_history_meta", return_value=("2026-05-21", 0)),
+            patch.object(server, "auto_refresh_fund_history_if_stale") as fund_refresh,
+            patch.object(server, "configured_market_return_items_from_constants", return_value=["sina-cn:sh000001"]),
+            patch.object(server, "market_history_should_refresh_for_returns", return_value=True),
+            patch.object(server, "schedule_market_history_refresh") as market_refresh,
+            patch.object(server, "prewarm_response_cache") as prewarm,
+            patch.object(server, "prewarm_fund_nav_cache_async") as nav_prewarm,
+        ):
+            server.run_background_refresh_once()
+
+        fund_refresh.assert_called_once_with("016664", server.FUND_HISTORY_AUTO_REFRESH_ROWS)
+        market_refresh.assert_called_once_with("sina-cn", "sh000001")
+        prewarm.assert_called_once()
+        nav_prewarm.assert_called_once()
+        self.assertGreater(server.background_refresh_state_snapshot()["runCount"], 0)
 
     def test_sina_proxy_decodes_gb18030_fund_name(self) -> None:
         upstream_body = 'var hq_str_f_118001="易方达亚洲精选股票(QDII),1.693,1.693,1.673,2026-05-21,22.6875";'.encode("gb18030")
@@ -172,54 +275,25 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(payload["fundSummaries"]["016664"]["navDate"], "2026-05-21")
         self.assertAlmostEqual(payload["fundSummaries"]["016664"]["officialChange"], -0.83, places=2)
 
-    def test_sina_proxy_overrides_stale_asia_indices_from_eastmoney(self) -> None:
+    def test_sina_proxy_does_not_query_eastmoney_global_quotes(self) -> None:
         sina_body = (
             'var hq_str_b_TWSE="台湾台北指数,25580.32,-443.53,-1.70,9/26/2025,2025-09-26";\n'
             'var hq_str_int_nikkei="日经指数,44946.64,-408.35,-0.90";\n'
         ).encode("gb18030")
-        twii_payload = {
-            "data": {
-                "f43": 4580919,
-                "f57": "TWII",
-                "f58": "台湾加权",
-                "f60": 4539699,
-                "f86": 1781766000,
-                "f169": 41220,
-                "f170": 91,
-            }
-        }
-        n225_payload = {
-            "data": {
-                "f43": 6940450,
-                "f57": "N225",
-                "f58": "日经225",
-                "f60": 6950450,
-                "f86": 1781852400,
-                "f169": -10000,
-                "f170": -14,
-            }
-        }
 
         def fake_fetch(url: str, **_kwargs: object) -> tuple[int, str, bytes]:
             return 200, "text/plain; charset=utf-8", sina_body
 
-        def fake_eastmoney(url: str, **_kwargs: object) -> dict[str, object] | None:
-            if "100.TWII" in url:
-                return twii_payload
-            if "100.N225" in url:
-                return n225_payload
-            return None
-
         with (
             patch.object(server, "fetch_upstream", side_effect=fake_fetch),
-            patch.object(server, "fetch_eastmoney_json", side_effect=fake_eastmoney),
+            patch.object(server, "fetch_eastmoney_json") as eastmoney,
         ):
             response = server.app.test_client().get("/api/sina?list=int_nikkei,b_TWSE")
 
         text = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn('var hq_str_int_nikkei="日经225,69404.50,-100.00,-0.14,2026-06-19";', text)
-        self.assertIn('var hq_str_b_TWSE="台湾加权,45809.19,412.20,0.91,2026-06-18";', text)
+        self.assertIn('var hq_str_int_nikkei="日经指数,44946.64,-408.35,-0.90";', text)
+        eastmoney.assert_not_called()
 
     def test_sina_proxy_uses_sina_world_index_fallback_for_taiwan(self) -> None:
         stale_body = (
