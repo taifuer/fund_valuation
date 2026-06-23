@@ -278,8 +278,11 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
     };
   }, [visible]);
 
-  const chart = makeChart(visible);
-  const xTicks = makeXTicks(visible, range, chart.xStart, chart.xEnd);
+  const chart = useMemo(() => makeChart(visible), [visible]);
+  const xTicks = useMemo(
+    () => makeXTicks(visible, range, chart.xStart, chart.xEnd),
+    [visible, range, chart.xStart, chart.xEnd],
+  );
   const activeIndex = selectedIndex !== null && selectedIndex < visible.length ? selectedIndex : null;
   const activePoint = activeIndex !== null ? visible[activeIndex] : null;
   const activePosition = activeIndex !== null ? chart.pointPositions[activeIndex] : null;
@@ -290,7 +293,11 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
   const tooltipY = activePosition ? Math.min(Math.max(activePosition.y - 58, 8), 144) : 0;
   const up = (metrics?.returnPct ?? 0) >= 0;
   const displayLoading = loading;
-  const displayError = error;
+  // '暂无历史行情' is the empty-sentinel; any other non-null error is a real
+  // failure. Branching on the sentinel (not on the failure string) keeps this
+  // robust if the failure message is ever reworded.
+  const displayEmpty = !loading && error === '暂无历史行情';
+  const displayError = !loading && !displayEmpty && error;
 
   const handlePointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     if (visible.length === 0) return;
@@ -327,8 +334,9 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
         </div>
 
         {displayLoading && <div className={styles.state}>历史行情加载中...</div>}
-        {!displayLoading && displayError && <div className={styles.state}>{displayError}</div>}
-        {!displayLoading && !displayError && metrics && (
+        {!displayLoading && displayError && <div className={styles.stateError} role="alert">{displayError}</div>}
+        {!displayLoading && !displayError && displayEmpty && <div className={styles.state}>暂无历史行情</div>}
+        {!displayLoading && !displayError && !displayEmpty && metrics && (
           <>
             <div className={styles.metrics}>
               <div>

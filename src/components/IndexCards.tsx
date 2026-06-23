@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, memo } from 'react';
 import type { QuoteData, IndexConfig, MarketReturnSummary, MarketStateData } from '../types';
 import { INDICES, MARKET_ASSETS, ETF_ASSETS } from '../constants';
 import { fetchMarketReturnSummaries } from '../api';
@@ -18,6 +18,8 @@ interface Props {
   marketStates?: Map<string, MarketStateData>;
   loading: boolean;
 }
+
+const EMPTY_MARKET_STATES: Map<string, MarketStateData> = new Map();
 
 interface SelectedHistory {
   item: IndexConfig;
@@ -141,7 +143,7 @@ function Card({
   );
 }
 
-export default function IndexCards({ quotes, marketStates = new Map(), loading }: Props) {
+const IndexCards = memo(function IndexCards({ quotes, marketStates = EMPTY_MARKET_STATES, loading }: Props) {
   const [selectedHistory, setSelectedHistory] = useState<SelectedHistory | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(readCollapsedGroups);
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
@@ -210,4 +212,6 @@ export default function IndexCards({ quotes, marketStates = new Map(), loading }
       )}
     </div>
   );
-}
+});
+
+export default IndexCards;

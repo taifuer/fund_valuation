@@ -290,11 +290,11 @@
 }
 
 .up {
-  color: #991b1b;
+  color: var(--color-up);
 }
 
 .down {
-  color: #166534;
+  color: var(--color-down);
 }
 
 .empty {

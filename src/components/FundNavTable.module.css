@@ -113,6 +113,13 @@
   text-align: center;
 }
 
+.stateError {
+  color: var(--color-up);
+  font-size: 12px;
+  padding: 28px 12px;
+  text-align: center;
+}
+
 @media (max-width: 640px) {
   .header {
     align-items: flex-start;

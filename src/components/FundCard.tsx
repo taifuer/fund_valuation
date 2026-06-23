@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, memo, Suspense, useState } from 'react';
 import type { Fund, FundRangeReturn, FundReturnRangeKey, FundReturnSummary, MarketStateData, QuoteData } from '../types';
 import type { FundEstimate } from '../hooks/useQuotes';
 import { quoteDisplayState, quoteDisplayTime, quoteMarketState } from '../displayStatus';
@@ -8,6 +8,10 @@ const HoldingsTable = lazy(() => import('./HoldingsTable'));
 const FundNavTable = lazy(() => import('./FundNavTable'));
 const FundHistoryChart = lazy(() => import('./FundHistoryChart'));
 const FundBacktestPanel = lazy(() => import('./FundBacktestPanel'));
+
+// Module-level empty Map so the default prop keeps a stable reference (a fresh
+// `new Map()` default would defeat React.memo).
+const EMPTY_MARKET_STATES: Map<string, MarketStateData> = new Map();
 
 interface Props {
   fund: Fund;
@@ -109,12 +113,12 @@ function FundReturnBar({
   );
 }
 
-export default function FundCard({
+const FundCard = memo(function FundCard({
   fund,
   estimate,
   rank,
   loading,
-  marketStates = new Map(),
+  marketStates = EMPTY_MARKET_STATES,
   showDetails = false,
   onRemove,
 }: Props) {
@@ -169,14 +173,20 @@ export default function FundCard({
     estimatedNAVLocal,
     computedChange,
     estimatedNAV,
+    normalizedChangeLocal,
+    normalizedChange,
+    normalizedNAVLocal,
+    normalizedNAV,
     quoteCoverage,
     totalConfiguredWeight,
     missingQuoteCount,
     estimateState,
     currencyChanges,
   } = estimate;
-  const up = computedChange >= 0;
-  const localUp = computedChangeLocal >= 0;
+  // Headline direction uses the coverage-normalized change (the displayed
+  // estimate), so up/down tinting matches the number the user reads.
+  const up = normalizedChange >= 0;
+  const localUp = normalizedChangeLocal >= 0;
   const estBoxCls = up ? styles.estimateBox : styles.estimateBoxDown;
   const tagCls = estimateState === 'LIVE'
     ? styles.estLiveTagUp
@@ -189,7 +199,20 @@ export default function FundCard({
   const profile = fund.profile;
 
   return (
-    <div className={cardClassName} onClick={() => setExpanded(!expanded)}>
+    <div
+      className={cardClassName}
+      role="button"
+      tabIndex={0}
+      aria-expanded={expanded}
+      aria-label={`${fund.name} ${fund.code}，${expanded ? '收起详情' : '展开详情'}`}
+      onClick={() => setExpanded(!expanded)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+          event.preventDefault();
+          setExpanded(!expanded);
+        }
+      }}
+    >
       {rankNode}
       <div className={styles.main}>
         <div className={styles.topRow}>
@@ -218,21 +241,21 @@ export default function FundCard({
               <span className={`${styles.estLiveTag} ${tagCls}`}>{estimateState}</span>
             </div>
             <div className={`${styles.navBoxValue} ${up ? styles.up : styles.down}`}>
-              {estimatedNAVLocal !== null ? estimatedNAVLocal.toFixed(4) : '--'}
-              {estimatedNAV !== null && (
+              {normalizedNAVLocal !== null ? normalizedNAVLocal.toFixed(4) : '--'}
+              {normalizedNAV !== null && (
                 <span className={`${styles.fxNavValue} ${up ? styles.up : styles.down}`}>
-                  （{estimatedNAV.toFixed(4)}）
+                  （{normalizedNAV.toFixed(4)}）
                 </span>
               )}
             </div>
             <div className={styles.estimateMetaRow}>
               <div className={`${styles.navBoxChange} ${localUp ? styles.up : styles.down}`}>
-                {estimatedNAVLocal !== null
-                  ? `${localUp ? '+' : ''}${computedChangeLocal.toFixed(2)}%`
+                {normalizedNAVLocal !== null
+                  ? `${localUp ? '+' : ''}${normalizedChangeLocal.toFixed(2)}%`
                   : '数据不足'}
-                {estimatedNAV !== null && (
+                {normalizedNAV !== null && (
                   <span className={`${styles.fxChange} ${up ? styles.up : styles.down}`}>
-                    （含汇率 {up ? '+' : ''}{computedChange.toFixed(2)}%）
+                    （含汇率 {up ? '+' : ''}{normalizedChange.toFixed(2)}%）
                   </span>
                 )}
               </div>
@@ -240,6 +263,12 @@ export default function FundCard({
                 <span className={styles.estimateTime}>{timeLabel}</span>
               )}
             </div>
+            {normalizedNAVLocal !== null && totalConfiguredWeight > 0 && quoteCoverage < totalConfiguredWeight && (
+              <div className={styles.estimateCoverage}>
+                行情覆盖 {((quoteCoverage / totalConfiguredWeight) * 100).toFixed(0)}%，已按覆盖权重归一化
+                （原始 {localUp ? '+' : ''}{computedChangeLocal.toFixed(2)}%{estimatedNAV !== null ? ` / 含汇率 ${up ? '+' : ''}${computedChange.toFixed(2)}%` : ''}）
+              </div>
+            )}
           </div>
         </div>
         {showDetails && (profile || purchaseStatus) && (
@@ -325,6 +354,7 @@ export default function FundCard({
                 holdings={fund.holdings}
                 quotes={estimate.holdingsQuotes}
                 computedChange={computedChange}
+                normalizedChange={normalizedChange}
                 quoteCoverage={quoteCoverage}
                 totalConfiguredWeight={totalConfiguredWeight}
                 missingQuoteCount={missingQuoteCount}
@@ -346,4 +376,6 @@ export default function FundCard({
       )}
     </div>
   );
-}
+});
+
+export default FundCard;

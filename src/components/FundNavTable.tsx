@@ -61,7 +61,7 @@ export default function FundNavTable({ fundCode }: Props) {
       </div>
 
       {loading && <div className={styles.state}>净值加载中...</div>}
-      {!loading && error && <div className={styles.state}>{error}</div>}
+      {!loading && error && <div className={styles.stateError} role="alert">{error}</div>}
       {!loading && !error && rows.length === 0 && <div className={styles.state}>暂无历史净值</div>}
       {!loading && !error && rows.length > 0 && (
         <>

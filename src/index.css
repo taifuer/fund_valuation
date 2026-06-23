@@ -6,11 +6,46 @@
   padding: 0;
 }
 
+:root {
+  /* Semantic up/down (Chinese convention: red up, green down) on :root so they
+     are available to portals, modals, and pages rendered outside .app. */
+  --color-up: #dc2626;
+  --color-down: #16a34a;
+  --color-up-bg: #fef2f2;
+  --color-up-border: #fee2e2;
+  --color-down-bg: #f0fdf4;
+  --color-down-border: #dcfce7;
+  --tooltip-up: #fca5a5;
+  --tooltip-down: #86efac;
+
+  /* Neutral slate scale + surfaces */
+  --ink: #1e293b;
+  --ink-muted: #64748b;
+  --ink-faint: #94a3b8;
+  --line: #e2e8f0;
+  --surface: #ffffff;
+  --surface-muted: #f8fafc;
+  --surface-sunken: #f1f5f9;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
-    Arial, sans-serif;
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #f8fafc;
-  color: #1e293b;
+  background: var(--surface-muted);
+  color: var(--ink);
+}
+
+/* Respect users who prefer reduced motion: disable the live/pulse/blink/bounce
+   animations scattered across components. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -64,6 +64,36 @@
   text-align: center;
 }
 
+.lastUpdated {
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.refreshButton {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  color: #334155;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.refreshButton:hover:not(:disabled) {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.refreshButton:disabled {
+  color: #94a3b8;
+  cursor: default;
+}
+
+.refreshButton:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
 .meta {
   display: flex;
   flex-direction: column;

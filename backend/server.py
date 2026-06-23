@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import http.client
 import json
 import os
 import re
 import shutil
+import socket
 import sqlite3
 import subprocess
 import threading
@@ -111,6 +113,25 @@ def now_ms() -> int:
     return int(time.time() * 1000)
 
 
+def get_conn() -> sqlite3.Connection:
+    """Open a SQLite connection with busy_timeout + synchronous=NORMAL for safe
+    concurrent access.
+
+    journal_mode=WAL is set once in ensure_storage() (it persists in the DB file
+    header), so we do not re-issue it on every short-lived connection — that
+    would be a redundant round-trip on hot paths like market_state_for_symbol
+    which open several connections per symbol.
+
+    All DB access in this module should go through this helper so the background
+    refresh thread, request threads, and ad-hoc refresh threads do not deadlock
+    on the default zero busy timeout.
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)
+    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    return conn
+
+
 def beijing_today() -> str:
     return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
@@ -118,7 +139,12 @@ def beijing_today() -> str:
 def ensure_storage() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     RAW_DIR.mkdir(parents=True, exist_ok=True)
+    # Set WAL mode once (it persists in the DB file header). Done here rather
+    # than per-connection in get_conn() to avoid a redundant PRAGMA round-trip
+    # on every short-lived connection.
     with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("PRAGMA journal_mode = WAL")
+    with get_conn() as conn:
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS response_cache (
@@ -215,94 +241,124 @@ def ensure_storage() -> None:
     ensure_market_calendar_seeded()
 
 
-HOLIDAYS_2026 = {
-    "cn": {
-        "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20",
-        "2026-04-06", "2026-05-01", "2026-05-04", "2026-05-05", "2026-06-19",
-        "2026-09-25", "2026-10-01", "2026-10-02", "2026-10-05", "2026-10-06", "2026-10-07",
-    },
-    "hk": {
-        "2026-01-01", "2026-02-17", "2026-02-18", "2026-02-19", "2026-04-03", "2026-04-06",
-        "2026-04-07", "2026-05-01", "2026-05-25", "2026-07-01", "2026-09-26",
-        "2026-10-01", "2026-10-19", "2026-12-25",
-    },
-    "us": {
-        "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19",
-        "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
-    },
-    "jp": {
-        "2026-01-01", "2026-01-02", "2026-01-12", "2026-02-11", "2026-02-23", "2026-03-20",
-        "2026-04-29", "2026-05-04", "2026-05-05", "2026-05-06", "2026-07-20", "2026-08-11",
-        "2026-09-21", "2026-09-22", "2026-09-23", "2026-10-12", "2026-11-03", "2026-11-23",
-        "2026-12-31",
-    },
-    "kr": {
-        "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-03-02", "2026-05-01",
-        "2026-05-05", "2026-05-25", "2026-08-17", "2026-09-24", "2026-09-25", "2026-09-26",
-        "2026-10-05", "2026-10-09", "2026-12-25", "2026-12-31",
-    },
-    "tw": {
-        "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20",
-        "2026-02-27", "2026-04-03", "2026-04-06", "2026-05-01", "2026-06-19",
-        "2026-09-25", "2026-10-09",
+# Holiday data is keyed by year. Add a new year block here when the year rolls
+# over; unknown years fall back to an empty set (weekend-only detection), so the
+# calendar degrades gracefully instead of breaking on Jan 1.
+HOLIDAYS_BY_YEAR: dict[str, dict[str, set[str]]] = {
+    "2026": {
+        "cn": {
+            "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20",
+            "2026-04-06", "2026-05-01", "2026-05-04", "2026-05-05", "2026-06-19",
+            "2026-09-25", "2026-10-01", "2026-10-02", "2026-10-05", "2026-10-06", "2026-10-07",
+        },
+        "hk": {
+            "2026-01-01", "2026-02-17", "2026-02-18", "2026-02-19", "2026-04-03", "2026-04-06",
+            "2026-04-07", "2026-05-01", "2026-05-25", "2026-07-01", "2026-09-26",
+            "2026-10-01", "2026-10-19", "2026-12-25",
+        },
+        "us": {
+            "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19",
+            "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
+        },
+        "jp": {
+            "2026-01-01", "2026-01-02", "2026-01-12", "2026-02-11", "2026-02-23", "2026-03-20",
+            "2026-04-29", "2026-05-04", "2026-05-05", "2026-05-06", "2026-07-20", "2026-08-11",
+            "2026-09-21", "2026-09-22", "2026-09-23", "2026-10-12", "2026-11-03", "2026-11-23",
+            "2026-12-31",
+        },
+        "kr": {
+            "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-03-02", "2026-05-01",
+            "2026-05-05", "2026-05-25", "2026-08-17", "2026-09-24", "2026-09-25", "2026-09-26",
+            "2026-10-05", "2026-10-09", "2026-12-25", "2026-12-31",
+        },
+        "tw": {
+            "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20",
+            "2026-02-27", "2026-04-03", "2026-04-06", "2026-05-01", "2026-06-19",
+            "2026-09-25", "2026-10-09",
+        },
     },
 }
+
+HALF_DAYS_BY_YEAR: dict[str, dict[str, dict[str, list[tuple[str, str]]]]] = {
+    "2026": {
+        "hk": {
+            "2026-12-24": [("09:30", "12:10")],
+            "2026-12-31": [("09:30", "12:10")],
+        },
+        "us": {
+            "2026-11-27": [("09:30", "13:00")],
+            "2026-12-24": [("09:30", "13:00")],
+        },
+    },
+}
+
+
+def _holidays_for(market: str, year: int) -> set[str]:
+    return HOLIDAYS_BY_YEAR.get(str(year), {}).get(market, set())
+
+
+def _half_days_for(market: str, year: int) -> dict[str, list[tuple[str, str]]]:
+    return HALF_DAYS_BY_YEAR.get(str(year), {}).get(market, {})
+
 
 MARKET_CALENDARS: dict[str, dict[str, Any]] = {
     "cn": {
         "timezone": "Asia/Shanghai",
         "sessions": [("09:30", "11:30"), ("13:00", "15:00")],
-        "holidays": HOLIDAYS_2026["cn"],
+        "holidays": lambda year, m="cn": _holidays_for(m, year),
+        "half_days": lambda year, m="cn": _half_days_for(m, year),
         "source": "SSE/SZSE holiday calendar",
     },
     "hk": {
         "timezone": "Asia/Hong_Kong",
         "sessions": [("09:30", "12:00"), ("13:00", "16:10")],
-        "holidays": HOLIDAYS_2026["hk"],
-        "half_days": {
-            "2026-12-24": [("09:30", "12:10")],
-            "2026-12-31": [("09:30", "12:10")],
-        },
+        "holidays": lambda year, m="hk": _holidays_for(m, year),
+        "half_days": lambda year, m="hk": _half_days_for(m, year),
         "source": "HKEX calendar",
     },
     "us": {
         "timezone": "America/New_York",
         "sessions": [("09:30", "16:00")],
-        "holidays": HOLIDAYS_2026["us"],
-        "half_days": {
-            "2026-11-27": [("09:30", "13:00")],
-            "2026-12-24": [("09:30", "13:00")],
-        },
+        "holidays": lambda year, m="us": _holidays_for(m, year),
+        "half_days": lambda year, m="us": _half_days_for(m, year),
         "source": "NYSE/Nasdaq holiday calendar",
     },
     "jp": {
         "timezone": "Asia/Tokyo",
         "sessions": [("09:00", "11:30"), ("12:30", "15:30")],
-        "holidays": HOLIDAYS_2026["jp"],
+        "holidays": lambda year, m="jp": _holidays_for(m, year),
+        "half_days": lambda year, m="jp": _half_days_for(m, year),
         "source": "JPX market holidays",
     },
     "kr": {
         "timezone": "Asia/Seoul",
         "sessions": [("09:00", "15:30")],
-        "holidays": HOLIDAYS_2026["kr"],
+        "holidays": lambda year, m="kr": _holidays_for(m, year),
+        "half_days": lambda year, m="kr": _half_days_for(m, year),
         "source": "KRX trading days and holidays",
     },
     "tw": {
         "timezone": "Asia/Taipei",
         "sessions": [("09:00", "13:30")],
-        "holidays": HOLIDAYS_2026["tw"],
+        "holidays": lambda year, m="tw": _holidays_for(m, year),
+        "half_days": lambda year, m="tw": _half_days_for(m, year),
         "source": "TWSE/TAIFEX trading calendar",
     },
     "hk_futures": {
         "timezone": "Asia/Hong_Kong",
         "sessions": [("09:15", "12:00"), ("13:00", "16:30"), ("17:15", "03:00")],
-        "holidays": HOLIDAYS_2026["hk"],
+        "holidays": lambda year, m="hk": _holidays_for(m, year),
+        # Futures markets do NOT inherit equity half-day sessions (the old code
+        # had no half_days key here); in_futures_sessions only treats status
+        # 'open' as tradable, so an empty half_days map keeps them 'open'.
+        "half_days": lambda year: {},
         "source": "HKEX derivatives calendar",
     },
     "jp_futures": {
         "timezone": "Asia/Tokyo",
         "sessions": [("07:30", "14:25"), ("14:55", "05:15")],
-        "holidays": HOLIDAYS_2026["jp"],
+        "holidays": lambda year, m="jp": _holidays_for(m, year),
+        "half_days": lambda year: {},
         "source": "JPX/OSE derivatives calendar",
     },
 }
@@ -312,12 +368,20 @@ def is_weekend(dt: datetime) -> bool:
     return dt.weekday() >= 5
 
 
-def ensure_market_calendar_seeded(year: int = 2026) -> None:
+def ensure_market_calendar_seeded(year: int | None = None) -> None:
+    # Seed both the current year and the next year so the calendar does not
+    # expire on Jan 1. Unknown years degrade to weekend-only (empty holiday set).
+    if year is None:
+        current_year = datetime.now(ZoneInfo("Asia/Shanghai")).year
+        for y in (current_year, current_year + 1):
+            ensure_market_calendar_seeded(y)
+        return
+
     start = datetime(year, 1, 1)
     end = datetime(year, 12, 31)
     fetched_at = now_ms()
     rows: list[tuple[str, str, str, str, str, str, int]] = []
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         existing = conn.execute(
             "SELECT COUNT(*) FROM market_calendar WHERE date BETWEEN ? AND ?",
             (f"{year}-01-01", f"{year}-12-31"),
@@ -326,15 +390,17 @@ def ensure_market_calendar_seeded(year: int = 2026) -> None:
             return
 
         for market, calendar in MARKET_CALENDARS.items():
+            holidays = calendar["holidays"](year)
+            half_days = calendar["half_days"](year)
             current = start
             while current <= end:
                 day = current.strftime("%Y-%m-%d")
-                sessions = calendar.get("half_days", {}).get(day) or calendar["sessions"]
+                sessions = half_days.get(day) or calendar["sessions"]
                 if is_weekend(current):
                     status = "weekend"
-                elif day in calendar["holidays"]:
+                elif day in holidays:
                     status = "holiday"
-                elif calendar.get("half_days", {}).get(day):
+                elif half_days.get(day):
                     status = "half_day"
                 else:
                     status = "open"
@@ -365,7 +431,7 @@ def ensure_market_calendar_seeded(year: int = 2026) -> None:
 
 
 def market_calendar_row(market: str, day: str) -> dict[str, Any] | None:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         row = conn.execute(
             """
             SELECT market, date, status, sessions, timezone, source, fetched_at
@@ -577,7 +643,7 @@ def market_state_for_symbol(symbol: str, now: datetime) -> dict[str, Any]:
 
 
 def cache_get(cache_key: str, max_age_seconds: int) -> tuple[int, str, bytes] | None:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         row = conn.execute(
             "SELECT status, content_type, body, fetched_at FROM response_cache WHERE cache_key = ?",
             (cache_key,),
@@ -592,7 +658,7 @@ def cache_get(cache_key: str, max_age_seconds: int) -> tuple[int, str, bytes] | 
 
 def cache_put(cache_key: str, url: str, status: int, content_type: str, body: bytes) -> None:
     fetched_at = now_ms()
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         conn.execute(
             """
             INSERT INTO response_cache(cache_key, url, status, content_type, body, fetched_at)
@@ -705,7 +771,9 @@ def fetch_upstream(
             write_raw(kind, cache_key, body)
             record_upstream_health(cache_key=cache_key, kind=kind, url=url, source="network", status=status)
             return status, resolved_content_type, body
-        except URLError as exc:
+        except (URLError, OSError, socket.timeout, http.client.IncompleteRead, http.client.HTTPException) as exc:
+            # Broaden beyond URLError so mid-body read timeouts / truncations
+            # also fall back to stale cache instead of escaping as a 502.
             stale = cache_any(cache_key)
             if stale:
                 record_upstream_health(
@@ -1005,7 +1073,7 @@ def store_fund_history(code: str, rows: list[dict[str, Any]]) -> None:
             points.append((code, date, nav, change_percent, fetched_at))
     if not points:
         return
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         conn.executemany(
             """
             INSERT INTO fund_nav_history(code, date, nav, change_percent, fetched_at)
@@ -1170,7 +1238,7 @@ def fetch_and_store_fund_history(code: str, target_count: int, *, refresh: bool)
 
 
 def latest_fund_history_meta(code: str) -> tuple[str | None, int]:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         row = conn.execute(
             """
             SELECT MAX(date), MAX(fetched_at)
@@ -1202,7 +1270,7 @@ def auto_refresh_fund_history_if_stale(code: str, target_count: int) -> None:
 
 
 def count_fund_history_rows(code: str) -> int:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         row = conn.execute("SELECT COUNT(*) FROM fund_nav_history WHERE code = ?", (code,)).fetchone()
     return int(row[0] if row else 0)
 
@@ -1248,7 +1316,7 @@ def classify_holding_symbol(stock_code: str, href: str, stock_name: str) -> tupl
     if code.endswith("JP"):
         return "jp", "", "JPY"
     if re.fullmatch(r"\d{4}", code):
-        return "tw", "", "CNY"
+        return "tw", "", "TWD"
     return "unknown", "", "CNY"
 
 
@@ -1330,7 +1398,7 @@ def store_fund_holdings(code: str, holdings: list[dict[str, Any]]) -> None:
         ))
     if not points:
         return
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         conn.execute("DELETE FROM fund_holdings WHERE code = ? AND report_date = ?", (code, report_date))
         conn.executemany(
             """
@@ -1344,7 +1412,7 @@ def store_fund_holdings(code: str, holdings: list[dict[str, Any]]) -> None:
 
 
 def read_fund_holdings_from_db(code: str) -> list[dict[str, Any]]:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         latest = conn.execute(
             "SELECT report_date FROM fund_holdings WHERE code = ? ORDER BY report_date DESC LIMIT 1",
             (code,),
@@ -1385,6 +1453,22 @@ def parse_default_fund_holdings_from_constants(code: str) -> list[dict[str, Any]
     except OSError:
         return []
 
+    # Fallback report date: most recent quarter-end relative to today, so this
+    # does not lie as the years roll over (was hardcoded "2026-03-31").
+    today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+    quarter_end_month = ((today.month - 1) // 3) * 3  # last completed quarter end month
+    if quarter_end_month == 0:
+        quarter_end = datetime(today.year - 1, 12, 31).date()
+    else:
+        quarter_end = datetime(today.year, quarter_end_month, 1).date()
+        # last day of that quarter month
+        if quarter_end_month == 12:
+            next_month = datetime(today.year + 1, 1, 1).date()
+        else:
+            next_month = datetime(today.year, quarter_end_month + 1, 1).date()
+        quarter_end = next_month - timedelta(days=1)
+    fallback_report_date = quarter_end.isoformat()
+
     match = re.search(
         rf"symbol:\s*'{re.escape(code)}'.*?code:\s*'{re.escape(code)}'.*?holdings:\s*\[(.*?)\]\s*,\s*\}}",
         text,
@@ -1412,7 +1496,7 @@ def parse_default_fund_holdings_from_constants(code: str) -> list[dict[str, Any]
             continue
         holdings.append({
             "code": code,
-            "reportDate": "2026-03-31",
+            "reportDate": fallback_report_date,
             "rank": rank,
             "stockCode": symbol.upper(),
             "symbol": symbol.upper(),
@@ -1521,19 +1605,25 @@ def read_cached_fund_nav_payload(codes: list[str], max_age_seconds: int) -> dict
 
 
 def fetch_fund_nav_one(code: str, *, force_refresh: bool = False) -> tuple[str, Any | None]:
-    url = f"https://fundgz.1234567.com.cn/js/{quote(code)}.js"
-    status, _, body = fetch_upstream(
-        url,
-        referer="https://fund.eastmoney.com/",
-        content_type="text/plain; charset=utf-8",
-        cache_key=fund_nav_upstream_cache_key(code),
-        kind="fundnav",
-        ttl_seconds=FUND_NAV_CACHE_TTL_SECONDS,
-        force_refresh=force_refresh,
-    )
-    if status >= 400:
+    try:
+        url = f"https://fundgz.1234567.com.cn/js/{quote(code)}.js"
+        status, _, body = fetch_upstream(
+            url,
+            referer="https://fund.eastmoney.com/",
+            content_type="text/plain; charset=utf-8",
+            cache_key=fund_nav_upstream_cache_key(code),
+            kind="fundnav",
+            ttl_seconds=FUND_NAV_CACHE_TTL_SECONDS,
+            force_refresh=force_refresh,
+        )
+        if status >= 400:
+            return code, None
+        return code, parse_jsonp_call(decode_body(body), "jsonpgz")
+    except Exception as exc:
+        # Never let a single fund's upstream failure escape — it would abort the
+        # whole batch in fetch_fund_nav_payload via future.result().
+        print(f"[fundnav] failed for {code}: {exc}", flush=True)
         return code, None
-    return code, parse_jsonp_call(decode_body(body), "jsonpgz")
 
 
 def fetch_fund_nav_payload(codes: list[str], *, force_refresh: bool = False) -> dict[str, Any]:
@@ -1544,7 +1634,13 @@ def fetch_fund_nav_payload(codes: list[str], *, force_refresh: bool = False) -> 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(fetch_fund_nav_one, code, force_refresh=force_refresh) for code in codes]
         for future in as_completed(futures):
-            code, parsed = future.result()
+            try:
+                code, parsed = future.result()
+            except Exception as exc:
+                # Defensive: fetch_fund_nav_one already swallows errors, but keep
+                # the batch resilient against any unexpected worker failure.
+                print(f"[fundnav] worker error: {exc}", flush=True)
+                continue
             if parsed:
                 results[code] = parsed
     return results
@@ -1642,7 +1738,7 @@ def store_purchase_status(text: str) -> None:
         )
     if not points:
         return
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         conn.executemany(
             """
             INSERT INTO fund_purchase_status(
@@ -1699,7 +1795,7 @@ def store_market_history(source: str, symbol: str, text: str) -> int:
             points.append((source, symbol, date, close, fetched_at))
     if not points:
         return 0
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         conn.executemany(
             """
             INSERT INTO market_history(source, symbol, date, close, fetched_at)
@@ -1760,7 +1856,7 @@ def store_stock_history(sina_symbol: str, text: str) -> int:
         return 0
 
     existing: dict[str, float] = {}
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT date, close
@@ -1781,13 +1877,30 @@ def store_stock_history(sina_symbol: str, text: str) -> int:
         previous_close = close
 
     fetched_at = now_ms()
+    # Recompute change_percent for each newly upserted date AND for the date
+    # immediately following it: backfilling a mid-history day changes the
+    # following day's previous close, so its change_percent must be refreshed
+    # too, otherwise it keeps a stale value.
+    merged_dates = [date for date, _ in merged]
+    merged_index = {date: idx for idx, date in enumerate(merged_dates)}
+    recompute_dates: set[str] = set()
+    for date, _ in deduped:
+        recompute_dates.add(date)
+        idx = merged_index.get(date)
+        if idx is not None and idx + 1 < len(merged_dates):
+            recompute_dates.add(merged_dates[idx + 1])
+
+    merged_close = dict(merged)
     points: list[tuple[str, str, float, float, int]] = []
-    for date, close in deduped:
+    for date in recompute_dates:
+        close = merged_close[date]
         previous = previous_close_by_date.get(date)
         change_percent = ((close - previous) / previous) * 100 if previous and previous > 0 else 0.0
         points.append((sina_symbol, date, close, change_percent, fetched_at))
+    # Sort for deterministic ordering.
+    points.sort(key=lambda p: p[1])
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         conn.executemany(
             """
             INSERT INTO stock_daily_history(sina_symbol, date, close, change_percent, fetched_at)
@@ -1799,7 +1912,7 @@ def store_stock_history(sina_symbol: str, text: str) -> int:
             """,
             points,
         )
-    return len(points)
+    return len(deduped)
 
 
 def fetch_and_store_stock_history(sina_symbol: str, *, refresh: bool = False) -> bool:
@@ -1826,7 +1939,7 @@ def fetch_and_store_stock_history(sina_symbol: str, *, refresh: bool = False) ->
 
 def read_fund_history_from_db(code: str, page_size: int, page_index: int) -> list[dict[str, str]]:
     offset = (page_index - 1) * page_size
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT date, nav, change_percent
@@ -1919,7 +2032,7 @@ def history_risk_metrics(points: list[tuple[str, float]], start_date: str, end_d
 
 
 def read_fund_return_summary_from_db(code: str) -> dict[str, Any] | None:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT date, nav
@@ -1993,7 +2106,7 @@ def read_purchase_status_from_db(codes: list[str], max_age_seconds: int) -> dict
     if not codes:
         return {}
     placeholders = ",".join("?" for _ in codes)
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         rows = conn.execute(
             f"""
             SELECT code, name, fund_type, nav_date, purchase_status, redeem_status,
@@ -2038,7 +2151,7 @@ def read_purchase_status_from_db(codes: list[str], max_age_seconds: int) -> dict
 
 
 def read_market_history_from_db(source: str, symbol: str) -> list[dict[str, float | str]]:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT date, close
@@ -2052,7 +2165,7 @@ def read_market_history_from_db(source: str, symbol: str) -> list[dict[str, floa
 
 
 def latest_market_history_meta(source: str, symbol: str) -> tuple[str | None, int]:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         row = conn.execute(
             """
             SELECT MAX(date), MAX(fetched_at)
@@ -2114,7 +2227,7 @@ def refresh_market_history_background(source: str, symbol: str) -> None:
     key = f"{source}:{symbol}"
     try:
         ensure_market_history_for_returns(source, symbol)
-        response_cache_clear_prefix("api:marketreturns:")
+        response_cache_clear_marketreturns_item(f"{source}:{symbol}")
     finally:
         with _MARKET_HISTORY_REFRESH_GUARD:
             _MARKET_HISTORY_REFRESHING.discard(key)
@@ -2230,7 +2343,7 @@ def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, An
 
 
 def read_fund_nav_changes(code: str, days: int) -> list[tuple[str, float]]:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         rows = conn.execute(
             """
             SELECT date, change_percent
@@ -2249,7 +2362,7 @@ def read_stock_changes(symbols: list[str], start_date: str, end_date: str) -> di
     if not supported:
         return {}
     placeholders = ",".join("?" for _ in supported)
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         rows = conn.execute(
             f"""
             SELECT sina_symbol, date, change_percent
@@ -2330,7 +2443,7 @@ def store_backtest_points(code: str, points: list[dict[str, float]]) -> None:
         )
         for point in points
     ]
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         conn.executemany(
             """
             INSERT INTO fund_estimate_backtest(
@@ -2351,7 +2464,21 @@ def store_backtest_points(code: str, points: list[dict[str, float]]) -> None:
         )
 
 
+_BACKTEST_RESULT_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_BACKTEST_RESULT_CACHE_TTL_SECONDS = 5 * 60
+
+
 def compute_fund_backtest(code: str, days: int, *, refresh: bool = False) -> dict[str, Any] | None:
+    # Backtest is expensive (it may fetch many stock histories on refresh).
+    # Cache the computed summary for a short TTL; refresh=True always bypasses
+    # and recomputes. (The fund_estimate_backtest table stores per-date points
+    # for forensic use; this cache covers the summary that callers consume.)
+    cache_key = f"{code}:{days}"
+    if not refresh:
+        cached = _BACKTEST_RESULT_CACHE.get(cache_key)
+        if cached and time.monotonic() - cached[0] < _BACKTEST_RESULT_CACHE_TTL_SECONDS:
+            return cached[1]
+
     holdings = read_fund_holdings_for_backtest(code)
     holdings = [item for item in holdings if item.get("sinaSymbol")]
     nav_changes = read_fund_nav_changes(code, days)
@@ -2452,7 +2579,7 @@ def compute_fund_backtest(code: str, days: int, *, refresh: bool = False) -> dic
         "normalizedLinear": validation_normalized_fitted,
         "selected": backtest_metrics(validation_points, fitted_key),
     }
-    return {
+    result = {
         "code": code,
         "modelVersion": BACKTEST_MODEL_VERSION,
         "sampleCount": len(points),
@@ -2485,6 +2612,8 @@ def compute_fund_backtest(code: str, days: int, *, refresh: bool = False) -> dic
             "未披露持仓、现金仓位和基金费用会体现在残差中。",
         ],
     }
+    _BACKTEST_RESULT_CACHE[cache_key] = (time.monotonic(), result)
+    return result
 
 
 def clamp_int(raw: str, low: int, high: int, default: int) -> int:
@@ -2537,8 +2666,13 @@ def should_refresh() -> bool:
 
 
 def client_rate_key() -> str:
+    # Only trust X-Forwarded-For when running behind the dev proxy on loopback;
+    # a direct remote client could otherwise spoof it to rotate rate-limit keys.
     forwarded = request.headers.get("X-Forwarded-For", "").split(",", 1)[0].strip()
-    return forwarded or request.remote_addr or "unknown"
+    remote = request.remote_addr or "unknown"
+    if forwarded and remote in {"127.0.0.1", "::1"}:
+        return forwarded
+    return remote
 
 
 def enforce_rate_limit(rule: str) -> None:
@@ -2617,6 +2751,22 @@ def response_cache_clear_prefix(prefix: str) -> None:
                 _RESPONSE_CACHE.pop(key, None)
 
 
+def response_cache_clear_marketreturns_item(item: str) -> None:
+    """Invalidate only marketreturns cache entries that include the refreshed item.
+
+    A marketreturns cache key is `api:marketreturns:<comma-joined items>`. Clearing
+    the whole prefix would drop entries for every other symbol too; instead drop
+    only entries whose item list contains the refreshed `source:symbol`.
+    """
+    with _RESPONSE_CACHE_GUARD:
+        for key in list(_RESPONSE_CACHE):
+            if not key.startswith("api:marketreturns:"):
+                continue
+            items_part = key[len("api:marketreturns:"):]
+            if item in items_part.split(","):
+                _RESPONSE_CACHE.pop(key, None)
+
+
 def cached_json_response(cache_key: str, ttl_seconds: int, payload_factory: Any) -> Response:
     cached = response_cache_get(cache_key, ttl_seconds)
     if cached is not None:
@@ -2643,7 +2793,7 @@ def cached_text_response(cache_key: str, ttl_seconds: int, text_factory: Any) ->
 
 
 def upstream_cache_stats() -> dict[str, Any]:
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_conn() as conn:
         rows = conn.execute("SELECT cache_key, fetched_at FROM response_cache").fetchall()
     by_kind: dict[str, int] = {}
     latest_at = 0
@@ -2804,10 +2954,40 @@ def run_background_refresh_once() -> None:
         mark_background_refresh(lastSuccessAt=now_ms(), lastError="")
 
 
+def prune_in_memory_caches() -> None:
+    """Evict idle/expired entries from the unbounded in-memory dicts.
+
+    Long-running processes otherwise leak per-cache-key locks, rate-limit
+    buckets, and response-cache entries that are never revisited.
+    """
+    now = time.monotonic()
+    # Rate-limit buckets: drop buckets with no entries in the last 10 min.
+    with _RATE_LIMIT_GUARD:
+        for key in list(_RATE_LIMIT_BUCKETS):
+            bucket = _RATE_LIMIT_BUCKETS[key]
+            if not bucket or now - bucket[-1] > 600:
+                _RATE_LIMIT_BUCKETS.pop(key, None)
+    # Response cache: drop expired entries (lazy TTL check on access misses
+    # unrevisited keys, so proactively drop anything past its deadline).
+    with _RESPONSE_CACHE_GUARD:
+        for key in list(_RESPONSE_CACHE):
+            entry = _RESPONSE_CACHE.get(key)
+            if entry and entry[0] <= now:
+                _RESPONSE_CACHE.pop(key, None)
+    # Upstream locks: this dict grows by unique cache_key, but cache keys are
+    # bounded by the configured symbol set (~160 symbols + a fixed set of fund
+    # codes), so it does not grow unbounded in practice. We intentionally do NOT
+    # prune locks here: dropping a lock that a fetcher has already retrieved but
+    # not yet acquired would let the next fetcher create a fresh lock and both
+    # would proceed, defeating single-flight dedup. The bounded key space makes
+    # this a non-leak.
+
+
 def background_refresh_loop() -> None:
     with app.app_context():
         while True:
             run_background_refresh_once()
+            prune_in_memory_caches()
             time.sleep(max(BACKGROUND_REFRESH_INTERVAL_SECONDS, 60))
 
 
@@ -2850,8 +3030,11 @@ def add_response_headers(response: Response) -> Response:
 def handle_error(exc: Exception) -> Response:
     if isinstance(exc, HTTPException):
         return json_response({"error": exc.description}, status=exc.code or 500)
-    status = 400 if isinstance(exc, ValueError) else 502
-    return json_response({"error": str(exc) or "Internal server error"}, status=status)
+    if isinstance(exc, ValueError):
+        return json_response({"error": str(exc) or "Invalid request"}, status=400)
+    # Do not echo str(exc) for unexpected errors — it may leak upstream URLs/paths.
+    print(f"[handle_error] {type(exc).__name__}: {exc}", flush=True)
+    return json_response({"error": "Upstream data error"}, status=502)
 
 
 @app.get("/api/health")
@@ -3184,7 +3367,7 @@ def fund_purchase() -> Response:
             "_": int(time.time() * 1000),
         }
     )
-    url = f"http://fund.eastmoney.com/Data/Fund_JJJZ_Data.aspx?{query}"
+    url = f"https://fund.eastmoney.com/Data/Fund_JJJZ_Data.aspx?{query}"
     status, _, body = fetch_upstream(
         url,
         referer="https://fund.eastmoney.com/Fund_sgzt.html",

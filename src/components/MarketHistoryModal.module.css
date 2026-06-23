@@ -219,6 +219,13 @@
   text-align: center;
 }
 
+.stateError {
+  color: var(--color-up);
+  font-size: 12px;
+  padding: 42px 12px;
+  text-align: center;
+}
+
 .up {
   color: var(--color-up) !important;
 }

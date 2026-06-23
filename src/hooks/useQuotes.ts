@@ -27,10 +27,20 @@ export interface FundEstimate {
   officialNAV: FundNavData | null;
   purchaseStatus: FundPurchaseData | null;
   rangeReturns: FundReturnSummary | null;
+  /** Weighted change over covered holdings, NOT normalized by coverage. */
   computedChangeLocal: number;
   estimatedNAVLocal: number | null;
   computedChange: number;
   estimatedNAV: number | null;
+  /** Coverage-normalized change = computedChange / quoteCoverage. This is the
+   *  estimate the UI displays as the headline, matching the backend backtest's
+   *  `normalizedChange` (predicted / covered_weight). Without normalization a
+   *  fund whose top-10 covers only ~73% would systematically understate moves
+   *  by ~1/0.73. */
+  normalizedChangeLocal: number;
+  normalizedChange: number;
+  normalizedNAVLocal: number | null;
+  normalizedNAV: number | null;
   holdingsQuotes: QuoteData[];
   totalConfiguredWeight: number;
   quoteCoverage: number;
@@ -127,6 +137,7 @@ export function useQuotes(
   loadFundDetails = false,
   loadFundReturns = false,
   enabled = true,
+  refreshNonce = 0,
 ) {
   const [quotes, setQuotes] = useState<Map<string, QuoteData>>(new Map());
   const [fundEstimates, setFundEstimates] = useState<FundEstimate[]>([]);
@@ -134,8 +145,8 @@ export function useQuotes(
   const [marketStates, setMarketStates] = useState<Map<string, MarketStateData>>(new Map());
   const [marketLoading, setMarketLoading] = useState(true);
   const [fundLoading, setFundLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const mountedRef = useRef(true);
+  const [marketError, setMarketError] = useState<string | null>(null);
+  const [fundError, setFundError] = useState<string | null>(null);
   const slowFundDataRef = useRef<SlowFundData>({
     navs: new Map(),
     purchaseStatuses: new Map(),
@@ -148,18 +159,26 @@ export function useQuotes(
   const dynamicHoldingsFetchedAtRef = useRef<Map<string, number>>(new Map());
   const dynamicProfilesFetchedAtRef = useRef<Map<string, number>>(new Map());
   const fundCacheKeyRef = useRef('');
+  const lastRefreshNonceRef = useRef(0);
 
   useEffect(() => {
-    mountedRef.current = true;
+    // Per-invocation cancellation flag. Unlike a shared mountedRef, this is
+    // flipped by cleanup on every dep change, so an in-flight fetch from the
+    // previous invocation cannot overwrite fresh state after the new one starts.
+    let cancelled = false;
     if (!enabled) {
       setMarketLoading(false);
       setFundLoading(false);
       return () => {
-        mountedRef.current = false;
+        cancelled = true;
       };
     }
     const currentFundKey = fundCacheKey(funds);
     const fundsChanged = fundCacheKeyRef.current !== currentFundKey;
+    // A manual refresh (refreshNonce bump) should force the loading flags on so
+    // the refresh button shows feedback, even when snapshots already exist.
+    const manualRefresh = refreshNonce !== lastRefreshNonceRef.current;
+    lastRefreshNonceRef.current = refreshNonce;
     const hasMarketSnapshot = quotes.size > 0;
     const hasFundSnapshot = fundEstimates.length > 0;
     if (fundsChanged) {
@@ -255,7 +274,7 @@ export function useQuotes(
         shouldFetchReturns ? fetchFundReturnSummaries(fundCodes) : Promise.resolve(new Map(current.returnSummaries)),
       ]);
 
-      if (!mountedRef.current) return slowFundDataRef.current;
+      if (cancelled) return slowFundDataRef.current;
 
       // Fallback: fetch missing fund NAVs from Sina.
       const missingCodes = shouldFetchNavs ? fundCodes.filter((c) => !navsData.has(c)) : [];
@@ -303,7 +322,7 @@ export function useQuotes(
 
     async function loadMarket(showLoading = false) {
       if (showLoading) setMarketLoading(true);
-      setError(null);
+      setMarketError(null);
 
       try {
         const snapshot = await fetchDashboardSnapshot(marketSymbols, DISPLAY_FX_CURRENCIES);
@@ -315,16 +334,16 @@ export function useQuotes(
               fetchMarketStates(marketSymbols),
             ]);
 
-        if (!mountedRef.current) return;
+        if (cancelled) return;
         setQuotes((prev) => new Map([...prev, ...marketQuotes]));
         setFxRates((prev) => new Map([...prev, ...displayFxRates]));
         setMarketStates((prev) => new Map([...prev, ...marketStatesData]));
       } catch (e) {
-        if (mountedRef.current) {
-          setError(e instanceof Error ? e.message : '市场数据加载失败');
+        if (!cancelled) {
+          setMarketError(e instanceof Error ? e.message : '市场数据加载失败');
         }
       } finally {
-        if (mountedRef.current) {
+        if (!cancelled) {
           setMarketLoading(false);
         }
       }
@@ -332,7 +351,7 @@ export function useQuotes(
 
     async function loadFunds(showLoading = false) {
       if (showLoading) setFundLoading(true);
-      setError(null);
+      setFundError(null);
 
       try {
         const effectiveFunds = await resolveEffectiveFunds();
@@ -349,7 +368,7 @@ export function useQuotes(
           loadSlowFundData(effectiveFunds, showLoading),
         ]);
 
-        if (!mountedRef.current) return;
+        if (cancelled) return;
         setQuotes((prev) => new Map([...prev, ...quotesData]));
         setFxRates((prev) => new Map([...prev, ...fxRates]));
         setMarketStates((prev) => new Map([...prev, ...marketStatesData]));
@@ -395,6 +414,21 @@ export function useQuotes(
                   return sum + rmbChange * h.weight;
                 }, 0)
               : 0;
+
+          // Normalize by covered weight so a partial-holdings estimate scales
+          // to the full fund. quoteCoverage here is the weight sum of holdings
+          // that actually have a live quote; dividing by it projects the
+          // covered portion's move onto 100% of the fund. Mirrors the backend
+          // backtest's normalizedChange = predicted / covered_weight.
+          const coveredWeightLocal = fund.holdings.reduce((sum, h) => {
+            return fundQuotes.has(h.sinaSymbol) ? sum + h.weight : sum;
+          }, 0);
+          const normalizedChangeLocal = coveredWeightLocal > 0
+            ? computedChangeLocal / coveredWeightLocal
+            : computedChangeLocal;
+          const normalizedChange = coveredWeightLocal > 0
+            ? computedChange / coveredWeightLocal
+            : computedChange;
           const hasLiveHolding = fund.holdings.some((h) => (
             marketStatesData.get(h.sinaSymbol)?.state ?? getMarketState(h.sinaSymbol, now)
           ) === 'live');
@@ -418,6 +452,17 @@ export function useQuotes(
               ? officialNAV.nav * (1 + computedChange / 100)
               : null;
 
+          // Headline (coverage-normalized) estimates — what the UI displays.
+          const normalizedNAVLocal =
+            hasConfiguredHoldings && officialNAV && officialNAV.nav > 0
+              ? officialNAV.nav * (1 + normalizedChangeLocal / 100)
+              : null;
+
+          const normalizedNAV =
+            hasConfiguredHoldings && officialNAV && officialNAV.nav > 0
+              ? officialNAV.nav * (1 + normalizedChange / 100)
+              : null;
+
           return {
             fundCode: fund.code,
             fundName: fund.name,
@@ -429,6 +474,10 @@ export function useQuotes(
             estimatedNAVLocal,
             computedChange,
             estimatedNAV,
+            normalizedChangeLocal,
+            normalizedChange,
+            normalizedNAVLocal,
+            normalizedNAV,
             holdingsQuotes,
             totalConfiguredWeight,
             quoteCoverage,
@@ -443,28 +492,29 @@ export function useQuotes(
 
         setFundEstimates(estimates);
       } catch (e) {
-        if (mountedRef.current) {
-          setError(e instanceof Error ? e.message : '数据加载失败');
+        if (!cancelled) {
+          setFundError(e instanceof Error ? e.message : '数据加载失败');
         }
       } finally {
-        if (mountedRef.current) {
+        if (!cancelled) {
           setFundLoading(false);
         }
       }
     }
 
-    loadMarket(fundsChanged || !hasMarketSnapshot);
-    window.setTimeout(() => {
-      if (mountedRef.current) void loadFunds(fundsChanged || !hasFundSnapshot);
+    loadMarket(fundsChanged || !hasMarketSnapshot || manualRefresh);
+    const fundTimer0 = window.setTimeout(() => {
+      if (!cancelled) void loadFunds(fundsChanged || !hasFundSnapshot || manualRefresh);
     }, 0);
     const marketTimer = window.setInterval(() => loadMarket(false), 30_000);
     const fundTimer = window.setInterval(() => loadFunds(false), 30_000);
     return () => {
-      mountedRef.current = false;
+      cancelled = true;
+      window.clearTimeout(fundTimer0);
       window.clearInterval(marketTimer);
       window.clearInterval(fundTimer);
     };
-  }, [enabled, funds, loadFundDetails, loadFundReturns]);
+  }, [enabled, funds, loadFundDetails, loadFundReturns, refreshNonce]);
 
   return {
     quotes,
@@ -474,6 +524,6 @@ export function useQuotes(
     loading: marketLoading && fundLoading,
     marketLoading,
     fundLoading,
-    error,
+    error: marketError ?? fundError,
   };
 }

@@ -210,8 +210,11 @@ export default function FundHistoryChart({ fundCode }: Props) {
     };
   }, [visible]);
 
-  const chart = makeChart(visible);
-  const xTicks = makeXTicks(visible, range, chart.xStart, chart.xEnd);
+  const chart = useMemo(() => makeChart(visible), [visible]);
+  const xTicks = useMemo(
+    () => makeXTicks(visible, range, chart.xStart, chart.xEnd),
+    [visible, range, chart.xStart, chart.xEnd],
+  );
   const activeIndex = selectedIndex !== null && selectedIndex < visible.length ? selectedIndex : null;
   const activePoint = activeIndex !== null ? visible[activeIndex] : null;
   const activePosition = activeIndex !== null ? chart.pointPositions[activeIndex] : null;
@@ -248,7 +251,7 @@ export default function FundHistoryChart({ fundCode }: Props) {
       </div>
 
       {loading && <div className={styles.state}>历史净值加载中...</div>}
-      {!loading && error && <div className={styles.state}>{error}</div>}
+      {!loading && error && <div className={styles.stateError} role="alert">{error}</div>}
       {!loading && !error && metrics && (
         <>
           <div className={styles.metrics}>

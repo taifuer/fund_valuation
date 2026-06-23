@@ -166,6 +166,13 @@
   font-size: 12px;
 }
 
+.stateError {
+  padding: 28px 12px;
+  text-align: center;
+  color: var(--color-up);
+  font-size: 12px;
+}
+
 .up {
   color: var(--color-up) !important;
 }

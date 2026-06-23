@@ -12,6 +12,7 @@ interface Props {
   holdings: Holding[];
   quotes: QuoteData[];
   computedChange: number;
+  normalizedChange: number;
   quoteCoverage: number;
   totalConfiguredWeight: number;
   missingQuoteCount: number;
@@ -30,6 +31,7 @@ export default function HoldingsTable({
   holdings,
   quotes,
   computedChange,
+  normalizedChange,
   quoteCoverage,
   totalConfiguredWeight,
   missingQuoteCount,
@@ -114,12 +116,12 @@ export default function HoldingsTable({
         </tbody>
       </table>
       <div className={styles.footer}>
-        持仓加权涨跌
-        <span className={`${styles.footerStrong} ${computedChange >= 0 ? styles.up : styles.down}`}>
-          {computedChange >= 0 ? '+' : ''}{computedChange.toFixed(2)}%
+        估算涨跌（按覆盖权重归一化）
+        <span className={`${styles.footerStrong} ${normalizedChange >= 0 ? styles.up : styles.down}`}>
+          {normalizedChange >= 0 ? '+' : ''}{normalizedChange.toFixed(2)}%
         </span>
         <span style={{ fontSize: 11, color: '#94a3b8' }}>
-          （已配置持仓覆盖 {coveragePct.toFixed(0)}%，外币持仓已并入对应兑 CNY 汇率涨跌）
+          （覆盖 {coveragePct.toFixed(0)}%；原始加权 {computedChange >= 0 ? '+' : ''}{computedChange.toFixed(2)}%；外币持仓已并入兑 CNY 汇率）
         </span>
       </div>
       {missingQuoteCount > 0 && (

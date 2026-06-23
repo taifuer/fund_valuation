@@ -23,6 +23,15 @@ function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
 }
 
+// Guard against malformed upstream responses (e.g. HTML error pages, error
+// objects) being cast as typed JSON and silently propagating NaN/undefined
+// into estimates. Returns null for anything that isn't a plain object.
+function asObject(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
 function marketType(raw: string): Market {
   if (raw === 'fx_sbtcusd') return 'crypto';
   if (raw.startsWith('fx_')) return 'fx';
@@ -231,8 +240,9 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
     case 'crypto': {
       if (fields.length < 12) return null;
       price = parseFloat(fields[1]) || 0;
-      const changeRaw = parseFloat(fields[11]) || 0;
-      previousClose = price - changeRaw || price;
+      const changeRaw = parseFloat(fields[11]);
+      previousClose = Number.isFinite(changeRaw) ? price - changeRaw : price;
+      if (!Number.isFinite(previousClose) || previousClose === 0) previousClose = price;
       changePct = parseFloat(fields[10]) || 0;
       date = combineBeijingDateTime(
         [...fields].reverse().find((field) => /^\d{4}-\d{2}-\d{2}$/.test(field)) ?? '',
@@ -693,10 +703,12 @@ export async function fetchFundHistory(
   try {
     const res = await fetch(url);
     if (!res.ok) return results;
-    const json = await res.json();
+    const json = asObject(await res.json());
+    if (!json) return results;
     for (const code of codes) {
-      const rows: FundHistoryRow[] | undefined = json[code];
-      if (!rows || rows.length < 2) continue;
+      const rawRows = json[code];
+      if (!Array.isArray(rawRows) || rawRows.length < 2) continue;
+      const rows = rawRows as FundHistoryRow[];
       // rows[0] = latest (T-1), rows[1] = previous (T-2)
       const nav = parseFloat(rows[0].DWJZ) || 0;
       const prevNav = parseFloat(rows[1].DWJZ) || nav;
@@ -971,18 +983,20 @@ export async function fetchFundNavs(codes: string[]): Promise<Map<string, FundNa
   try {
     const res = await fetch(url);
     if (!res.ok) return results;
-    const json = await res.json();
+    const json = asObject(await res.json());
+    if (!json) return results;
     for (const code of codes) {
-      const raw: EastMoneyFundRaw | undefined = json[code];
-      if (!raw) continue;
+      const raw = json[code];
+      if (!raw || typeof raw !== 'object') continue;
+      const r = raw as EastMoneyFundRaw;
       results.set(code, {
-        code: raw.fundcode,
-        name: raw.name,
-        navDate: raw.jzrq,
-        nav: parseFloat(raw.dwjz) || 0,
+        code: r.fundcode,
+        name: r.name,
+        navDate: r.jzrq,
+        nav: parseFloat(r.dwjz) || 0,
         officialChange: 0, // filled later via fetchFundHistory
-        estimatedNav: parseFloat(raw.gsz) || 0,
-        estimatedChange: parseFloat(raw.gszzl) || 0,
+        estimatedNav: parseFloat(r.gsz) || 0,
+        estimatedChange: parseFloat(r.gszzl) || 0,
       });
     }
   } catch { /* skip */ }

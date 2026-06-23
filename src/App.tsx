@@ -1,9 +1,9 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuotes, type FundEstimate } from './hooks/useQuotes';
 import { useHeaderFxRates, useOverviewData, useRankingMarketData } from './hooks/usePageData';
 import { fetchFundNavs, fetchSinaFundNavs } from './api';
 import { FUNDS } from './constants';
-import type { Fund, FundNavData } from './types';
+import type { Fund, FundNavData, MarketStateData } from './types';
 import Header from './components/Header';
 import IndexCards from './components/IndexCards';
 import FundCard from './components/FundCard';
@@ -38,6 +38,10 @@ interface ManagedFundSettings {
   hiddenDefaultCodes: string[];
   customFunds: Array<{ code: string; name: string }>;
 }
+
+// Stable empty Map for components that don't need market-state data, so we don't
+// create a fresh reference on every render (which would defeat React.memo).
+const EMPTY_MARKET_STATES: Map<string, MarketStateData> = new Map();
 
 const EMPTY_MANAGED_SETTINGS: ManagedFundSettings = {
   hiddenDefaultCodes: [],
@@ -77,6 +81,11 @@ function pageFromPathname(pathname: string): PageKey {
   if (pathname === '/returns' || pathname === '/ranking') return 'ranking';
   if (pathname === '/risk') return 'risk';
   return 'overview';
+}
+
+// Canonical path for a page; used to normalize alias URLs (/fund, /ranking).
+function canonicalPathForPage(page: PageKey): string {
+  return PAGE_PATHS[page];
 }
 
 function readManagedFundSettings(): ManagedFundSettings {
@@ -121,8 +130,10 @@ function sortValue(estimate: FundEstimate, mode: SortMode): number | null {
   if (mode === 'official') {
     return estimate.officialNAV?.officialChange ?? null;
   }
-  if (estimate.estimatedNAVLocal === null) return null;
-  return estimate.computedChange;
+  // Sort by the coverage-normalized change so fund ordering matches the
+  // headline number shown on each card (not the under-stated raw value).
+  if (estimate.normalizedNAVLocal === null) return null;
+  return estimate.normalizedChange;
 }
 
 function formatDate(yyyymmdd: string): string {
@@ -227,12 +238,22 @@ export default function App() {
       .map(toCustomFund);
     return [...defaultFunds, ...customFunds];
   }, [managedFunds]);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const { quotes, fundEstimates, fxRates, marketStates, marketLoading, fundLoading, error } = useQuotes(
     funds,
     fundDisplayMode === 'detail',
     false,
     activePage === 'funds',
+    refreshNonce,
   );
+  const lastUpdated = useMemo(() => {
+    let latest = 0;
+    for (const q of quotes.values()) {
+      if (q.fetchedAt > latest) latest = q.fetchedAt;
+    }
+    return latest || null;
+  }, [quotes]);
+  const triggerRefresh = useCallback(() => setRefreshNonce((n) => n + 1), []);
   const overviewData = useOverviewData(funds, activePage === 'overview');
   const headerFxRates = useHeaderFxRates(activePage !== 'overview');
   const marketPageData = useRankingMarketData(activePage === 'ranking');
@@ -264,7 +285,9 @@ export default function App() {
       if (bValue === null) return -1;
       return sortDirection === 'desc' ? bValue - aValue : aValue - bValue;
     });
-    return sorted.map((e, i) => ({ ...e, rank: i + 1 }));
+    // Keep the original estimate object reference intact (do not spread) so that
+    // memoized FundCard children skip re-rendering when only sort order changed.
+    return sorted.map((estimate, i) => ({ estimate, rank: i + 1 }));
   }, [fundEstimates, sortMode, sortDirection]);
 
   const sortLabel = sortMode === 'official' ? '按 T-1 已出净值排序' : '按实时估算涨跌排序';
@@ -282,7 +305,14 @@ export default function App() {
 
   useEffect(() => {
     function handlePopState() {
-      setActivePage(pageFromPathname(window.location.pathname));
+      const page = pageFromPathname(window.location.pathname);
+      const canonical = canonicalPathForPage(page);
+      // Replace alias URLs (/fund, /ranking) with the canonical path so the
+      // address bar reflects a single canonical URL per page.
+      if (window.location.pathname !== canonical) {
+        window.history.replaceState({}, '', canonical);
+      }
+      setActivePage(page);
     }
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -399,7 +429,7 @@ export default function App() {
     }
   }
 
-  function removeFund(fund: Fund) {
+  const removeFund = useCallback((fund: Fund) => {
     const isDefaultFund = FUNDS.some((item) => item.code === fund.code);
     if (isDefaultFund) {
       updateManagedFunds({
@@ -413,12 +443,12 @@ export default function App() {
       });
     }
     setFundManageMessage(`已删除 ${fund.name}`);
-  }
+  }, [managedFunds]);
 
   function restoreDefaultFunds() {
     updateManagedFunds(EMPTY_MANAGED_SETTINGS);
     setFundSearchQuery('');
-    setFundManageMessage('已恢复默认 17 只基金');
+    setFundManageMessage(`已恢复默认 ${FUNDS.length} 只基金`);
   }
 
   function toggleFundSection() {
@@ -449,6 +479,9 @@ export default function App() {
         activePage={activePage}
         onPageChange={navigatePage}
         statusMessage={pageStatusMessage}
+        lastUpdated={lastUpdated}
+        onRefresh={triggerRefresh}
+        refreshing={marketLoading || fundLoading}
       />
       {activeError && <div className={styles.error}>{activeError}</div>}
       {activePage === 'overview' ? (
@@ -561,12 +594,12 @@ export default function App() {
               <div className={styles.fundLoading}>基金数据加载中...</div>
             )}
             {!fundCollapsed && sortedEstimates.map((est) => {
-              const fund = est.fund;
+              const fund = est.estimate.fund;
               return (
                 <FundCard
                   key={fund.code}
                   fund={fund}
-                  estimate={est}
+                  estimate={est.estimate}
                   rank={est.rank}
                   loading={false}
                   marketStates={marketStates}
@@ -591,7 +624,7 @@ export default function App() {
         <Suspense fallback={<div className={styles.pageFallback}>风险页面加载中...</div>}>
           <RiskPage
             funds={funds}
-            marketStates={new Map()}
+            marketStates={EMPTY_MARKET_STATES}
             marketLoading={false}
             onStatusMessageChange={setPageStatusMessage}
           />
