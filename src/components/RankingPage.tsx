@@ -82,6 +82,13 @@ function marketReturnKey(item: IndexConfig) {
   return item.history ? `${item.history.source}:${item.history.symbol}` : '';
 }
 
+function shouldUseLatestCloseReturn(item: IndexConfig, quote: QuoteData | undefined, state: MarketStateData['state']) {
+  if (!quote) return true;
+  if (!item.sinaSymbol.startsWith('gb_')) return false;
+  if (state === 'live') return false;
+  return Math.abs(quote.changePercent) < 0.005;
+}
+
 function makeMarketItems(
   configs: IndexConfig[],
   category: RankingItem['category'],
@@ -94,19 +101,31 @@ function makeMarketItems(
   return configs.map((item) => {
     const quote = quotes.get(item.sinaSymbol);
     const summary = item.history ? marketReturns.get(marketReturnKey(item)) : undefined;
+    const latestReturn = summary?.latest;
     const rangeReturn = range === 'today' ? null : summary?.ranges?.[range as FundReturnRangeKey];
     const state = marketStates.get(item.sinaSymbol)?.state ?? getMarketState(item.sinaSymbol);
+    const useLatestCloseReturn = range === 'today'
+      && latestReturn != null
+      && shouldUseLatestCloseReturn(item, quote, state);
     return {
       id: `${category}:${item.sinaSymbol}`,
       name: item.name,
       symbol: item.symbol,
       category,
       categoryLabel,
-      returnPercent: range === 'today' ? quote?.changePercent ?? null : rangeReturn?.returnPercent ?? null,
-      currentValue: range === 'today' ? quote?.price ?? null : rangeReturn?.endClose ?? summary?.endClose ?? null,
-      startDate: range === 'today' ? quote?.time?.slice(0, 10) : rangeReturn?.startDate,
-      endDate: range === 'today' ? quote?.time?.slice(0, 10) : rangeReturn?.endDate,
-      sourceLabel: range === 'today' ? rankingStateLabel(state) : '收盘价',
+      returnPercent: range === 'today'
+        ? (useLatestCloseReturn ? latestReturn.returnPercent : quote?.changePercent ?? latestReturn?.returnPercent ?? null)
+        : rangeReturn?.returnPercent ?? null,
+      currentValue: range === 'today'
+        ? (useLatestCloseReturn ? latestReturn.endClose : quote?.price ?? latestReturn?.endClose ?? null)
+        : rangeReturn?.endClose ?? summary?.endClose ?? null,
+      startDate: range === 'today'
+        ? (useLatestCloseReturn ? latestReturn.startDate : quote?.time?.slice(0, 10) ?? latestReturn?.startDate)
+        : rangeReturn?.startDate,
+      endDate: range === 'today'
+        ? (useLatestCloseReturn ? latestReturn.endDate : quote?.time?.slice(0, 10) ?? latestReturn?.endDate)
+        : rangeReturn?.endDate,
+      sourceLabel: range === 'today' && useLatestCloseReturn ? '最新收盘' : range === 'today' ? rankingStateLabel(state) : '收盘价',
     };
   });
 }
@@ -182,8 +201,8 @@ export default function RankingPage({
   const shouldLoadFunds = category === 'fund';
   const fundData = useFundReturnData(funds, shouldLoadFunds);
   const selectedMarketConfigs = useMemo(
-    () => (range === 'today' ? [] : marketConfigs(category, etfFilter)),
-    [category, etfFilter, range],
+    () => marketConfigs(category, etfFilter),
+    [category, etfFilter],
   );
   const selectedMarketConfigKey = useMemo(
     () => selectedMarketConfigs.map((config) => `${config.source}:${config.symbol}`).join('|'),
@@ -237,7 +256,7 @@ export default function RankingPage({
 
   const loading = category === 'fund'
     ? fundData.loading
-    : marketLoading || (range !== 'today' && returnsLoading);
+    : marketLoading || (returnsLoading && marketReturns.size === 0);
 
   useEffect(() => {
     onStatusMessageChange?.(loading ? '收益数据加载中...' : '');

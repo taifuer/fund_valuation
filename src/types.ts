@@ -163,7 +163,18 @@ export interface MarketReturnSummary {
   source: MarketHistoryConfig['source'];
   symbol: string;
   asOf?: string;
+  latest?: MarketLatestReturn;
   ranges?: Partial<Record<FundReturnRangeKey, MarketRangeReturn>>;
+  label: string;
+  returnPercent: number;
+  startDate: string;
+  endDate: string;
+  startClose: number;
+  endClose: number;
+}
+
+export interface MarketLatestReturn {
+  key: 'latest';
   label: string;
   returnPercent: number;
   startDate: string;

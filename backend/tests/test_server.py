@@ -907,6 +907,9 @@ class ServerDataRefreshTests(unittest.TestCase):
         summary = payload["sina-us:.INX"]
         self.assertEqual(summary["endDate"], "2026-05-14")
         self.assertEqual(summary["returnPercent"], 10.0)
+        self.assertEqual(summary["latest"]["startDate"], "2025-12-31")
+        self.assertEqual(summary["latest"]["endDate"], "2026-05-14")
+        self.assertEqual(summary["latest"]["returnPercent"], 10.0)
         self.assertEqual(summary["ranges"]["ytd"]["returnPercent"], 10.0)
         self.assertEqual(scheduled, [("sina-us", ".INX")])
 

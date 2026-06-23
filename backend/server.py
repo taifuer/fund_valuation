@@ -2150,6 +2150,7 @@ def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, An
     if len(points) < 2:
         return None
 
+    previous_date, previous_close = points[-2]
     latest_date, latest_close = points[-1]
     try:
         latest_day = datetime.fromisoformat(latest_date).date()
@@ -2202,11 +2203,22 @@ def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, An
     if not ranges:
         return None
 
+    latest_return_percent = ((latest_close - previous_close) / previous_close) * 100
+    latest_return = {
+        "key": "latest",
+        "label": "最新",
+        "returnPercent": round(latest_return_percent, 2),
+        "startDate": previous_date,
+        "endDate": latest_date,
+        "startClose": round(previous_close, 4),
+        "endClose": round(latest_close, 4),
+    }
     ytd = ranges.get("ytd")
     return {
         "source": source,
         "symbol": symbol,
         "asOf": latest_date,
+        "latest": latest_return,
         "ranges": ranges,
         "label": ytd["label"] if ytd else "",
         "returnPercent": ytd["returnPercent"] if ytd else 0,
