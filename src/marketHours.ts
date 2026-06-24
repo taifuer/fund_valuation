@@ -287,6 +287,34 @@ function marketKey(sinaSymbol: string): string | null {
 
 export type MarketState = 'live' | 'break' | 'closed' | 'holiday' | 'weekend';
 
+const FUTURES_TIMEZONE: Record<string, string> = {
+  us_futures: 'America/New_York',
+  hk_futures: 'Asia/Hong_Kong',
+  jp_futures: 'Asia/Tokyo',
+};
+
+/**
+ * Return the market-local calendar date (YYYY-MM-DD) for a Sina quote whose
+ * `time` field is a Beijing-time string ("YYYY-MM-DD HH:MM:SS"). Used to tell
+ * whether a quote represents a trading day strictly after the fund's official
+ * NAV date — a quote whose trading day is on or before navDate has already
+ * been baked into that NAV and must not be re-added to the T-day estimate.
+ */
+export function marketLocalDate(sinaSymbol: string, beijingTime: string): string | null {
+  const key = marketKey(sinaSymbol);
+  if (!key) return null;
+  const tz = FUTURES_TIMEZONE[key] ?? MARKETS[key]?.timezone;
+  if (!tz) return null;
+  const d = new Date(`${beijingTime.replace(' ', 'T')}+08:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
 export function getMarketState(sinaSymbol: string, now = new Date()): MarketState {
   const key = marketKey(sinaSymbol);
   if (!key) return 'closed';

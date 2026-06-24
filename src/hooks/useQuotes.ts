@@ -14,7 +14,7 @@ import {
   fetchMarketStates,
 } from '../api';
 import { INDICES, MARKET_ASSETS, ETF_ASSETS, FUNDS } from '../constants';
-import { getMarketState } from '../marketHours';
+import { getMarketState, marketLocalDate } from '../marketHours';
 
 const DISPLAY_FX_CURRENCIES = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
 type EstimateState = 'LIVE' | 'PRE' | 'POST' | 'PARTIAL' | 'CLOSED';
@@ -45,6 +45,11 @@ export interface FundEstimate {
   totalConfiguredWeight: number;
   quoteCoverage: number;
   missingQuoteCount: number;
+  /** Holdings whose quote trading day is on/before navDate (already baked into
+   *  the official NAV) and were therefore excluded from the T-day estimate. */
+  staleQuoteCount: number;
+  /** Holdings whose FX rate could not be fetched; their FX change defaulted to 0. */
+  missingFxCount: number;
   lastUpdated: number | null;
   estimateState: EstimateState;
   currencyChanges: Record<string, number>;
@@ -395,11 +400,32 @@ export function useQuotes(
             : null;
           const fundQuotes = new Map(holdingsQuotes.map((q) => [q.symbol, q]));
 
+          // Problem 2 — QDII timing alignment. A holding's quote whose market-
+          // local trading day is on or before the official NAV date has already
+          // been baked into that NAV; re-adding its change% would double-count
+          // the prior session's move. Exclude such stale (already-included)
+          // quotes from the T-day estimate. When the quote time/date is
+          // unreliable we conservatively keep it (don't drop a possibly-fresh
+          // quote on a formatting technicality).
+          const navDate = officialNAV?.navDate ?? '';
+          const quoteIsAfterNav = (h: { sinaSymbol: string }) => {
+            const q = fundQuotes.get(h.sinaSymbol);
+            if (!q || !navDate) return true;
+            if (!q.time || q.dateReliable === false) return true;
+            const md = marketLocalDate(h.sinaSymbol, q.time);
+            if (!md) return true;
+            return md > navDate;
+          };
+          let staleQuoteCount = 0;
+          let missingFxCount = 0;
+
           const computedChangeLocal =
             holdingsQuotes.length > 0
               ? fund.holdings.reduce((sum, h) => {
                   const q = fundQuotes.get(h.sinaSymbol);
-                  return q ? sum + fundQuoteChangePercent(q, now) * h.weight : sum;
+                  if (!q) return sum;
+                  if (!quoteIsAfterNav(h)) { staleQuoteCount += 1; return sum; }
+                  return sum + fundQuoteChangePercent(q, now) * h.weight;
                 }, 0)
               : 0;
 
@@ -408,7 +434,10 @@ export function useQuotes(
               ? fund.holdings.reduce((sum, h) => {
                   const q = fundQuotes.get(h.sinaSymbol);
                   if (!q) return sum;
-                  const fxChange = fundFxRates.get(h.currency)?.changePercent ?? 0;
+                  if (!quoteIsAfterNav(h)) return sum; // counted in staleQuoteCount above
+                  const fxRate = fundFxRates.get(h.currency);
+                  if (!fxRate && h.currency !== 'CNY') missingFxCount += 1;
+                  const fxChange = fxRate?.changePercent ?? 0;
                   const quoteChange = fundQuoteChangePercent(q, now);
                   const rmbChange = ((1 + quoteChange / 100) * (1 + fxChange / 100) - 1) * 100;
                   return sum + rmbChange * h.weight;
@@ -416,12 +445,12 @@ export function useQuotes(
               : 0;
 
           // Normalize by covered weight so a partial-holdings estimate scales
-          // to the full fund. quoteCoverage here is the weight sum of holdings
-          // that actually have a live quote; dividing by it projects the
-          // covered portion's move onto 100% of the fund. Mirrors the backend
+          // to the full fund. coveredWeight here counts only holdings that
+          // contributed a fresh (after-navDate) quote, so the projection is
+          // over the genuinely-informative portion. Mirrors the backend
           // backtest's normalizedChange = predicted / covered_weight.
           const coveredWeightLocal = fund.holdings.reduce((sum, h) => {
-            return fundQuotes.has(h.sinaSymbol) ? sum + h.weight : sum;
+            return fundQuotes.has(h.sinaSymbol) && quoteIsAfterNav(h) ? sum + h.weight : sum;
           }, 0);
           const normalizedChangeLocal = coveredWeightLocal > 0
             ? computedChangeLocal / coveredWeightLocal
@@ -434,11 +463,12 @@ export function useQuotes(
           ) === 'live');
           const fresh = lastUpdated != null && now.getTime() - lastUpdated < 90_000;
           const effectiveSessions = holdingsQuotes.map((q) => fundQuoteSession(q, now));
+          const hasFreshQuoteAfterNav = fund.holdings.some((h) => quoteIsAfterNav(h));
           const estimateState: EstimateState = fresh && effectiveSessions.some((session) => session === 'pre')
             ? 'PRE'
             : fresh && effectiveSessions.some((session) => session === 'post')
               ? 'POST'
-              : hasLiveHolding && fresh
+              : hasLiveHolding && fresh && hasFreshQuoteAfterNav
                 ? (missingQuoteCount > 0 ? 'PARTIAL' : 'LIVE')
                 : 'CLOSED';
 
@@ -482,6 +512,8 @@ export function useQuotes(
             totalConfiguredWeight,
             quoteCoverage,
             missingQuoteCount,
+            staleQuoteCount,
+            missingFxCount,
             lastUpdated,
             estimateState,
             currencyChanges: Object.fromEntries(

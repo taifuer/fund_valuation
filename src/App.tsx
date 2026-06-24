@@ -246,13 +246,6 @@ export default function App() {
     activePage === 'funds',
     refreshNonce,
   );
-  const lastUpdated = useMemo(() => {
-    let latest = 0;
-    for (const q of quotes.values()) {
-      if (q.fetchedAt > latest) latest = q.fetchedAt;
-    }
-    return latest || null;
-  }, [quotes]);
   const triggerRefresh = useCallback(() => setRefreshNonce((n) => n + 1), []);
   const overviewData = useOverviewData(funds, activePage === 'overview');
   const headerFxRates = useHeaderFxRates(activePage !== 'overview');
@@ -479,7 +472,6 @@ export default function App() {
         activePage={activePage}
         onPageChange={navigatePage}
         statusMessage={pageStatusMessage}
-        lastUpdated={lastUpdated}
         onRefresh={triggerRefresh}
         refreshing={marketLoading || fundLoading}
       />

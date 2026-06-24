@@ -5,6 +5,7 @@ import { getMarketState } from '../marketHours';
 import { rankingStateLabel } from '../displayStatus';
 import { useFundReturnData } from '../hooks/usePageData';
 import type { FundEstimate } from '../hooks/useQuotes';
+import { UNRELIABLE_SPOT_SYMBOLS } from './IndexCards.logic';
 import type { Fund, FundReturnRangeKey, IndexConfig, MarketReturnSummary, MarketStateData, QuoteData } from '../types';
 import styles from './RankingPage.module.css';
 
@@ -99,14 +100,18 @@ function makeMarketItems(
   marketStates: Map<string, MarketStateData>,
 ): RankingItem[] {
   return configs.map((item) => {
-    const quote = quotes.get(item.sinaSymbol);
+    // For indices whose spot source is known-bad (e.g. int_nikkei), use the
+    // futures quote as the "today" value instead — the spot value is wrong.
+    const spotQuote = quotes.get(item.sinaSymbol);
+    const useFutures = UNRELIABLE_SPOT_SYMBOLS.has(item.sinaSymbol) && item.futures;
+    const quote = useFutures ? quotes.get(item.futures!.sinaSymbol) : spotQuote;
     const summary = item.history ? marketReturns.get(marketReturnKey(item)) : undefined;
     const latestReturn = summary?.latest;
     const rangeReturn = range === 'today' ? null : summary?.ranges?.[range as FundReturnRangeKey];
     const state = marketStates.get(item.sinaSymbol)?.state ?? getMarketState(item.sinaSymbol);
     const useLatestCloseReturn = range === 'today'
       && latestReturn != null
-      && shouldUseLatestCloseReturn(item, quote, state);
+      && shouldUseLatestCloseReturn(item, spotQuote, state);
     return {
       id: `${category}:${item.sinaSymbol}`,
       name: item.name,

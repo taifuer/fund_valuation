@@ -92,6 +92,8 @@ function emptyFundEstimate(
     totalConfiguredWeight: 0,
     quoteCoverage: 0,
     missingQuoteCount: 0,
+    staleQuoteCount: 0,
+    missingFxCount: 0,
     lastUpdated: null,
     estimateState: 'CLOSED',
     currencyChanges: {},

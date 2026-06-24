@@ -97,15 +97,28 @@ function Card({
     futures: futuresData,
     spotState: state,
     futuresState,
+    spotSymbol: idx.sinaSymbol,
   });
   const displayData = useFutures && futuresData ? futuresData : data;
   const up = displayData.change >= 0;
+  const activeState = useFutures && idx.futures ? futuresState : state;
   const displayState = quoteDisplayState({
     quote: displayData,
-    marketState: useFutures && idx.futures ? futuresState : state,
+    marketState: activeState,
     futuresLive: useFutures,
   });
-  const displayTime = quoteDisplayTime(displayData, displayState, { useCloseTimeWhenClosed: true });
+  // Sources like Sina int_nikkei omit the date, so the parser stamps the quote
+  // with the fetch time (today). On a closed/holiday market that mislabels a
+  // prior-day close as "today's close". When the quote date is unreliable,
+  // re-stamp it with the market's last trading day so the displayed date
+  // reflects the day the price actually reflects.
+  const lastTradingDay = !useFutures
+    ? (marketStates.get(idx.sinaSymbol)?.lastTradingDay ?? null)
+    : null;
+  const datedQuote = displayData.dateReliable === false && lastTradingDay
+    ? { ...displayData, time: lastTradingDay }
+    : displayData;
+  const displayTime = quoteDisplayTime(datedQuote, displayState, { useCloseTimeWhenClosed: true });
 
   function stateClassName(currentState: QuoteDisplayState): string {
     if (currentState === 'futuresLive') return styles.stateFutures;

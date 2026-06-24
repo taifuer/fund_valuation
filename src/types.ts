@@ -203,6 +203,10 @@ export interface MarketStateData {
   date?: string;
   state: MarketState;
   source: string;
+  /** Most recent trading day the symbol's quote could reflect (today if open,
+   *  else previous trading day). Used to date quotes from sources that omit
+   *  the date field (e.g. Sina int_nikkei). */
+  lastTradingDay?: string | null;
 }
 
 export interface MarketHistoryConfig {

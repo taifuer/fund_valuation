@@ -595,15 +595,20 @@ def us_futures_state(now: datetime) -> str:
 def market_state_for_symbol(symbol: str, now: datetime) -> dict[str, Any]:
     market = market_key_for_symbol(symbol)
     if not market:
-        return {"symbol": symbol, "market": "", "state": "closed", "source": "unknown"}
+        return {"symbol": symbol, "market": "", "state": "closed", "source": "unknown", "lastTradingDay": None}
     if market == "crypto":
-        return {"symbol": symbol, "market": market, "state": "live", "source": "continuous crypto market"}
+        return {"symbol": symbol, "market": market, "state": "live", "source": "continuous crypto market", "lastTradingDay": None}
     if market == "us_futures":
-        return {"symbol": symbol, "market": market, "state": us_futures_state(now), "source": "CME Globex session rule"}
+        return {"symbol": symbol, "market": market, "state": us_futures_state(now), "source": "CME Globex session rule", "lastTradingDay": None}
 
     calendar = MARKET_CALENDARS[market]
     local = now.astimezone(ZoneInfo(str(calendar["timezone"])))
     day = local.strftime("%Y-%m-%d")
+    # The most recent trading day the symbol's quote could reflect: today if
+    # the market is open/half-day (and past the first session start), else the
+    # previous trading day. Frontends use this to date quotes from sources that
+    # omit the date (e.g. Sina int_nikkei) instead of stamping them "today".
+    last_trading_day = expected_quote_date_for_symbol(symbol, local)
 
     if market in {"hk_futures", "jp_futures"}:
         if in_futures_sessions(market, local):
@@ -618,11 +623,12 @@ def market_state_for_symbol(symbol: str, now: datetime) -> dict[str, Any]:
             "date": day,
             "state": state,
             "source": row["source"] if row else str(calendar["source"]),
+            "lastTradingDay": last_trading_day,
         }
 
     row = market_calendar_row(market, day)
     if not row:
-        return {"symbol": symbol, "market": market, "date": day, "state": "closed", "source": str(calendar["source"])}
+        return {"symbol": symbol, "market": market, "date": day, "state": "closed", "source": str(calendar["source"]), "lastTradingDay": last_trading_day}
     if row["status"] in {"holiday", "weekend"}:
         state = row["status"]
     else:
@@ -639,6 +645,7 @@ def market_state_for_symbol(symbol: str, now: datetime) -> dict[str, Any]:
         "date": day,
         "state": state,
         "source": row["source"],
+        "lastTradingDay": last_trading_day,
     }
 
 

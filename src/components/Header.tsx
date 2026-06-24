@@ -21,27 +21,17 @@ interface Props {
   activePage: 'overview' | 'funds' | 'ranking' | 'risk';
   onPageChange: (page: 'overview' | 'funds' | 'ranking' | 'risk') => void;
   statusMessage?: string;
-  lastUpdated?: number | null;
   onRefresh?: () => void;
   refreshing?: boolean;
 }
 
 const FX_ORDER = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
 
-function formatLastUpdated(ts: number): string {
-  const beijing = new Date(ts + 8 * 60 * 60 * 1000);
-  const hour = String(beijing.getUTCHours()).padStart(2, '0');
-  const minute = String(beijing.getUTCMinutes()).padStart(2, '0');
-  const second = String(beijing.getUTCSeconds()).padStart(2, '0');
-  return `${hour}:${minute}:${second}`;
-}
-
 export default function Header({
   fxRates,
   activePage,
   onPageChange,
   statusMessage = '',
-  lastUpdated = null,
   onRefresh,
   refreshing = false,
 }: Props) {
@@ -112,9 +102,6 @@ export default function Header({
               <span className={styles.live} />
               {time}（北京时间）
             </span>
-            {lastUpdated != null && (
-              <span className={styles.lastUpdated}>数据更新于 {formatLastUpdated(lastUpdated)}</span>
-            )}
             {onRefresh && (
               <button
                 type="button"

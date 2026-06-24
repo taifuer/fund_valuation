@@ -180,6 +180,8 @@ const FundCard = memo(function FundCard({
     quoteCoverage,
     totalConfiguredWeight,
     missingQuoteCount,
+    staleQuoteCount,
+    missingFxCount,
     estimateState,
     currencyChanges,
   } = estimate;
@@ -267,6 +269,16 @@ const FundCard = memo(function FundCard({
               <div className={styles.estimateCoverage}>
                 行情覆盖 {((quoteCoverage / totalConfiguredWeight) * 100).toFixed(0)}%，已按覆盖权重归一化
                 （原始 {localUp ? '+' : ''}{computedChangeLocal.toFixed(2)}%{estimatedNAV !== null ? ` / 含汇率 ${up ? '+' : ''}${computedChange.toFixed(2)}%` : ''}）
+              </div>
+            )}
+            {normalizedNAVLocal !== null && staleQuoteCount > 0 && (
+              <div className={styles.estimateCoverage}>
+                {staleQuoteCount} 项持仓行情不晚于已出净值日，已剔除以防重复计入
+              </div>
+            )}
+            {normalizedNAVLocal !== null && missingFxCount > 0 && (
+              <div className={styles.estimateCoverage}>
+                {missingFxCount} 项外币持仓汇率缺失，按 0 计入
               </div>
             )}
           </div>
