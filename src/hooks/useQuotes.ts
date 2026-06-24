@@ -14,7 +14,7 @@ import {
   fetchMarketStates,
 } from '../api';
 import { INDICES, MARKET_ASSETS, ETF_ASSETS, FUNDS } from '../constants';
-import { getMarketState, marketLocalDate } from '../marketHours';
+import { getMarketState, quoteIsAfterNavClose } from '../marketHours';
 
 const DISPLAY_FX_CURRENCIES = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
 type EstimateState = 'LIVE' | 'PRE' | 'POST' | 'PARTIAL' | 'CLOSED';
@@ -410,20 +410,23 @@ export function useQuotes(
           const fundQuotes = new Map(holdingsQuotes.map((q) => [q.symbol, q]));
 
           // Problem 2 — QDII timing alignment. A holding's quote whose market-
-          // local trading day is on or before the official NAV date has already
-          // been baked into that NAV; re-adding its change% would double-count
-          // the prior session's move. Exclude such stale (already-included)
-          // quotes from the T-day estimate. When the quote time/date is
-          // unreliable we conservatively keep it (don't drop a possibly-fresh
-          // quote on a formatting technicality).
+          // local information is at or before the official NAV date's regular
+          // close has already been baked into that NAV; re-adding its change%
+          // would double-count the prior session's move. We count a quote only
+          // if it reflects information strictly AFTER navDate's regular close:
+          //   - trading day strictly after navDate, OR
+          //   - trading day == navDate but the quote time is after the regular
+          //     close (after-hours session) — this is a leading signal for the
+          //     next NAV and must not be dropped.
+          // When the decision can't be made reliably (unknown market, no time,
+          // unreliable date) we conservatively keep the quote.
           const navDate = officialNAV?.navDate ?? '';
           const quoteIsAfterNav = (h: { sinaSymbol: string }) => {
             const q = fundQuotes.get(h.sinaSymbol);
             if (!q || !navDate) return true;
             if (!q.time || q.dateReliable === false) return true;
-            const md = marketLocalDate(h.sinaSymbol, q.time);
-            if (!md) return true;
-            return md > navDate;
+            const decision = quoteIsAfterNavClose(h.sinaSymbol, q.time, navDate);
+            return decision == null ? true : decision;
           };
           let staleQuoteCount = 0;
           let missingFxCount = 0;

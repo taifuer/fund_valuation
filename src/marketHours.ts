@@ -315,6 +315,67 @@ export function marketLocalDate(sinaSymbol: string, beijingTime: string): string
   }).format(d);
 }
 
+/** Last regular-session end minute-of-day for a market (the official close). */
+function marketRegularCloseMinutes(key: string): number | null {
+  // Futures markets trade overnight; their "close" semantics differ and they
+  // are not fund holdings, so this is only meaningful for equity markets.
+  const calendar = MARKETS[key];
+  if (!calendar) return null;
+  let maxEnd = -1;
+  for (const s of calendar.sessions) {
+    // Only count same-day sessions (start < end); ignore overnight legs.
+    if (s.start[0] * 60 + s.start[1] < s.end[0] * 60 + s.end[1]) {
+      maxEnd = Math.max(maxEnd, s.end[0] * 60 + s.end[1]);
+    }
+  }
+  return maxEnd >= 0 ? maxEnd : null;
+}
+
+/**
+ * Decide whether a quote's market-local timestamp reflects information strictly
+ * AFTER the official NAV date's regular close — i.e. it carries new information
+ * not already baked into the navDate NAV and should be counted toward the T-day
+ * estimate.
+ *
+ * - Trading day strictly after navDate  → true (next day's pre/regular/post)
+ * - Trading day == navDate, time after regular close → true (after-hours)
+ * - Trading day == navDate, at or before regular close → false (already in NAV)
+ * - Trading day before navDate → false (stale)
+ *
+ * Returns null when the decision cannot be made reliably (unknown market,
+ * unparseable time, no regular close known) — callers should treat null as
+ * "keep" (don't drop a possibly-fresh quote on a technicality).
+ */
+export function quoteIsAfterNavClose(
+  sinaSymbol: string,
+  beijingTime: string,
+  navDate: string,
+): boolean | null {
+  const key = marketKey(sinaSymbol);
+  if (!key) return null;
+  const tz = FUTURES_TIMEZONE[key] ?? MARKETS[key]?.timezone;
+  if (!tz) return null;
+  const d = new Date(`${beijingTime.replace(' ', 'T')}+08:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23', hour12: false,
+  }).formatToParts(d);
+  const v = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  const localDate = `${v('year')}-${v('month')}-${v('day')}`;
+  const localMinutes = Number(v('hour')) * 60 + Number(v('minute'));
+
+  if (localDate > navDate) return true;
+  if (localDate < navDate) return false;
+  // Same day as navDate: count only if the quote time is after the regular
+  // close (after-hours session). A regular-session or pre-market quote on
+  // navDate itself was already reflected in the official NAV.
+  const closeMinutes = marketRegularCloseMinutes(key);
+  if (closeMinutes == null) return null;
+  return localMinutes > closeMinutes;
+}
+
 export function getMarketState(sinaSymbol: string, now = new Date()): MarketState {
   const key = marketKey(sinaSymbol);
   if (!key) return 'closed';
