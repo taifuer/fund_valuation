@@ -340,7 +340,16 @@ export function useQuotes(
             ]);
 
         if (cancelled) return;
-        setQuotes((prev) => new Map([...prev, ...marketQuotes]));
+        setQuotes((prev) => {
+          const next = new Map(prev);
+          for (const symbol of marketSymbols) {
+            if (!marketQuotes.has(symbol)) next.delete(symbol);
+          }
+          for (const [symbol, quote] of marketQuotes) {
+            next.set(symbol, quote);
+          }
+          return next;
+        });
         setFxRates((prev) => new Map([...prev, ...displayFxRates]));
         setMarketStates((prev) => new Map([...prev, ...marketStatesData]));
       } catch (e) {

@@ -97,7 +97,6 @@ function Card({
     futures: futuresData,
     spotState: state,
     futuresState,
-    spotSymbol: idx.sinaSymbol,
   });
   const displayData = useFutures && futuresData ? futuresData : data;
   const up = displayData.change >= 0;

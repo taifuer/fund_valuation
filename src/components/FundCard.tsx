@@ -169,10 +169,8 @@ const FundCard = memo(function FundCard({
     officialNAV,
     purchaseStatus,
     rangeReturns,
-    computedChangeLocal,
     estimatedNAVLocal,
     computedChange,
-    estimatedNAV,
     normalizedChangeLocal,
     normalizedChange,
     normalizedNAVLocal,
@@ -265,12 +263,6 @@ const FundCard = memo(function FundCard({
                 <span className={styles.estimateTime}>{timeLabel}</span>
               )}
             </div>
-            {normalizedNAVLocal !== null && totalConfiguredWeight > 0 && quoteCoverage < totalConfiguredWeight && (
-              <div className={styles.estimateCoverage}>
-                行情覆盖 {((quoteCoverage / totalConfiguredWeight) * 100).toFixed(0)}%，已按覆盖权重归一化
-                （原始 {localUp ? '+' : ''}{computedChangeLocal.toFixed(2)}%{estimatedNAV !== null ? ` / 含汇率 ${up ? '+' : ''}${computedChange.toFixed(2)}%` : ''}）
-              </div>
-            )}
             {normalizedNAVLocal !== null && staleQuoteCount > 0 && (
               <div className={styles.estimateCoverage}>
                 {staleQuoteCount} 项持仓行情不晚于已出净值日，已剔除以防重复计入

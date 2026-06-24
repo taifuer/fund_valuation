@@ -102,11 +102,13 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
 BACKTEST_MODEL_VERSION = "top_holdings_v1"
 EASTMONEY_GLOBAL_QUOTES: dict[str, tuple[str, str]] = {
     "int_nikkei": ("100.N225", "日经指数"),
-    "b_TWSE": ("100.TWII", "台湾台北指数"),
 }
+EASTMONEY_SPOT_REPLACEMENT_SYMBOLS = {"int_nikkei"}
 SINA_GLOBAL_FALLBACK_QUOTES: dict[str, tuple[str, str]] = {
+    "int_nikkei": ("znb_NKY", "日经225"),
     "b_TWSE": ("znb_TWJQ", "台湾加权"),
 }
+FORCED_GLOBAL_REPLACEMENT_SYMBOLS = EASTMONEY_SPOT_REPLACEMENT_SYMBOLS | set(SINA_GLOBAL_FALLBACK_QUOTES)
 
 
 def now_ms() -> int:
@@ -980,12 +982,13 @@ def eastmoney_global_quote_line(symbol: str) -> str | None:
                 updated_at = datetime.now(ZoneInfo("Asia/Shanghai"))
             expected_date = expected_quote_date_for_symbol(symbol)
             date = updated_at.date().isoformat()
+            time_text = updated_at.strftime("%H:%M:%S")
             if expected_date and date >= expected_date:
                 name = str(data.get("f58") or fallback_name)
-                return f'var hq_str_{symbol}="{name},{price:.2f},{change:.2f},{change_percent:.2f},{date}";'
+                return f'var hq_str_{symbol}="{name},{price:.2f},{change:.2f},{change_percent:.2f},{date},{time_text}";'
             if not expected_date and abs((datetime.now(ZoneInfo("Asia/Shanghai")) - updated_at).days) <= 7:
                 name = str(data.get("f58") or fallback_name)
-                return f'var hq_str_{symbol}="{name},{price:.2f},{change:.2f},{change_percent:.2f},{date}";'
+                return f'var hq_str_{symbol}="{name},{price:.2f},{change:.2f},{change_percent:.2f},{date},{time_text}";'
 
     return eastmoney_global_kline_quote_line(symbol, secid, fallback_name)
 
@@ -1034,14 +1037,35 @@ def eastmoney_global_kline_quote_line(symbol: str, secid: str, fallback_name: st
 
 
 def append_eastmoney_global_quotes(text: str, symbols: list[str]) -> str:
-    lines = [text.rstrip()] if text.strip() else []
+    requested = set(symbols)
+    replacements: dict[str, str] = {}
     for symbol in sorted(set(symbols)):
-        try:
-            line = sina_global_fallback_quote_line(symbol)
-        except Exception:
-            line = None
+        line = None
+        if symbol in EASTMONEY_SPOT_REPLACEMENT_SYMBOLS:
+            try:
+                line = eastmoney_global_quote_line(symbol)
+            except Exception:
+                line = None
+        if not line:
+            try:
+                line = sina_global_fallback_quote_line(symbol)
+            except Exception:
+                line = None
         if line:
-            lines.append(line)
+            replacements[symbol] = line
+
+    dropped_bad_spot_symbols = requested & FORCED_GLOBAL_REPLACEMENT_SYMBOLS
+    lines: list[str] = []
+    for line in text.rstrip().splitlines():
+        match = re.match(r'^var\s+hq_str_(\w+)="', line.strip())
+        existing_symbol = match.group(1) if match else ""
+        if existing_symbol in replacements or existing_symbol in dropped_bad_spot_symbols:
+            continue
+        if line.strip():
+            lines.append(line.rstrip())
+
+    for symbol in sorted(replacements):
+        lines.append(replacements[symbol])
     return "\n".join(line for line in lines if line) + ("\n" if lines else "")
 
 

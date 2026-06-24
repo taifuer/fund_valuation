@@ -5,6 +5,8 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 
@@ -275,25 +277,69 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(payload["fundSummaries"]["016664"]["navDate"], "2026-05-21")
         self.assertAlmostEqual(payload["fundSummaries"]["016664"]["officialChange"], -0.83, places=2)
 
-    def test_sina_proxy_does_not_query_eastmoney_global_quotes(self) -> None:
+    def test_sina_proxy_replaces_bad_nikkei_with_eastmoney_spot_quote(self) -> None:
         sina_body = (
             'var hq_str_b_TWSE="台湾台北指数,25580.32,-443.53,-1.70,9/26/2025,2025-09-26";\n'
             'var hq_str_int_nikkei="日经指数,44946.64,-408.35,-0.90";\n'
         ).encode("gb18030")
+        timestamp = int(datetime(2026, 6, 24, 10, 30, 0, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp())
 
         def fake_fetch(url: str, **_kwargs: object) -> tuple[int, str, bytes]:
             return 200, "text/plain; charset=utf-8", sina_body
 
+        def fake_eastmoney(url: str, **_kwargs: object) -> dict[str, object] | None:
+            self.assertIn("100.N225", url)
+            return {"data": {"f43": 6940450, "f169": 8700, "f170": 13, "f86": timestamp, "f58": "日经225"}}
+
         with (
             patch.object(server, "fetch_upstream", side_effect=fake_fetch),
-            patch.object(server, "fetch_eastmoney_json") as eastmoney,
+            patch.object(server, "fetch_eastmoney_json", side_effect=fake_eastmoney) as eastmoney,
+            patch.object(server, "expected_quote_date_for_symbol", return_value="2026-06-24"),
         ):
             response = server.app.test_client().get("/api/sina?list=int_nikkei,b_TWSE")
 
         text = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn('var hq_str_int_nikkei="日经指数,44946.64,-408.35,-0.90";', text)
-        eastmoney.assert_not_called()
+        self.assertNotIn("44946.64", text)
+        self.assertIn('var hq_str_int_nikkei="日经225,69404.50,87.00,0.13,2026-06-24,10:30:00";', text)
+        eastmoney.assert_called_once()
+
+    def test_sina_proxy_drops_bad_nikkei_when_eastmoney_spot_unavailable(self) -> None:
+        sina_body = 'var hq_str_int_nikkei="日经指数,44946.64,-408.35,-0.90";\n'.encode("gb18030")
+
+        with (
+            patch.object(server, "fetch_upstream", return_value=(200, "text/plain; charset=utf-8", sina_body)),
+            patch.object(server, "fetch_eastmoney_json", return_value=None),
+        ):
+            response = server.app.test_client().get("/api/sina?list=int_nikkei")
+
+        text = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("int_nikkei", text)
+
+    def test_sina_proxy_uses_sina_world_index_fallback_for_nikkei(self) -> None:
+        stale_body = 'var hq_str_int_nikkei="日经指数,44946.64,-408.35,-0.90";\n'.encode("gb18030")
+        fallback_body = (
+            'var hq_str_znb_NKY="日经225,69174.7500,-613.63,-0.88,2:12 AM,1759126320,'
+            '2026-06-24,14:30:01,69615.0800,69788.3800,70218.7100,68461.1000,0";\n'
+        ).encode("gb18030")
+
+        def fake_fetch(url: str, **_kwargs: object) -> tuple[int, str, bytes]:
+            if "znb_NKY" in url:
+                return 200, "text/plain; charset=gb18030", fallback_body
+            return 200, "text/plain; charset=gb18030", stale_body
+
+        with (
+            patch.object(server, "fetch_upstream", side_effect=fake_fetch),
+            patch.object(server, "fetch_eastmoney_json", return_value=None),
+            patch.object(server, "expected_quote_date_for_symbol", return_value="2026-06-24"),
+        ):
+            response = server.app.test_client().get("/api/sina?list=int_nikkei")
+
+        text = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("44946.64", text)
+        self.assertIn('var hq_str_int_nikkei="日经225,69174.75,-613.63,-0.88,2026-06-24";', text)
 
     def test_sina_proxy_uses_sina_world_index_fallback_for_taiwan(self) -> None:
         stale_body = (
@@ -318,6 +364,22 @@ class ServerDataRefreshTests(unittest.TestCase):
         text = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn('var hq_str_b_TWSE="台湾加权,46465.20,587.81,1.28,2026-06-19";', text)
+
+    def test_sina_proxy_drops_stale_taiwan_when_fallback_unavailable(self) -> None:
+        stale_body = (
+            'var hq_str_b_TWSE="台湾台北指数,25580.32,-443.53,-1.70,9/26/2025,2025-09-26";\n'
+        ).encode("gb18030")
+
+        with (
+            patch.object(server, "fetch_upstream", return_value=(200, "text/plain; charset=gb18030", stale_body)),
+            patch.object(server, "fetch_eastmoney_json", return_value=None),
+        ):
+            response = server.app.test_client().get("/api/sina?list=b_TWSE")
+
+        text = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("b_TWSE", text)
+        self.assertNotIn("25580.32", text)
 
     def test_eastmoney_global_quote_falls_back_to_latest_daily_kline(self) -> None:
         kline_payload = {

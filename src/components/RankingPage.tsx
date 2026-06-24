@@ -5,7 +5,6 @@ import { getMarketState } from '../marketHours';
 import { rankingStateLabel } from '../displayStatus';
 import { useFundReturnData } from '../hooks/usePageData';
 import type { FundEstimate } from '../hooks/useQuotes';
-import { UNRELIABLE_SPOT_SYMBOLS } from './IndexCards.logic';
 import type { Fund, FundReturnRangeKey, IndexConfig, MarketReturnSummary, MarketStateData, QuoteData } from '../types';
 import styles from './RankingPage.module.css';
 
@@ -90,6 +89,11 @@ function shouldUseLatestCloseReturn(item: IndexConfig, quote: QuoteData | undefi
   return Math.abs(quote.changePercent) < 0.005;
 }
 
+function latestSourceLabel(state: MarketStateData['state']) {
+  if (state === 'live' || state === 'break') return rankingStateLabel(state);
+  return '收盘价';
+}
+
 function makeMarketItems(
   configs: IndexConfig[],
   category: RankingItem['category'],
@@ -100,18 +104,14 @@ function makeMarketItems(
   marketStates: Map<string, MarketStateData>,
 ): RankingItem[] {
   return configs.map((item) => {
-    // For indices whose spot source is known-bad (e.g. int_nikkei), use the
-    // futures quote as the "today" value instead — the spot value is wrong.
-    const spotQuote = quotes.get(item.sinaSymbol);
-    const useFutures = UNRELIABLE_SPOT_SYMBOLS.has(item.sinaSymbol) && item.futures;
-    const quote = useFutures ? quotes.get(item.futures!.sinaSymbol) : spotQuote;
+    const quote = quotes.get(item.sinaSymbol);
+    const state = marketStates.get(item.sinaSymbol)?.state ?? getMarketState(item.sinaSymbol);
     const summary = item.history ? marketReturns.get(marketReturnKey(item)) : undefined;
     const latestReturn = summary?.latest;
     const rangeReturn = range === 'today' ? null : summary?.ranges?.[range as FundReturnRangeKey];
-    const state = marketStates.get(item.sinaSymbol)?.state ?? getMarketState(item.sinaSymbol);
     const useLatestCloseReturn = range === 'today'
       && latestReturn != null
-      && shouldUseLatestCloseReturn(item, spotQuote, state);
+      && shouldUseLatestCloseReturn(item, quote, state);
     return {
       id: `${category}:${item.sinaSymbol}`,
       name: item.name,
@@ -130,7 +130,11 @@ function makeMarketItems(
       endDate: range === 'today'
         ? (useLatestCloseReturn ? latestReturn.endDate : quote?.time?.slice(0, 10) ?? latestReturn?.endDate)
         : rangeReturn?.endDate,
-      sourceLabel: range === 'today' && useLatestCloseReturn ? '最新收盘' : range === 'today' ? rankingStateLabel(state) : '收盘价',
+      sourceLabel: range === 'today' && useLatestCloseReturn
+        ? '最新收盘'
+        : range === 'today'
+          ? latestSourceLabel(state)
+          : '收盘价',
     };
   });
 }

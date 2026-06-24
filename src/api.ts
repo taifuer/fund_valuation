@@ -17,7 +17,7 @@ import { globalFutureReferencePrice } from './quoteMath';
 
 type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'crypto' | 'fund' | 'fx';
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
+const API_BASE = ((import.meta as ImportMeta & { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
 function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
@@ -124,7 +124,7 @@ function usExtendedSession(raw: string): 'pre' | 'post' | null {
   return null;
 }
 
-function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: QuoteData } | null {
+export function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: QuoteData } | null {
   const match = line.match(/^var hq_str_(\w+)="(.+)";?\s*$/);
   if (!match) return null;
 
@@ -202,13 +202,17 @@ function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: 
         // b_TWSE may only include date; int_nikkei currently has no date/time in Sina's short quote.
         for (let i = fields.length - 1; i >= 4; i--) {
           if (/^\d{4}-\d{2}-\d{2}$/.test(fields[i])) {
-            date = fields[i];
+            const maybeTime = fields[i + 1] ?? '';
+            date = /^\d{2}:\d{2}(:\d{2})?$/.test(maybeTime)
+              ? combineBeijingDateTime(fields[i], maybeTime)
+              : fields[i];
             hasExplicitIntlDate = true;
             break;
           }
         }
       }
       if (!date || isStale(date)) {
+        if (rawSymbol === 'int_nikkei') return null;
         if (hasExplicitIntlDate) return null;
         date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
@@ -367,11 +371,19 @@ export async function fetchAllQuotes(sinaSymbols: string[]): Promise<Map<string,
       if (!res.ok) return;
       const text = await res.text();
       const fetchedAt = Date.now();
+      const parsedSymbols = new Set<string>();
       for (const line of text.split('\n')) {
         const parsed = parseSinaVar(line.trim(), fetchedAt);
         if (parsed) {
+          parsedSymbols.add(parsed.symbol);
           quoteCache.set(parsed.symbol, parsed.data);
           results.set(parsed.symbol, parsed.data);
+        }
+      }
+      for (const symbol of batch) {
+        if (!parsedSymbols.has(symbol)) {
+          quoteCache.delete(symbol);
+          results.delete(symbol);
         }
       }
     } catch { /* skip */ }
