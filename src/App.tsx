@@ -238,15 +238,12 @@ export default function App() {
       .map(toCustomFund);
     return [...defaultFunds, ...customFunds];
   }, [managedFunds]);
-  const [refreshNonce, setRefreshNonce] = useState(0);
-  const { quotes, fundEstimates, fxRates, marketStates, marketLoading, fundLoading, error } = useQuotes(
+  const { quotes, fundEstimates, fxRates, marketStates, fundLoading, error } = useQuotes(
     funds,
     fundDisplayMode === 'detail',
     false,
     activePage === 'funds',
-    refreshNonce,
   );
-  const triggerRefresh = useCallback(() => setRefreshNonce((n) => n + 1), []);
   const overviewData = useOverviewData(funds, activePage === 'overview');
   const headerFxRates = useHeaderFxRates(activePage !== 'overview');
   const marketPageData = useRankingMarketData(activePage === 'ranking');
@@ -472,8 +469,6 @@ export default function App() {
         activePage={activePage}
         onPageChange={navigatePage}
         statusMessage={pageStatusMessage}
-        onRefresh={triggerRefresh}
-        refreshing={marketLoading || fundLoading}
       />
       {activeError && <div className={styles.error}>{activeError}</div>}
       {activePage === 'overview' ? (

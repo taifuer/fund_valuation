@@ -106,5 +106,14 @@ assert.equal(
   parseSinaVar('var hq_str_int_nikkei="日经225,69404.50,87.00,0.13,2026-06-24,10:30:00";', now)?.data.price,
   69404.5,
 );
+assert.equal(
+  parseSinaVar('var hq_str_s_sz399006="创业板指,4371.99,120.56,2.84,0,0,2026-06-25";', now)?.data.time,
+  '2026-06-25',
+);
+{
+  const parsed = parseSinaVar('var hq_str_sz159326="电网设备,0.000,2.189,0.000,0.000,0.000,0.000,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,2026-06-25,09:10:00,00";', now);
+  assert.equal(parsed?.data.price, 2.19);
+  assert.equal(parsed?.data.changePercent, 0);
+}
 
 console.log('frontend logic tests passed');

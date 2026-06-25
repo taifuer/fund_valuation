@@ -21,8 +21,6 @@ interface Props {
   activePage: 'overview' | 'funds' | 'ranking' | 'risk';
   onPageChange: (page: 'overview' | 'funds' | 'ranking' | 'risk') => void;
   statusMessage?: string;
-  onRefresh?: () => void;
-  refreshing?: boolean;
 }
 
 const FX_ORDER = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
@@ -32,8 +30,6 @@ export default function Header({
   activePage,
   onPageChange,
   statusMessage = '',
-  onRefresh,
-  refreshing = false,
 }: Props) {
   const [time, setTime] = useState(formatTime());
   const displayRates = FX_ORDER.map((currency) => fxRates.get(currency)).filter((rate): rate is FxRateData => rate != null);
@@ -102,17 +98,6 @@ export default function Header({
               <span className={styles.live} />
               {time}（北京时间）
             </span>
-            {onRefresh && (
-              <button
-                type="button"
-                className={styles.refreshButton}
-                onClick={onRefresh}
-                disabled={refreshing}
-                aria-label="刷新行情数据"
-              >
-                {refreshing ? '刷新中…' : '刷新'}
-              </button>
-            )}
           </div>
           {displayRates.length > 0 && (
             <div className={styles.fxRow}>

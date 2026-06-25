@@ -142,7 +142,6 @@ export function useQuotes(
   loadFundDetails = false,
   loadFundReturns = false,
   enabled = true,
-  refreshNonce = 0,
 ) {
   const [quotes, setQuotes] = useState<Map<string, QuoteData>>(new Map());
   const [fundEstimates, setFundEstimates] = useState<FundEstimate[]>([]);
@@ -164,7 +163,6 @@ export function useQuotes(
   const dynamicHoldingsFetchedAtRef = useRef<Map<string, number>>(new Map());
   const dynamicProfilesFetchedAtRef = useRef<Map<string, number>>(new Map());
   const fundCacheKeyRef = useRef('');
-  const lastRefreshNonceRef = useRef(0);
 
   useEffect(() => {
     // Per-invocation cancellation flag. Unlike a shared mountedRef, this is
@@ -180,10 +178,6 @@ export function useQuotes(
     }
     const currentFundKey = fundCacheKey(funds);
     const fundsChanged = fundCacheKeyRef.current !== currentFundKey;
-    // A manual refresh (refreshNonce bump) should force the loading flags on so
-    // the refresh button shows feedback, even when snapshots already exist.
-    const manualRefresh = refreshNonce !== lastRefreshNonceRef.current;
-    lastRefreshNonceRef.current = refreshNonce;
     const hasMarketSnapshot = quotes.size > 0;
     const hasFundSnapshot = fundEstimates.length > 0;
     if (fundsChanged) {
@@ -546,9 +540,9 @@ export function useQuotes(
       }
     }
 
-    loadMarket(fundsChanged || !hasMarketSnapshot || manualRefresh);
+    loadMarket(fundsChanged || !hasMarketSnapshot);
     const fundTimer0 = window.setTimeout(() => {
-      if (!cancelled) void loadFunds(fundsChanged || !hasFundSnapshot || manualRefresh);
+      if (!cancelled) void loadFunds(fundsChanged || !hasFundSnapshot);
     }, 0);
     const marketTimer = window.setInterval(() => loadMarket(false), 30_000);
     const fundTimer = window.setInterval(() => loadFunds(false), 30_000);
@@ -558,7 +552,7 @@ export function useQuotes(
       window.clearInterval(marketTimer);
       window.clearInterval(fundTimer);
     };
-  }, [enabled, funds, loadFundDetails, loadFundReturns, refreshNonce]);
+  }, [enabled, funds, loadFundDetails, loadFundReturns]);
 
   return {
     quotes,

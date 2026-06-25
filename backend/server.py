@@ -1069,6 +1069,118 @@ def append_eastmoney_global_quotes(text: str, symbols: list[str]) -> str:
     return "\n".join(line for line in lines if line) + ("\n" if lines else "")
 
 
+def sina_cn_history_symbol(symbol: str) -> str | None:
+    if re.match(r"^s_(sh|sz)\d{6}$", symbol):
+        return symbol[2:]
+    if re.match(r"^(sh|sz)\d{6}$", symbol):
+        return symbol
+    return None
+
+
+def latest_cn_history_quote_line(symbol: str, name: str, *, stock_style: bool) -> str | None:
+    history_symbol = sina_cn_history_symbol(symbol)
+    if not history_symbol:
+        return None
+    summary = read_market_return_summary_from_db("sina-cn", history_symbol)
+    if not summary:
+        return None
+    latest = summary.get("latest")
+    if not isinstance(latest, dict):
+        return None
+    try:
+        end_close = float(latest.get("endClose"))
+        start_close = float(latest.get("startClose"))
+        return_percent = float(latest.get("returnPercent"))
+    except (TypeError, ValueError):
+        return None
+    if end_close <= 0:
+        return None
+    change = end_close - start_close if start_close > 0 else 0.0
+    if start_close <= 0:
+        return_percent = 0.0
+    end_date = str(latest.get("endDate") or summary.get("asOf") or beijing_today())
+    if not stock_style:
+        return f'var hq_str_{symbol}="{name},{end_close:.4f},{change:.4f},{return_percent:.2f},0,0,{end_date}";'
+
+    fields = [
+        name,
+        f"{end_close:.4f}",
+        f"{start_close if start_close > 0 else end_close:.4f}",
+        f"{end_close:.4f}",
+        f"{end_close:.4f}",
+        f"{end_close:.4f}",
+        f"{end_close:.4f}",
+        f"{end_close:.4f}",
+        "0",
+        "0.000",
+    ]
+    while len(fields) < 30:
+        fields.extend(["0", f"{end_close:.4f}"])
+    fields = fields[:30]
+    fields.extend([end_date, "15:00:00", "00"])
+    return f'var hq_str_{symbol}="{",".join(fields)}";'
+
+
+def safe_float(value: Any) -> float | None:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+    return result
+
+
+def raw_sina_cn_price(symbol: str, fields: list[str]) -> float | None:
+    if symbol.startswith("s_"):
+        if len(fields) < 4:
+            return None
+        return safe_float(fields[1])
+    if re.match(r"^(sh|sz)\d{6}$", symbol):
+        if len(fields) < 10:
+            return None
+        return safe_float(fields[3])
+    return None
+
+
+def sanitize_zero_cn_quote_line(line: str) -> str | None:
+    match = re.match(r'^var\s+hq_str_(\w+)="([^"]*)"', line.strip())
+    if not match:
+        return line if line.strip() else None
+    symbol = match.group(1)
+    fields = match.group(2).split(",")
+    price = raw_sina_cn_price(symbol, fields)
+    if price is None or price > 0:
+        return line.rstrip()
+
+    name = fields[0] if fields and fields[0] else symbol
+    stock_style = re.match(r"^(sh|sz)\d{6}$", symbol) is not None
+    replacement = latest_cn_history_quote_line(symbol, name, stock_style=stock_style)
+    if replacement:
+        return replacement
+
+    if stock_style and len(fields) >= 3:
+        previous_close = safe_float(fields[2])
+        if previous_close and previous_close > 0:
+            fallback_fields = fields[:]
+            fallback_fields[1] = f"{previous_close:.4f}"
+            fallback_fields[3] = f"{previous_close:.4f}"
+            if len(fallback_fields) > 4:
+                fallback_fields[4] = f"{previous_close:.4f}"
+            if len(fallback_fields) > 5:
+                fallback_fields[5] = f"{previous_close:.4f}"
+            return f'var hq_str_{symbol}="{",".join(fallback_fields)}";'
+    return line.rstrip()
+
+
+def sanitize_sina_quote_text(text: str, symbols: list[str]) -> str:
+    text = append_eastmoney_global_quotes(text, symbols)
+    lines = [
+        sanitized
+        for line in text.rstrip().splitlines()
+        if (sanitized := sanitize_zero_cn_quote_line(line))
+    ]
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
 def parse_jsonp_call(text: str, name: str) -> Any | None:
     match = re.search(rf"{re.escape(name)}\((.+)\)\s*;?\s*$", text, re.S)
     if not match:
@@ -3099,7 +3211,7 @@ def sina() -> Response:
             ttl_seconds=30,
         )
         del content_type
-        return append_eastmoney_global_quotes(decode_body(body), symbol_list), status
+        return sanitize_sina_quote_text(decode_body(body), symbol_list), status
     return cached_text_response(f"api:sina:{symbols}", 15, build)
 
 
@@ -3136,7 +3248,7 @@ def build_dashboard_payload(symbols: list[str], currencies: list[str], now_arg: 
         )
         if status < 400:
             sina_text = decode_body(body)
-    sina_text = append_eastmoney_global_quotes(sina_text, symbols)
+    sina_text = sanitize_sina_quote_text(sina_text, symbols)
 
     fx_text = ""
     fx_symbols = {

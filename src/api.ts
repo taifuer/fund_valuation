@@ -185,8 +185,16 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
       price = parseFloat(fields[1]) || 0;
       previousClose = price - (parseFloat(fields[2]) || 0);
       changePct = parseFloat(fields[3]) || 0;
-      date = beijingDatetimeFromTimestamp(fetchedAt);
-      dateReliable = false;
+      for (let i = fields.length - 1; i >= 4; i--) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(fields[i])) {
+          date = combineBeijingDateTime(fields[i], fields[i + 1] || '');
+          break;
+        }
+      }
+      if (!date || isStale(date)) {
+        date = beijingDatetimeFromTimestamp(fetchedAt);
+        dateReliable = false;
+      }
       break;
     case 'intl_index':
       if (fields.length < 4) return null;
@@ -263,6 +271,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
       if (fields.length < 10) return null;
       price = parseFloat(fields[3]) || 0;
       previousClose = parseFloat(fields[2]) || price;
+      if (price <= 0 && previousClose > 0) price = previousClose;
       changePct = previousClose ? ((price - previousClose) / previousClose) * 100 : 0;
       for (let i = fields.length - 1; i >= Math.max(20, fields.length - 10); i--) {
         if (/^\d{4}-\d{2}-\d{2}$/.test(fields[i])) {

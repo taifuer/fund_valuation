@@ -985,6 +985,29 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertNotIn("sina-cn:sh000688", payload)
         self.assertEqual(scheduled, [("sina-cn", "sh000688")])
 
+    def test_sina_zero_cn_index_quote_falls_back_to_latest_history_close(self) -> None:
+        server.store_market_history(
+            "sina-cn",
+            "sz399006",
+            '[{"day":"2026-06-24","close":"4251.43"},{"day":"2026-06-25","close":"4371.99"}]',
+        )
+
+        text = server.sanitize_sina_quote_text(
+            'var hq_str_s_sz399006="创业板指,0.00,0.00,0.00,0,0";',
+            ["s_sz399006"],
+        )
+
+        self.assertIn('hq_str_s_sz399006="创业板指,4371.9900,120.5600,2.84', text)
+        self.assertIn("2026-06-25", text)
+
+    def test_sina_zero_cn_etf_quote_falls_back_to_previous_close_without_history(self) -> None:
+        text = server.sanitize_sina_quote_text(
+            'var hq_str_sz159326="电网设备,0.000,2.189,0.000,0.000,0.000,0.000,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,2026-06-25,09:10:00,00";',
+            ["sz159326"],
+        )
+
+        self.assertIn('hq_str_sz159326="电网设备,2.1890,2.189,2.1890', text)
+
     def test_market_history_refresh_fetches_tencent_hk_history(self) -> None:
         upstream_body = (
             b'{"code":0,"data":{"hkHSTECH":{"day":['
