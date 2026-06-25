@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchAllQuotes,
   fetchDashboardSnapshot,
@@ -11,6 +11,7 @@ import {
   fetchSinaFundNavs,
 } from '../api';
 import { ETF_ASSETS, INDICES, MARKET_ASSETS, RANKING_ETFS, RANKING_INDICES } from '../constants';
+import { pickPollInterval } from '../marketHours';
 import type { Fund, FundNavData, FundReturnSummary, FxRateData, MarketStateData, QuoteData } from '../types';
 import type { FundEstimate } from './useQuotes';
 
@@ -112,10 +113,17 @@ export function useHeaderFxRates(enabled = true) {
     }
 
     void load();
-    const timer = window.setInterval(load, 30_000);
+    // FX has no live session model here → effectively always "closed" → 5min.
+    // Use a self-adjusting timeout in case marketStates later mark FX live.
+    const fxSymbols = DISPLAY_FX_CURRENCIES.map((c) => `fx_s${c.toLowerCase()}cny`);
+    let timer = window.setTimeout(function tick() {
+      if (cancelled) return;
+      void load();
+      timer = window.setTimeout(tick, pickPollInterval(fxSymbols, new Map()));
+    }, pickPollInterval(fxSymbols, new Map()));
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
     };
   }, [enabled]);
 
@@ -130,6 +138,8 @@ export function useOverviewData(funds: Fund[], enabled: boolean) {
   const [loading, setLoading] = useState(false);
   const [fundLoading, setFundLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Ref mirror of marketStates for the polling timer (sees latest without restart).
+  const marketStatesRef = useRef<Map<string, MarketStateData>>(new Map());
 
   const symbols = useMemo(() => (
     [...new Set([
@@ -202,7 +212,11 @@ export function useOverviewData(funds: Fund[], enabled: boolean) {
         if (cancelled) return;
         setQuotes((prev) => new Map([...prev, ...quoteData]));
         setFxRates((prev) => new Map([...prev, ...fxData]));
-        setMarketStates((prev) => new Map([...prev, ...stateData]));
+        setMarketStates((prev) => {
+          const merged = new Map([...prev, ...stateData]);
+          marketStatesRef.current = merged;
+          return merged;
+        });
         setFundSummaries(summaryData);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : '概览数据加载失败');
@@ -215,10 +229,15 @@ export function useOverviewData(funds: Fund[], enabled: boolean) {
     }
 
     void load(true);
-    const timer = window.setInterval(() => load(false), 30_000);
+    // Dynamic interval (plan B): 60s when any symbol is live, 5min when closed.
+    let timer = window.setTimeout(function tick() {
+      if (cancelled) return;
+      void load(false);
+      timer = window.setTimeout(tick, pickPollInterval(symbols, marketStatesRef.current));
+    }, pickPollInterval(symbols, marketStatesRef.current));
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
     };
   }, [enabled, fundKey, funds, symbols]);
 
@@ -230,6 +249,7 @@ export function useRankingMarketData(enabled: boolean) {
   const [marketStates, setMarketStates] = useState<Map<string, MarketStateData>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const marketStatesRef = useRef<Map<string, MarketStateData>>(new Map());
 
   const symbols = useMemo(() => (
     [...new Set([
@@ -260,7 +280,11 @@ export function useRankingMarketData(enabled: boolean) {
             ]);
         if (cancelled) return;
         setQuotes((prev) => new Map([...prev, ...quoteData]));
-        setMarketStates((prev) => new Map([...prev, ...stateData]));
+        setMarketStates((prev) => {
+          const merged = new Map([...prev, ...stateData]);
+          marketStatesRef.current = merged;
+          return merged;
+        });
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : '收益页行情加载失败');
       } finally {
@@ -269,10 +293,14 @@ export function useRankingMarketData(enabled: boolean) {
     }
 
     void load(true);
-    const timer = window.setInterval(() => load(false), 30_000);
+    let timer = window.setTimeout(function tick() {
+      if (cancelled) return;
+      void load(false);
+      timer = window.setTimeout(tick, pickPollInterval(symbols, marketStatesRef.current));
+    }, pickPollInterval(symbols, marketStatesRef.current));
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
     };
   }, [enabled, symbols]);
 

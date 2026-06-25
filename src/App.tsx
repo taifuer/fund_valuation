@@ -77,10 +77,17 @@ function writeFundDisplayMode(value: FundDisplayMode) {
 }
 
 function pageFromPathname(pathname: string): PageKey {
-  if (pathname === '/funds' || pathname === '/fund') return 'funds';
+  if (pathname === '/funds' || pathname === '/fund' || pathname.startsWith('/funds/')) return 'funds';
   if (pathname === '/returns' || pathname === '/ranking') return 'ranking';
   if (pathname === '/risk') return 'risk';
   return 'overview';
+}
+
+// A deep link `/funds/:code` opens the funds page with that fund's card
+// expanded. Returns null for plain /funds or unknown codes.
+function expandedCodeFromPathname(pathname: string): string | null {
+  const match = pathname.match(/^\/funds\/(\d{6})$/);
+  return match ? match[1] : null;
 }
 
 // Canonical path for a page; used to normalize alias URLs (/fund, /ranking).
@@ -229,6 +236,24 @@ export default function App() {
   const [managedFunds, setManagedFunds] = useState<ManagedFundSettings>(() => readManagedFundSettings());
   const [fundDisplayMode, setFundDisplayMode] = useState<FundDisplayMode>(() => readFundDisplayMode());
   const [activePage, setActivePage] = useState<PageKey>(() => pageFromPathname(window.location.pathname));
+  // Deep-link expanded fund: `/funds/:code` opens that card. Half-controlled —
+  // the value seeds FundCard's initial expanded state; subsequent expand/collapse
+  // is owned by FundCard but reported back here to sync the URL.
+  const [expandedCode, setExpandedCode] = useState<string | null>(() => {
+    if (pageFromPathname(window.location.pathname) !== 'funds') return null;
+    return expandedCodeFromPathname(window.location.pathname);
+  });
+
+  function handleFundExpandedChange(code: string, expanded: boolean) {
+    // Sync the URL with expand/collapse so the state survives navigation and
+    // is shareable. replaceState (not pushState) avoids polluting history with
+    // every toggle; the deep-link entry itself was pushed on arrival.
+    const targetPath = expanded ? `/funds/${code}` : '/funds';
+    if (window.location.pathname !== targetPath) {
+      window.history.replaceState({}, '', targetPath);
+    }
+    setExpandedCode(expanded ? code : null);
+  }
   const funds = useMemo(() => {
     const hidden = new Set(managedFunds.hiddenDefaultCodes);
     const defaultFunds = FUNDS.filter((fund) => !hidden.has(fund.code));
@@ -296,13 +321,16 @@ export default function App() {
   useEffect(() => {
     function handlePopState() {
       const page = pageFromPathname(window.location.pathname);
-      const canonical = canonicalPathForPage(page);
-      // Replace alias URLs (/fund, /ranking) with the canonical path so the
-      // address bar reflects a single canonical URL per page.
+      // Canonicalize alias URLs (/fund, /ranking) but preserve deep links
+      // (/funds/:code) so browser back/forward keeps the expanded card.
+      const canonical = page === 'funds' && expandedCodeFromPathname(window.location.pathname)
+        ? window.location.pathname
+        : canonicalPathForPage(page);
       if (window.location.pathname !== canonical) {
         window.history.replaceState({}, '', canonical);
       }
       setActivePage(page);
+      setExpandedCode(page === 'funds' ? expandedCodeFromPathname(window.location.pathname) : null);
     }
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -592,6 +620,8 @@ export default function App() {
                   marketStates={marketStates}
                   showDetails={fundDisplayMode === 'detail'}
                   onRemove={removeFund}
+                  defaultExpanded={expandedCode === fund.code}
+                  onExpandedChange={(expanded) => handleFundExpandedChange(fund.code, expanded)}
                 />
               );
             })}

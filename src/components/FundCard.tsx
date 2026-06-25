@@ -30,6 +30,11 @@ interface Props {
   marketStates?: Map<string, MarketStateData>;
   showDetails?: boolean;
   onRemove?: (fund: Fund) => void;
+  /** Seed the card's expanded state (deep-link support). Half-controlled: the
+   *  card owns the state after mount, but reports changes via onExpandedChange
+   *  so the URL can stay in sync. */
+  defaultExpanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
 const RANK_STYLE: Record<number, string> = {
@@ -184,9 +189,24 @@ const FundCard = memo(function FundCard({
   marketStates = EMPTY_MARKET_STATES,
   showDetails = false,
   onRemove,
+  defaultExpanded = false,
+  onExpandedChange,
 }: Props) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [activeTab, setActiveTab] = useState<'holdings' | 'nav' | 'trend' | 'backtest'>('holdings');
+  // Half-controlled sync: when the deep-link seed asks to expand and the card
+  // isn't already, expand it (e.g. browser back to /funds/:code). We don't
+  // force-collapse on seed=false so a user's manual expand survives re-renders.
+  useEffect(() => {
+    if (defaultExpanded && !expanded) {
+      setExpanded(true);
+    }
+  }, [defaultExpanded]); // eslint-disable-line react-hooks/exhaustive-deps
+  function toggleExpanded() {
+    const next = !expanded;
+    setExpanded(next);
+    onExpandedChange?.(next);
+  }
   const rankStyle = RANK_STYLE[rank];
   const cardClassName = [
     styles.card,
@@ -268,11 +288,11 @@ const FundCard = memo(function FundCard({
       tabIndex={0}
       aria-expanded={expanded}
       aria-label={`${fund.name} ${fund.code}，${expanded ? '收起详情' : '展开详情'}`}
-      onClick={() => setExpanded(!expanded)}
+      onClick={toggleExpanded}
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
           event.preventDefault();
-          setExpanded(!expanded);
+          toggleExpanded();
         }
       }}
     >

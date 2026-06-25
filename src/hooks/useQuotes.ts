@@ -14,7 +14,7 @@ import {
   fetchMarketStates,
 } from '../api';
 import { INDICES, MARKET_ASSETS, ETF_ASSETS, FUNDS } from '../constants';
-import { getMarketState, quoteIsAfterNavClose } from '../marketHours';
+import { getMarketState, marketLocalDate, quoteIsAfterNavClose, pickPollInterval } from '../marketHours';
 
 const DISPLAY_FX_CURRENCIES = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
 type EstimateState = 'LIVE' | 'PRE' | 'POST' | 'PARTIAL' | 'CLOSED';
@@ -163,6 +163,9 @@ export function useQuotes(
   const dynamicHoldingsFetchedAtRef = useRef<Map<string, number>>(new Map());
   const dynamicProfilesFetchedAtRef = useRef<Map<string, number>>(new Map());
   const fundCacheKeyRef = useRef('');
+  // Mirror of marketStates state for use inside polling timers (which close
+  // over the ref, not the state, so they see the latest value without restart).
+  const marketStatesRef = useRef<Map<string, MarketStateData>>(new Map());
 
   useEffect(() => {
     // Per-invocation cancellation flag. Unlike a shared mountedRef, this is
@@ -345,7 +348,9 @@ export function useQuotes(
           return next;
         });
         setFxRates((prev) => new Map([...prev, ...displayFxRates]));
-        setMarketStates((prev) => new Map([...prev, ...marketStatesData]));
+        const mergedStates = new Map([...marketStatesRef.current, ...marketStatesData]);
+        marketStatesRef.current = mergedStates;
+        setMarketStates(mergedStates);
       } catch (e) {
         if (!cancelled) {
           setMarketError(e instanceof Error ? e.message : '市场数据加载失败');
@@ -379,7 +384,9 @@ export function useQuotes(
         if (cancelled) return;
         setQuotes((prev) => new Map([...prev, ...quotesData]));
         setFxRates((prev) => new Map([...prev, ...fxRates]));
-        setMarketStates((prev) => new Map([...prev, ...marketStatesData]));
+        const mergedStates = new Map([...marketStatesRef.current, ...marketStatesData]);
+        marketStatesRef.current = mergedStates;
+        setMarketStates(mergedStates);
 
         const now = new Date();
         const fundFxRates = new Map(
@@ -544,13 +551,28 @@ export function useQuotes(
     const fundTimer0 = window.setTimeout(() => {
       if (!cancelled) void loadFunds(fundsChanged || !hasFundSnapshot);
     }, 0);
-    const marketTimer = window.setInterval(() => loadMarket(false), 30_000);
-    const fundTimer = window.setInterval(() => loadFunds(false), 30_000);
+    // Dynamic polling interval (plan B): 60s when any tracked symbol is live,
+    // 5min when everything is closed. marketStatesRef is updated as state
+    // arrives, so the interval adapts without restarting this effect.
+    const fundSymbols = effectiveFundsRef.current?.flatMap((f) => f.holdings.map((h) => h.sinaSymbol)).filter(Boolean) ?? [];
+    const allPollSymbols = [...marketSymbols, ...fundSymbols];
+    let marketTimer = window.setTimeout(function marketTick() {
+      if (cancelled) return;
+      void loadMarket(false);
+      const delay = pickPollInterval(allPollSymbols, marketStatesRef.current);
+      marketTimer = window.setTimeout(marketTick, delay);
+    }, pickPollInterval(allPollSymbols, marketStatesRef.current));
+    let fundTimer = window.setTimeout(function fundTick() {
+      if (cancelled) return;
+      void loadFunds(false);
+      const delay = pickPollInterval(allPollSymbols, marketStatesRef.current);
+      fundTimer = window.setTimeout(fundTick, delay);
+    }, pickPollInterval(allPollSymbols, marketStatesRef.current));
     return () => {
       cancelled = true;
       window.clearTimeout(fundTimer0);
-      window.clearInterval(marketTimer);
-      window.clearInterval(fundTimer);
+      window.clearTimeout(marketTimer);
+      window.clearTimeout(fundTimer);
     };
   }, [enabled, funds, loadFundDetails, loadFundReturns]);
 

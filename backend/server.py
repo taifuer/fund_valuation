@@ -246,61 +246,62 @@ def ensure_storage() -> None:
 # Holiday data is keyed by year. Add a new year block here when the year rolls
 # over; unknown years fall back to an empty set (weekend-only detection), so the
 # calendar degrades gracefully instead of breaking on Jan 1.
-HOLIDAYS_BY_YEAR: dict[str, dict[str, set[str]]] = {
-    "2026": {
-        "cn": {
-            "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20",
-            "2026-04-06", "2026-05-01", "2026-05-04", "2026-05-05", "2026-06-19",
-            "2026-09-25", "2026-10-01", "2026-10-02", "2026-10-05", "2026-10-06", "2026-10-07",
-        },
-        "hk": {
-            "2026-01-01", "2026-02-17", "2026-02-18", "2026-02-19", "2026-04-03", "2026-04-06",
-            "2026-04-07", "2026-05-01", "2026-05-25", "2026-07-01", "2026-09-26",
-            "2026-10-01", "2026-10-19", "2026-12-25",
-        },
-        "us": {
-            "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19",
-            "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
-        },
-        "jp": {
-            "2026-01-01", "2026-01-02", "2026-01-12", "2026-02-11", "2026-02-23", "2026-03-20",
-            "2026-04-29", "2026-05-04", "2026-05-05", "2026-05-06", "2026-07-20", "2026-08-11",
-            "2026-09-21", "2026-09-22", "2026-09-23", "2026-10-12", "2026-11-03", "2026-11-23",
-            "2026-12-31",
-        },
-        "kr": {
-            "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-03-02", "2026-05-01",
-            "2026-05-05", "2026-05-25", "2026-08-17", "2026-09-24", "2026-09-25", "2026-09-26",
-            "2026-10-05", "2026-10-09", "2026-12-25", "2026-12-31",
-        },
-        "tw": {
-            "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20",
-            "2026-02-27", "2026-04-03", "2026-04-06", "2026-05-01", "2026-06-19",
-            "2026-09-25", "2026-10-09",
-        },
-    },
-}
+# Market holiday & half-day data is loaded from data/holidays.json (shared with
+# the frontend) so adding a new year is a data edit, not a code change. Unknown
+# years fall back to an empty set (weekend-only detection) — the calendar
+# degrades gracefully instead of breaking on Jan 1.
+HOLIDAYS_FILE = DATA_DIR / "holidays.json"
+_HOLIDAYS_JSON_CACHE: dict[str, Any] | None = None
+_HOLIDAYS_JSON_GUARD = threading.Lock()
 
-HALF_DAYS_BY_YEAR: dict[str, dict[str, dict[str, list[tuple[str, str]]]]] = {
-    "2026": {
-        "hk": {
-            "2026-12-24": [("09:30", "12:10")],
-            "2026-12-31": [("09:30", "12:10")],
-        },
-        "us": {
-            "2026-11-27": [("09:30", "13:00")],
-            "2026-12-24": [("09:30", "13:00")],
-        },
-    },
-}
+
+def _load_holidays_json() -> dict[str, Any]:
+    """Load and cache data/holidays.json. Returns {} if the file is missing or
+    malformed (callers then degrade to weekend-only)."""
+    global _HOLIDAYS_JSON_CACHE
+    if _HOLIDAYS_JSON_CACHE is not None:
+        return _HOLIDAYS_JSON_CACHE
+    with _HOLIDAYS_JSON_GUARD:
+        if _HOLIDAYS_JSON_CACHE is not None:
+            return _HOLIDAYS_JSON_CACHE
+        loaded: dict[str, Any] = {}
+        try:
+            text = HOLIDAYS_FILE.read_text(encoding="utf-8")
+            data = json.loads(text)
+            if isinstance(data, dict) and isinstance(data.get("years"), dict):
+                loaded = data["years"]
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"[holidays] failed to load {HOLIDAYS_FILE}: {exc}", flush=True)
+        _HOLIDAYS_JSON_CACHE = loaded
+        return loaded
 
 
 def _holidays_for(market: str, year: int) -> set[str]:
-    return HOLIDAYS_BY_YEAR.get(str(year), {}).get(market, set())
+    raw = _load_holidays_json().get(str(year), {}).get(market, {})
+    if not isinstance(raw, dict):
+        return set()
+    holidays = raw.get("holidays")
+    return set(holidays) if isinstance(holidays, list) else set()
 
 
 def _half_days_for(market: str, year: int) -> dict[str, list[tuple[str, str]]]:
-    return HALF_DAYS_BY_YEAR.get(str(year), {}).get(market, {})
+    raw = _load_holidays_json().get(str(year), {}).get(market, {})
+    if not isinstance(raw, dict):
+        return {}
+    half_days = raw.get("halfDays")
+    if not isinstance(half_days, dict):
+        return {}
+    result: dict[str, list[tuple[str, str]]] = {}
+    for date, sessions in half_days.items():
+        if not isinstance(sessions, list):
+            continue
+        parsed: list[tuple[str, str]] = []
+        for session in sessions:
+            if isinstance(session, list) and len(session) == 2:
+                parsed.append((str(session[0]), str(session[1])))
+        if parsed:
+            result[date] = parsed
+    return result
 
 
 MARKET_CALENDARS: dict[str, dict[str, Any]] = {

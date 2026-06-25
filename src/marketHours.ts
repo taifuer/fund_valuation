@@ -1,3 +1,5 @@
+import holidaysData from '../data/holidays.json';
+
 interface Session {
   start: [number, number];
   end: [number, number];
@@ -16,70 +18,41 @@ interface FuturesCalendar {
   holidays: (year: string) => Set<string>;
 }
 
-// Holiday data is keyed by year. Add a new year block here when the year rolls
-// over; unknown years fall back to an empty set (weekend-only detection), so
-// the calendar degrades gracefully instead of breaking on Jan 1.
-const HOLIDAYS_BY_YEAR: Record<string, Record<string, string[]>> = {
-  '2026': {
-    cn: [
-      '2026-01-01', '2026-02-16', '2026-02-17', '2026-02-18', '2026-02-19', '2026-02-20',
-      '2026-04-06', '2026-05-01', '2026-05-04', '2026-05-05', '2026-06-19',
-      '2026-09-25', '2026-10-01', '2026-10-02', '2026-10-05', '2026-10-06', '2026-10-07',
-    ],
-    hk: [
-      '2026-01-01', '2026-02-17', '2026-02-18', '2026-02-19', '2026-04-03', '2026-04-06',
-      '2026-04-07', '2026-05-01', '2026-05-25', '2026-07-01', '2026-09-26',
-      '2026-10-01', '2026-10-19', '2026-12-25',
-    ],
-    us: [
-      '2026-01-01', '2026-01-19', '2026-02-16', '2026-04-03', '2026-05-25', '2026-06-19',
-      '2026-07-03', '2026-09-07', '2026-11-26', '2026-12-25',
-    ],
-    jp: [
-      '2026-01-01', '2026-01-02', '2026-01-12', '2026-02-11', '2026-02-23', '2026-03-20',
-      '2026-04-29', '2026-05-04', '2026-05-05', '2026-05-06', '2026-07-20', '2026-08-11',
-      '2026-09-21', '2026-09-22', '2026-09-23', '2026-10-12', '2026-11-03', '2026-11-23',
-      '2026-12-31',
-    ],
-    kr: [
-      '2026-01-01', '2026-02-16', '2026-02-17', '2026-02-18', '2026-03-02', '2026-05-01',
-      '2026-05-05', '2026-05-25', '2026-08-17', '2026-09-24', '2026-09-25', '2026-09-26',
-      '2026-10-05', '2026-10-09', '2026-12-25', '2026-12-31',
-    ],
-    tw: [
-      '2026-01-01', '2026-02-16', '2026-02-17', '2026-02-18', '2026-02-19', '2026-02-20',
-      '2026-02-27', '2026-04-03', '2026-04-06', '2026-05-01', '2026-06-19',
-      '2026-09-25', '2026-10-09',
-    ],
-  },
+// Holiday data is loaded from data/holidays.json (shared with the backend) so
+// adding a new year is a data edit, not a code change. Unknown years fall back
+// to an empty set (weekend-only detection) — the calendar degrades gracefully
+// instead of breaking on Jan 1.
+type HolidaysJson = {
+  years: Record<string, Record<string, {
+    holidays?: string[];
+    halfDays?: Record<string, [string, string][]>;
+  }>>;
 };
+const HOLIDAYS_BY_YEAR = (holidaysData as unknown as HolidaysJson).years;
 
-const HALF_DAYS_BY_YEAR: Record<string, Record<string, Record<string, Session[]>>> = {
-  '2026': {
-    hk: {
-      '2026-12-24': [{ start: [9, 30], end: [12, 10] }],
-      '2026-12-31': [{ start: [9, 30], end: [12, 10] }],
-    },
-    us: {
-      '2026-11-27': [{ start: [9, 30], end: [13, 0] }],
-      '2026-12-24': [{ start: [9, 30], end: [13, 0] }],
-    },
-  },
-};
+function parseHHMM(value: string): [number, number] {
+  const [h, m] = value.split(':').map(Number);
+  return [h, m];
+}
 
 const holidayCache = new Map<string, Set<string>>();
 function holidaysFor(market: string, year: string): Set<string> {
   const cacheKey = `${market}:${year}`;
   const cached = holidayCache.get(cacheKey);
   if (cached) return cached;
-  const list = HOLIDAYS_BY_YEAR[year]?.[market] ?? [];
+  const list = HOLIDAYS_BY_YEAR[year]?.[market]?.holidays ?? [];
   const set = new Set(list);
   holidayCache.set(cacheKey, set);
   return set;
 }
 
 function halfDaysFor(market: string, year: string): Record<string, Session[]> {
-  return HALF_DAYS_BY_YEAR[year]?.[market] ?? {};
+  const raw = HOLIDAYS_BY_YEAR[year]?.[market]?.halfDays ?? {};
+  const result: Record<string, Session[]> = {};
+  for (const [date, sessions] of Object.entries(raw)) {
+    result[date] = sessions.map(([start, end]) => ({ start: parseHHMM(start), end: parseHHMM(end) }));
+  }
+  return result;
 }
 
 const MARKETS: Record<string, MarketCalendar> = {
@@ -411,4 +384,26 @@ export function getMarketState(sinaSymbol: string, now = new Date()): MarketStat
   const sessions = calendar.halfDays(local.date.slice(0, 4))[local.date] ?? calendar.sessions;
   if (isInSession(sessions, local.minutes)) return 'live';
   return isBetweenSessions(sessions, local.minutes) ? 'break' : 'closed';
+}
+
+/**
+ * Polling interval policy (plan B): 60s when any tracked symbol is live,
+ * 5min when everything is closed/holiday/weekend. Driven by marketStates
+ * (from the backend) with a getMarketState fallback for symbols not in the map.
+ */
+export const POLL_INTERVAL_LIVE_MS = 60_000;
+export const POLL_INTERVAL_CLOSED_MS = 5 * 60_000;
+
+export function pickPollInterval(
+  symbols: string[],
+  marketStates: Map<string, { state?: string }>,
+  now = new Date(),
+): number {
+  for (const symbol of symbols) {
+    const state = marketStates.get(symbol)?.state ?? getMarketState(symbol, now);
+    if (state === 'live' || state === 'pre' || state === 'post' || state === 'break') {
+      return POLL_INTERVAL_LIVE_MS;
+    }
+  }
+  return POLL_INTERVAL_CLOSED_MS;
 }

@@ -7,8 +7,9 @@ __pycache__
 # Build output
 dist
 
-# Local backend storage
-data
+# Local backend storage (ignore contents, but keep the shared holiday calendar)
+data/*
+!data/holidays.json
 
 # Claude
 .claude

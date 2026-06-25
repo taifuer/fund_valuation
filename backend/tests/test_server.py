@@ -12,6 +12,12 @@ from unittest.mock import patch
 
 _TEMP_DATA = tempfile.TemporaryDirectory()
 os.environ["FUND_VALUATION_DATA_DIR"] = _TEMP_DATA.name
+# Copy the shared holidays.json into the temp data dir so calendar tests can
+# load holiday data the same way production does.
+import shutil as _shutil  # noqa: E402
+_REPO_DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "holidays.json")
+if os.path.exists(_REPO_DATA):
+    _shutil.copyfile(_REPO_DATA, os.path.join(_TEMP_DATA.name, "holidays.json"))
 
 from backend import server  # noqa: E402
 
