@@ -130,5 +130,13 @@ assert.equal(
   assert.equal(parsed?.data.price, 2.19);
   assert.equal(parsed?.data.changePercent, 0);
 }
+assert.equal(
+  parseSinaVar('var hq_str_s_sz399006="创业板指,0.00,0.00,0.00,0,0";', now),
+  null,
+);
+assert.equal(
+  parseSinaVar('var hq_str_hf_NQ="30209.010,,30203.500,30205.000,30263.750,29924.500,20:42:59,1.000,30089.750,0,2,2,2026-06-25,纳斯达克指数期货,0";', now),
+  null,
+);
 
 console.log('frontend logic tests passed');

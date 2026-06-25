@@ -165,6 +165,27 @@ function rankStyle(index: number) {
   return '';
 }
 
+function useMarketReturnRefreshTick() {
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => setTick(Date.now());
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    const timer = window.setInterval(refresh, 5 * 60 * 1000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  return tick;
+}
+
 export default function RiskPage({
   funds,
   marketLoading,
@@ -177,6 +198,7 @@ export default function RiskPage({
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
   const [returnsLoading, setReturnsLoading] = useState(false);
+  const refreshTick = useMarketReturnRefreshTick();
   const shouldLoadFunds = category === 'fund' || category === 'all';
   const fundData = useFundReturnData(funds, shouldLoadFunds);
   const selectedMarketConfigs = useMemo(
@@ -196,7 +218,7 @@ export default function RiskPage({
         return;
       }
       setReturnsLoading(true);
-      const summaries = await fetchMarketReturnSummaries(selectedMarketConfigs);
+      const summaries = await fetchMarketReturnSummaries(selectedMarketConfigs, { force: refreshTick > 0 });
       if (!cancelled) {
         setMarketReturns((prev) => new Map([...prev, ...summaries]));
         setReturnsLoading(false);
@@ -206,7 +228,7 @@ export default function RiskPage({
     return () => {
       cancelled = true;
     };
-  }, [selectedMarketConfigKey, selectedMarketConfigs]);
+  }, [refreshTick, selectedMarketConfigKey, selectedMarketConfigs]);
 
   const items = useMemo(() => {
     const allItems = [

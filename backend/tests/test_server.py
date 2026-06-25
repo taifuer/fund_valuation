@@ -201,6 +201,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             patch.object(server, "schedule_market_history_refresh") as market_refresh,
             patch.object(server, "prewarm_response_cache") as prewarm,
             patch.object(server, "prewarm_fund_nav_cache_async") as nav_prewarm,
+            patch.object(server, "prewarm_fund_backtest_cache", return_value=[]) as backtest_prewarm,
         ):
             server.run_background_refresh_once()
 
@@ -208,6 +209,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         market_refresh.assert_called_once_with("sina-cn", "sh000001")
         prewarm.assert_called_once()
         nav_prewarm.assert_called_once()
+        backtest_prewarm.assert_called_once()
         self.assertGreater(server.background_refresh_state_snapshot()["runCount"], 0)
 
     def test_sina_proxy_decodes_gb18030_fund_name(self) -> None:
@@ -526,6 +528,18 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("X-Cache"), "HIT")
         self.assertIn(code, response.get_json())
+
+    def test_prewarm_fund_backtest_cache_uses_configured_codes(self) -> None:
+        with (
+            patch.object(server, "configured_fund_codes_from_constants", return_value=["016664", "016664", "017436"]),
+            patch.object(server, "compute_fund_backtest", return_value={"sampleCount": 12}) as compute,
+        ):
+            errors = server.prewarm_fund_backtest_cache(days=30)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(compute.call_count, 2)
+        compute.assert_any_call("016664", 30, refresh=False)
+        compute.assert_any_call("017436", 30, refresh=False)
 
     def test_market_states_marks_weekend_separately(self) -> None:
         response = server.app.test_client().get(
@@ -999,6 +1013,9 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         self.assertIn('hq_str_s_sz399006="创业板指,4371.9900,120.5600,2.84', text)
         self.assertIn("2026-06-25", text)
+        health = server.upstream_health_snapshot()
+        self.assertEqual(health["fallbackCount"], 1)
+        self.assertEqual(health["issues"][0]["key"], "quote:s_sz399006")
 
     def test_sina_zero_cn_etf_quote_falls_back_to_previous_close_without_history(self) -> None:
         text = server.sanitize_sina_quote_text(
@@ -1007,6 +1024,19 @@ class ServerDataRefreshTests(unittest.TestCase):
         )
 
         self.assertIn('hq_str_sz159326="电网设备,2.1890,2.189,2.1890', text)
+        health = server.upstream_health_snapshot()
+        self.assertEqual(health["fallbackCount"], 1)
+
+    def test_sina_missing_quote_line_is_recorded_in_data_health(self) -> None:
+        text = server.sanitize_sina_quote_text(
+            'var hq_str_s_sh000001="上证指数,3000,10,0.33";',
+            ["s_sh000001", "s_sz399006"],
+        )
+
+        self.assertIn("s_sh000001", text)
+        health = server.upstream_health_snapshot()
+        self.assertEqual(health["errorCount"], 1)
+        self.assertEqual(health["issues"][0]["key"], "quote:s_sz399006")
 
     def test_market_history_refresh_fetches_tencent_hk_history(self) -> None:
         upstream_body = (

@@ -124,6 +124,21 @@ function usExtendedSession(raw: string): 'pre' | 'post' | null {
   return null;
 }
 
+function maxReasonableChangePercent(market: Market): number {
+  if (market === 'global_future') return 25;
+  if (market === 'cn_index' || market === 'intl_index' || market === 'hk') return 25;
+  if (market === 'cn_stock') return 80;
+  if (market === 'us') return 120;
+  if (market === 'crypto') return 120;
+  return 80;
+}
+
+function quoteLooksValid(market: Market, price: number, previousClose: number, changePercent: number): boolean {
+  if (!Number.isFinite(price) || !Number.isFinite(previousClose) || !Number.isFinite(changePercent)) return false;
+  if (price <= 0 || previousClose <= 0) return false;
+  return Math.abs(changePercent) <= maxReasonableChangePercent(market);
+}
+
 export function parseSinaVar(line: string, fetchedAt: number): { symbol: string; data: QuoteData } | null {
   const match = line.match(/^var hq_str_(\w+)="(.+)";?\s*$/);
   if (!match) return null;
@@ -287,6 +302,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
   }
 
   const change = price - previousClose;
+  if (!quoteLooksValid(mkt, price, previousClose, changePct)) return null;
 
   return {
     symbol: rawSymbol,
@@ -944,6 +960,7 @@ const marketReturnSummaryCache = new Map<string, { summary: MarketReturnSummary;
 
 export async function fetchMarketReturnSummaries(
   configs: MarketHistoryConfig[],
+  options: { force?: boolean } = {},
 ): Promise<Map<string, MarketReturnSummary>> {
   const results = new Map<string, MarketReturnSummary>();
   const unique = [...new Map(configs.map((config) => [`${config.source}:${config.symbol}`, config])).values()];
@@ -954,7 +971,7 @@ export async function fetchMarketReturnSummaries(
   for (const config of unique) {
     const key = `${config.source}:${config.symbol}`;
     const cached = marketReturnSummaryCache.get(key);
-    if (cached && now - cached.fetchedAt < MARKET_RETURN_SUMMARY_TTL_MS) {
+    if (!options.force && cached && now - cached.fetchedAt < MARKET_RETURN_SUMMARY_TTL_MS) {
       results.set(key, cached.summary);
     } else {
       missing.push(config);

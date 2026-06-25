@@ -718,6 +718,7 @@ def record_upstream_health(
             "lastSeenAt": now,
             "lastSuccessAt": now if source in {"network", "cache"} and not error else previous.get("lastSuccessAt", 0),
             "lastStaleAt": now if source == "stale" else previous.get("lastStaleAt", 0),
+            "lastFallbackAt": now if source == "fallback" else previous.get("lastFallbackAt", 0),
             "lastErrorAt": now if error or source == "error" else previous.get("lastErrorAt", 0),
         }
 
@@ -725,6 +726,17 @@ def record_upstream_health(
             oldest = sorted(_UPSTREAM_HEALTH.items(), key=lambda item: int(item[1].get("lastSeenAt", 0)))[:40]
             for old_key, _ in oldest:
                 _UPSTREAM_HEALTH.pop(old_key, None)
+
+
+def record_quote_health(symbol: str, source: str, message: str = "") -> None:
+    record_upstream_health(
+        cache_key=f"quote:{symbol}",
+        kind="quote",
+        url=f"sina:{symbol}",
+        source=source,
+        status=200 if source == "fallback" else None,
+        error=message,
+    )
 
 
 def upstream_lock(cache_key: str) -> threading.Lock:
@@ -1053,6 +1065,7 @@ def append_eastmoney_global_quotes(text: str, symbols: list[str]) -> str:
                 line = None
         if line:
             replacements[symbol] = line
+            record_quote_health(symbol, "fallback", "replaced unreliable global spot quote")
 
     dropped_bad_spot_symbols = requested & FORCED_GLOBAL_REPLACEMENT_SYMBOLS
     lines: list[str] = []
@@ -1066,6 +1079,8 @@ def append_eastmoney_global_quotes(text: str, symbols: list[str]) -> str:
 
     for symbol in sorted(replacements):
         lines.append(replacements[symbol])
+    for symbol in sorted(dropped_bad_spot_symbols - set(replacements)):
+        record_quote_health(symbol, "error", "unreliable global spot quote dropped without fallback")
     return "\n".join(line for line in lines if line) + ("\n" if lines else "")
 
 
@@ -1155,6 +1170,7 @@ def sanitize_zero_cn_quote_line(line: str) -> str | None:
     stock_style = re.match(r"^(sh|sz)\d{6}$", symbol) is not None
     replacement = latest_cn_history_quote_line(symbol, name, stock_style=stock_style)
     if replacement:
+        record_quote_health(symbol, "fallback", "zero-price quote replaced with latest historical close")
         return replacement
 
     if stock_style and len(fields) >= 3:
@@ -1167,17 +1183,25 @@ def sanitize_zero_cn_quote_line(line: str) -> str | None:
                 fallback_fields[4] = f"{previous_close:.4f}"
             if len(fallback_fields) > 5:
                 fallback_fields[5] = f"{previous_close:.4f}"
+            record_quote_health(symbol, "fallback", "zero-price quote replaced with previous close")
             return f'var hq_str_{symbol}="{",".join(fallback_fields)}";'
+    record_quote_health(symbol, "error", "zero-price quote without fallback")
     return line.rstrip()
 
 
 def sanitize_sina_quote_text(text: str, symbols: list[str]) -> str:
     text = append_eastmoney_global_quotes(text, symbols)
+    seen_symbols: set[str] = set()
     lines = [
         sanitized
         for line in text.rstrip().splitlines()
         if (sanitized := sanitize_zero_cn_quote_line(line))
     ]
+    for line in lines:
+        if match := re.match(r'^var\s+hq_str_(\w+)="', line.strip()):
+            seen_symbols.add(match.group(1))
+    for symbol in sorted(set(symbols) - seen_symbols):
+        record_quote_health(symbol, "error", "missing quote line from upstream response")
     return "\n".join(lines) + ("\n" if lines else "")
 
 
@@ -1718,6 +1742,32 @@ def prewarm_response_cache() -> None:
         f"marketreturns {len(market_payload)}/{len(market_items)}",
         flush=True,
     )
+
+
+def prewarm_fund_backtest_cache(codes: list[str] | None = None, days: int = 90) -> list[str]:
+    fund_codes = sorted(dict.fromkeys(codes or configured_fund_codes_from_constants()))
+    errors: list[str] = []
+    if not fund_codes:
+        return errors
+
+    def compute_one(code: str) -> None:
+        compute_fund_backtest(code, days, refresh=False)
+
+    max_workers = min(4, len(fund_codes))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(compute_one, code): code for code in fund_codes}
+        for future in as_completed(futures):
+            code = futures[future]
+            try:
+                future.result()
+            except Exception as exc:
+                errors.append(f"backtest {code}: {exc}")
+
+    print(
+        f"Prewarmed fund backtest cache: {len(fund_codes) - len(errors)}/{len(fund_codes)}",
+        flush=True,
+    )
+    return errors
 
 
 def fund_nav_upstream_cache_key(code: str) -> str:
@@ -2998,14 +3048,19 @@ def upstream_health_snapshot() -> dict[str, Any]:
     with _UPSTREAM_HEALTH_GUARD:
         rows = sorted(_UPSTREAM_HEALTH.values(), key=lambda item: int(item.get("lastSeenAt", 0)), reverse=True)
     stale_count = sum(1 for item in rows if item.get("source") == "stale")
-    error_count = sum(1 for item in rows if item.get("error") or item.get("source") == "error")
+    fallback_count = sum(1 for item in rows if item.get("source") == "fallback")
+    error_count = sum(
+        1 for item in rows
+        if item.get("source") == "error" or (item.get("source") == "stale" and item.get("error"))
+    )
     issue_rows = [
         item for item in rows
-        if item.get("source") in {"stale", "error"} or item.get("error")
+        if item.get("source") in {"stale", "error", "fallback"}
     ]
     return {
         "total": len(rows),
         "staleCount": stale_count,
+        "fallbackCount": fallback_count,
         "errorCount": error_count,
         "issueCount": len(issue_rows),
         "issues": issue_rows[:8],
@@ -3025,6 +3080,7 @@ def build_data_health_payload() -> dict[str, Any]:
     degraded = (
         upstream["errorCount"] > 0
         or upstream["staleCount"] > 0
+        or upstream["fallbackCount"] > 0
         or fund_history_state["missing"] > 0
         or fund_history_state["stale"] > 0
         or market_history_state["missing"] > 0
@@ -3089,6 +3145,10 @@ def run_background_refresh_once() -> None:
         prewarm_fund_nav_cache_async()
     except Exception as exc:
         errors.append(f"fundnav: {exc}")
+    try:
+        errors.extend(prewarm_fund_backtest_cache())
+    except Exception as exc:
+        errors.append(f"backtest: {exc}")
 
     response_cache_clear_prefix("api:datahealth")
     if errors:
