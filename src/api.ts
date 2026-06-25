@@ -241,7 +241,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
     case 'global_future':
       if (fields.length < 13) return null;
       price = parseFloat(fields[0]) || 0;
-      previousClose = globalFutureReferencePrice(fields[8], fields[7], price);
+      previousClose = globalFutureReferencePrice(fields[7], fields[8], price);
       changePct = previousClose ? ((price - previousClose) / previousClose) * 100 : 0;
       date = combineBeijingDateTime(fields[12] || '', fields[6] || '');
       if (isStale(date)) {

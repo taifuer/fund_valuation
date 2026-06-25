@@ -95,9 +95,24 @@ assert.equal(
   }),
   false,
 );
-assert.equal(globalFutureReferencePrice('0.000', '30719.750', 30762.807), 30719.75);
+assert.equal(globalFutureReferencePrice('30719.750', '0.000', 30762.807), 30719.75);
 assert.equal(globalFutureReferencePrice('23776.000', '23761.000', 23813.95), 23776);
-assert.equal(globalFutureReferencePrice('78.000', '75.850', 75.111), 78);
+assert.equal(globalFutureReferencePrice('75.850', '78.000', 75.111), 75.85);
+{
+  const parsed = parseSinaVar('var hq_str_hf_NQ="30209.010,,30203.500,30205.000,30263.750,29924.500,20:42:59,29514.250,30089.750,0,2,2,2026-06-25,纳斯达克指数期货,0";', now);
+  assert.equal(parsed?.data.previousClose, 29514.25);
+  assert.equal(parsed?.data.changePercent, 2.35);
+}
+{
+  const parsed = parseSinaVar('var hq_str_hf_HSI="23090.000,,23089.000,23091.000,23090.000,22985.000,20:45:43,23026.000,23028.000,55321,1,2,2026-06-25,恒生指数期货,1729";', now);
+  assert.equal(parsed?.data.previousClose, 23026);
+  assert.equal(parsed?.data.changePercent, 0.28);
+}
+{
+  const parsed = parseSinaVar('var hq_str_hf_NK="72589.900,,72575.000,72590.000,72670.000,72305.000,20:46:19,72400.000,72555.000,44245,3,4,2026-06-25,日经225指数期货,1943";', now);
+  assert.equal(parsed?.data.previousClose, 72400);
+  assert.equal(parsed?.data.changePercent, 0.26);
+}
 assert.equal(
   parseSinaVar('var hq_str_int_nikkei="日经指数,44946.64,-408.35,-0.90";', now),
   null,
