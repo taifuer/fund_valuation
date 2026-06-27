@@ -46,6 +46,8 @@ class ServerDataRefreshTests(unittest.TestCase):
                 DELETE FROM market_calendar;
                 DELETE FROM stock_daily_history;
                 DELETE FROM fund_estimate_backtest;
+                DELETE FROM market_quote_snapshots;
+                DELETE FROM background_jobs;
                 """
             )
         with server._RATE_LIMIT_GUARD:
@@ -202,8 +204,9 @@ class ServerDataRefreshTests(unittest.TestCase):
             patch.object(server, "prewarm_response_cache") as prewarm,
             patch.object(server, "prewarm_fund_nav_cache_async") as nav_prewarm,
             patch.object(server, "prewarm_fund_backtest_cache", return_value=[]) as backtest_prewarm,
+            patch.object(server, "configured_sina_symbols_from_constants", return_value=[]),
         ):
-            server.run_background_refresh_once()
+            self.assertTrue(server.run_background_refresh_once())
 
         fund_refresh.assert_called_once_with("016664", server.FUND_HISTORY_AUTO_REFRESH_ROWS)
         market_refresh.assert_called_once_with("sina-cn", "sh000001")
@@ -211,6 +214,26 @@ class ServerDataRefreshTests(unittest.TestCase):
         nav_prewarm.assert_called_once()
         backtest_prewarm.assert_called_once()
         self.assertGreater(server.background_refresh_state_snapshot()["runCount"], 0)
+
+    def test_background_job_lease_allows_only_one_owner(self) -> None:
+        self.assertTrue(server.claim_background_job("worker-a", lease_seconds=120, current_ms=1_000))
+        self.assertFalse(server.claim_background_job("worker-b", lease_seconds=120, current_ms=2_000))
+        self.assertTrue(server.claim_background_job("worker-a", lease_seconds=120, current_ms=2_000))
+        self.assertTrue(server.release_background_job("worker-a"))
+        self.assertTrue(server.claim_background_job("worker-b", lease_seconds=120, current_ms=3_000))
+        self.assertFalse(server.release_background_job("worker-a"))
+        self.assertTrue(server.release_background_job("worker-b"))
+        self.assertTrue(server.claim_background_job("worker-b", lease_seconds=120, current_ms=123_000))
+
+    def test_embedded_scheduler_is_disabled_by_default(self) -> None:
+        with (
+            patch.dict(os.environ, {}, clear=False),
+            patch.object(server.threading, "Thread") as thread,
+        ):
+            os.environ.pop("FUND_VALUATION_BACKGROUND_REFRESH", None)
+            server.start_background_refresh_scheduler()
+
+        thread.assert_not_called()
 
     def test_sina_proxy_decodes_gb18030_fund_name(self) -> None:
         upstream_body = 'var hq_str_f_118001="易方达亚洲精选股票(QDII),1.693,1.693,1.673,2026-05-21,22.6875";'.encode("gb18030")
@@ -565,6 +588,143 @@ class ServerDataRefreshTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["s_sh000001"]["state"], "break")
         self.assertEqual(payload["sh600519"]["state"], "break")
+
+    def test_market_state_session_matrix(self) -> None:
+        server.ensure_market_calendar_seeded()
+        cases = [
+            ("sh000001", "2026-05-26T10:00:00+08:00", "live"),
+            ("sh000001", "2026-05-26T12:00:00+08:00", "break"),
+            ("sh000001", "2026-05-26T15:30:00+08:00", "closed"),
+            ("hkHSI", "2026-05-26T12:30:00+08:00", "break"),
+            ("int_nikkei", "2026-05-26T11:00:00+08:00", "break"),
+            ("b_KOSPI", "2026-05-26T10:00:00+08:00", "live"),
+            ("b_TWSE", "2026-05-26T10:00:00+08:00", "live"),
+            ("gb_inx", "2026-06-15T22:00:00+08:00", "live"),
+            ("gb_inx", "2026-06-15T21:00:00+08:00", "closed"),
+            ("hf_NQ", "2026-06-15T18:00:00+08:00", "live"),
+            ("fx_sbtcusd", "2026-05-24T10:00:00+08:00", "live"),
+        ]
+        for symbol, raw_now, expected in cases:
+            with self.subTest(symbol=symbol, now=raw_now):
+                state = server.market_state_for_symbol(symbol, datetime.fromisoformat(raw_now))
+                self.assertEqual(state["state"], expected)
+
+    def test_quote_snapshots_are_bucketed_and_record_normalization(self) -> None:
+        now = datetime.fromisoformat("2026-05-26T09:10:00+08:00")
+        raw = (
+            'var hq_str_sh000001="上证指数,4000.0000,4000.0000,4010.0000,4010.0000,3990.0000,'
+            '0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2026-05-26,09:10:00,00";'
+        )
+        normalized = raw.replace("4010.0000", "4000.0000")
+        states = {"sh000001": {"state": "closed", "lastTradingDay": "2026-05-25"}}
+
+        server.store_quote_snapshots(raw, normalized, ["sh000001"], states, now)
+        server.store_quote_snapshots(raw, normalized, ["sh000001"], states, now)
+
+        with sqlite3.connect(server.DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT source, validation_status FROM market_quote_snapshots WHERE symbol = ?",
+                ("sh000001",),
+            ).fetchall()
+        self.assertEqual(rows, [("normalized", "ok")])
+        self.assertEqual(server.prune_quote_snapshots(retention_days=1), 1)
+
+    def test_snapshot_reader_rejects_expired_rows(self) -> None:
+        now = datetime.fromisoformat("2026-05-26T10:00:00+08:00")
+        line = (
+            'var hq_str_sh000001="上证指数,4000.0000,3990.0000,4010.0000,4010.0000,3990.0000,'
+            '0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2026-05-26,10:00:00,00";'
+        )
+        server.store_quote_snapshots(
+            line,
+            line,
+            ["sh000001"],
+            {"sh000001": {"state": "live", "lastTradingDay": "2026-05-26"}},
+            now,
+        )
+
+        text, missing = server.read_latest_quote_snapshot_text(["sh000001"], max_age_seconds=60)
+
+        self.assertEqual(text, "")
+        self.assertEqual(missing, ["sh000001"])
+
+    def test_dashboard_and_sina_read_fresh_worker_snapshot_without_upstream(self) -> None:
+        now = datetime.now(ZoneInfo("Asia/Shanghai"))
+        day = now.strftime("%Y-%m-%d")
+        line = (
+            f'var hq_str_sh000001="上证指数,4000.0000,3990.0000,4010.0000,4010.0000,3990.0000,'
+            f'0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,{day},10:00:00,00";'
+        )
+        state = server.market_state_for_symbol("sh000001", now)
+        server.store_quote_snapshots(line, line, ["sh000001"], {"sh000001": state}, now)
+
+        with patch.object(server, "fetch_upstream") as fetch:
+            dashboard = server.app.test_client().get("/api/dashboard?symbols=sh000001")
+            sina = server.app.test_client().get("/api/sina?list=sh000001")
+
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIn("sh000001", dashboard.get_json()["quotesText"])
+        self.assertEqual(sina.status_code, 200)
+        self.assertIn("sh000001", sina.get_data(as_text=True))
+        fetch.assert_not_called()
+
+    def test_quote_group_refresh_interval_tracks_market_activity(self) -> None:
+        server.ensure_market_calendar_seeded()
+        self.assertEqual(
+            server.quote_group_refresh_interval(
+                ["sh000001"], datetime.fromisoformat("2026-05-26T10:00:00+08:00")
+            ),
+            60,
+        )
+        self.assertEqual(
+            server.quote_group_refresh_interval(
+                ["sh000001"], datetime.fromisoformat("2026-05-26T12:00:00+08:00")
+            ),
+            5 * 60,
+        )
+        self.assertEqual(
+            server.quote_group_refresh_interval(
+                ["sh000001"], datetime.fromisoformat("2026-05-23T10:00:00+08:00")
+            ),
+            15 * 60,
+        )
+        self.assertEqual(
+            server.quote_group_refresh_interval(
+                ["fx_sbtcusd"], datetime.fromisoformat("2026-05-23T10:00:00+08:00")
+            ),
+            5 * 60,
+        )
+
+    def test_quote_snapshot_health_reports_fresh_and_missing_symbols(self) -> None:
+        now = datetime.fromisoformat("2026-05-26T10:00:00+08:00")
+        line = (
+            'var hq_str_sh000001="上证指数,4000.0000,3990.0000,4010.0000,4010.0000,3990.0000,'
+            '0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2026-05-26,10:00:00,00";'
+        )
+        states = {"sh000001": {"state": "live", "lastTradingDay": "2026-05-26"}}
+        server.store_quote_snapshots(line, line, ["sh000001"], states, now)
+
+        with (
+            patch.object(server, "configured_sina_symbols_from_constants", return_value=["sh000001", "sz399006"]),
+            patch.object(server, "market_state_for_symbol", side_effect=lambda symbol, _now: {
+                "symbol": symbol, "state": "live", "lastTradingDay": "2026-05-26",
+            }),
+        ):
+            health = server.quote_snapshot_health(now)
+
+        self.assertEqual(health["healthy"], 1)
+        self.assertEqual(health["issueCount"], 1)
+        self.assertEqual(health["issues"][0]["symbol"], "sz399006")
+
+    def test_quote_diagnostics_supports_optional_token(self) -> None:
+        client = server.app.test_client()
+        with patch.dict(os.environ, {"FUND_VALUATION_DIAGNOSTICS_TOKEN": "secret"}):
+            denied = client.get("/api/diagnostics/quotes")
+            allowed = client.get("/api/diagnostics/quotes", headers={"X-Diagnostics-Token": "secret"})
+
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(allowed.status_code, 200)
+        self.assertIn("backgroundRefresh", allowed.get_json())
 
     def test_fund_profiles_parses_basic_profile(self) -> None:
         upstream_body = """

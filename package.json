@@ -1,11 +1,12 @@
 {
   "name": "fund-estimate",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.3.0",
   "type": "module",
   "scripts": {
     "backend:setup": "python3 -m venv .venv && .venv/bin/pip install -r requirements.txt",
     "backend": ".venv/bin/python -m backend.server",
+    "backend:worker": ".venv/bin/python -m backend.worker",
     "backend:backfill": ".venv/bin/python -m backend.backfill",
     "dev": "vite",
     "test": "npm run test:backend && npm run test:frontend",

@@ -60,7 +60,48 @@ const {
   fundExpansionPath,
   pageFromPathname,
 } = await importTsModule('../src/routing.ts', 'routing');
+const { startAdaptivePolling } = await importTsModule('../src/polling.ts', 'polling');
 const now = Date.parse('2026-06-25T19:00:00+08:00');
+
+assert.equal(POLL_INTERVAL_CLOSED_MS, 15 * 60_000);
+
+{
+  const documentListeners = new Map();
+  const windowListeners = new Map();
+  const timers = new Map();
+  let nextTimer = 1;
+  let calls = 0;
+  globalThis.document = {
+    visibilityState: 'visible',
+    addEventListener: (name, handler) => documentListeners.set(name, handler),
+    removeEventListener: (name) => documentListeners.delete(name),
+  };
+  globalThis.window = {
+    setTimeout: (handler, delay) => {
+      const id = nextTimer++;
+      timers.set(id, { handler, delay });
+      return id;
+    },
+    clearTimeout: (id) => timers.delete(id),
+    addEventListener: (name, handler) => windowListeners.set(name, handler),
+    removeEventListener: (name) => windowListeners.delete(name),
+  };
+  const stop = startAdaptivePolling(() => { calls += 1; }, () => 15 * 60_000);
+  assert.equal([...timers.values()][0]?.delay, 15 * 60_000);
+  globalThis.document.visibilityState = 'hidden';
+  documentListeners.get('visibilitychange')();
+  assert.equal(timers.size, 0);
+  globalThis.document.visibilityState = 'visible';
+  documentListeners.get('visibilitychange')();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(calls, 1);
+  assert.equal(timers.size, 1);
+  stop();
+  assert.equal(timers.size, 0);
+  delete globalThis.document;
+  delete globalThis.window;
+}
 
 assert.equal(
   pickPollInterval(['fx_sbtcusd', 'hf_NQ'], new Map([

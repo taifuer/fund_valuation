@@ -12,6 +12,7 @@ import {
 } from '../api';
 import { ETF_ASSETS, INDICES, MARKET_ASSETS, RANKING_ETFS, RANKING_INDICES } from '../constants';
 import { pickPollInterval } from '../marketHours';
+import { startAdaptivePolling } from '../polling';
 import type { Fund, FundNavData, FundReturnSummary, FxRateData, MarketStateData, QuoteData } from '../types';
 import type { FundEstimate } from './useQuotes';
 
@@ -113,17 +114,11 @@ export function useHeaderFxRates(enabled = true) {
     }
 
     void load();
-    // FX has no live session model here → effectively always "closed" → 5min.
-    // Use a self-adjusting timeout in case marketStates later mark FX live.
     const fxSymbols = DISPLAY_FX_CURRENCIES.map((c) => `fx_s${c.toLowerCase()}cny`);
-    let timer = window.setTimeout(function tick() {
-      if (cancelled) return;
-      void load();
-      timer = window.setTimeout(tick, pickPollInterval(fxSymbols, new Map()));
-    }, pickPollInterval(fxSymbols, new Map()));
+    const stopPolling = startAdaptivePolling(load, () => pickPollInterval(fxSymbols, new Map()));
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      stopPolling();
     };
   }, [enabled]);
 
@@ -229,15 +224,13 @@ export function useOverviewData(funds: Fund[], enabled: boolean) {
     }
 
     void load(true);
-    // Dynamic interval (plan B): 60s when any symbol is live, 5min when closed.
-    let timer = window.setTimeout(function tick() {
-      if (cancelled) return;
-      void load(false);
-      timer = window.setTimeout(tick, pickPollInterval(symbols, marketStatesRef.current));
-    }, pickPollInterval(symbols, marketStatesRef.current));
+    const stopPolling = startAdaptivePolling(
+      () => load(false),
+      () => pickPollInterval(symbols, marketStatesRef.current),
+    );
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      stopPolling();
     };
   }, [enabled, fundKey, funds, symbols]);
 
@@ -293,14 +286,13 @@ export function useRankingMarketData(enabled: boolean) {
     }
 
     void load(true);
-    let timer = window.setTimeout(function tick() {
-      if (cancelled) return;
-      void load(false);
-      timer = window.setTimeout(tick, pickPollInterval(symbols, marketStatesRef.current));
-    }, pickPollInterval(symbols, marketStatesRef.current));
+    const stopPolling = startAdaptivePolling(
+      () => load(false),
+      () => pickPollInterval(symbols, marketStatesRef.current),
+    );
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      stopPolling();
     };
   }, [enabled, symbols]);
 
@@ -367,10 +359,10 @@ export function useFundReturnData(funds: Fund[], enabled: boolean) {
     }
 
     void load(true);
-    const timer = window.setInterval(() => load(false), 5 * 60 * 1000);
+    const stopPolling = startAdaptivePolling(() => load(false), () => 15 * 60 * 1000);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      stopPolling();
     };
   }, [enabled, fundKey, funds]);
 

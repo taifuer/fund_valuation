@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import html
 import http.client
 import json
@@ -13,6 +14,7 @@ import sqlite3
 import subprocess
 import threading
 import time
+import uuid
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
@@ -75,12 +77,15 @@ HISTORY_AUTO_REFRESH_TTL_MS = 30 * 60 * 1000
 MARKET_RETURNS_CACHE_TTL_SECONDS = 30 * 60
 FUND_NAV_CACHE_TTL_SECONDS = 60
 BACKGROUND_REFRESH_INTERVAL_SECONDS = int(os.environ.get("FUND_VALUATION_REFRESH_INTERVAL", "900"))
+QUOTE_SNAPSHOT_RETENTION_DAYS = int(os.environ.get("FUND_VALUATION_SNAPSHOT_RETENTION_DAYS", "30"))
+BACKGROUND_JOB_NAME = "data-refresh"
 
 RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "sina": (240, 60),
     "dashboard": (180, 60),
     "overview": (180, 60),
     "datahealth": (120, 60),
+    "diagnostics": (30, 60),
     "marketstates": (240, 60),
     "fundnav": (120, 60),
     "fundholdings": (80, 60),
@@ -237,6 +242,37 @@ def ensure_storage() -> None:
               fetched_at INTEGER NOT NULL,
               PRIMARY KEY (market, date)
             );
+
+            CREATE TABLE IF NOT EXISTS background_jobs (
+              name TEXT PRIMARY KEY,
+              owner TEXT NOT NULL,
+              lease_until INTEGER NOT NULL,
+              last_run_at INTEGER NOT NULL,
+              last_success_at INTEGER NOT NULL,
+              last_error_at INTEGER NOT NULL,
+              last_error TEXT NOT NULL,
+              run_count INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS market_quote_snapshots (
+              symbol TEXT NOT NULL,
+              bucket_at INTEGER NOT NULL,
+              captured_at INTEGER NOT NULL,
+              quote_time TEXT NOT NULL,
+              market_state TEXT NOT NULL,
+              source TEXT NOT NULL,
+              price REAL,
+              previous_close REAL,
+              change_percent REAL,
+              validation_status TEXT NOT NULL,
+              validation_message TEXT NOT NULL,
+              raw_line TEXT NOT NULL,
+              sanitized_line TEXT NOT NULL,
+              PRIMARY KEY (symbol, bucket_at)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_market_quote_snapshots_captured
+              ON market_quote_snapshots(captured_at);
 
             """
         )
@@ -1280,6 +1316,199 @@ def sanitize_sina_quote_text(text: str, symbols: list[str], now: datetime | None
     return "\n".join(lines) + ("\n" if lines else "")
 
 
+def quote_lines_by_symbol(text: str) -> dict[str, str]:
+    lines: dict[str, str] = {}
+    for line in text.splitlines():
+        match = re.match(r'^var\s+hq_str_(\w+)="', line.strip())
+        if match:
+            lines[match.group(1)] = line.strip()
+    return lines
+
+
+def quote_snapshot_bucket(now: datetime) -> int:
+    local = now.astimezone(ZoneInfo("Asia/Shanghai"))
+    minutes = local.hour * 60 + local.minute
+    key_window = (
+        9 * 60 <= minutes <= 9 * 60 + 35
+        or 11 * 60 + 25 <= minutes <= 13 * 60 + 5
+        or 14 * 60 + 50 <= minutes <= 15 * 60 + 10
+    )
+    bucket_seconds = 5 * 60 if key_window else 15 * 60
+    timestamp = int(now.timestamp())
+    return timestamp - timestamp % bucket_seconds
+
+
+def parse_quote_snapshot_line(symbol: str, line: str) -> tuple[float | None, float | None, float | None, str]:
+    match = re.match(r'^var\s+hq_str_\w+="([^"]*)"', line)
+    if not match:
+        return None, None, None, ""
+    fields = match.group(1).split(",")
+    price: float | None = None
+    previous_close: float | None = None
+    change_percent: float | None = None
+    if symbol.startswith("s_") and len(fields) >= 4:
+        price = safe_float(fields[1])
+        change = safe_float(fields[2])
+        change_percent = safe_float(fields[3])
+        previous_close = price - change if price is not None and change is not None else None
+    elif re.match(r"^(sh|sz)\d{6}$", symbol) and len(fields) >= 4:
+        previous_close = safe_float(fields[2])
+        price = safe_float(fields[3])
+    elif symbol.startswith("gb_") and len(fields) >= 3:
+        price = safe_float(fields[1])
+        change_percent = safe_float(fields[2])
+        previous_close = safe_float(fields[26]) if len(fields) > 26 else None
+    elif symbol.startswith("hk") and len(fields) >= 9:
+        previous_close = safe_float(fields[3])
+        price = safe_float(fields[6])
+        change_percent = safe_float(fields[8])
+    elif symbol.startswith("hf_") and len(fields) >= 9:
+        price = safe_float(fields[0])
+        previous_close = safe_float(fields[7]) or safe_float(fields[8])
+    elif (symbol.startswith("int_") or symbol.startswith("b_")) and len(fields) >= 4:
+        price = safe_float(fields[1])
+        change = safe_float(fields[2])
+        change_percent = safe_float(fields[3])
+        previous_close = price - change if price is not None and change is not None else None
+    elif symbol == "fx_sbtcusd" and len(fields) >= 12:
+        price = safe_float(fields[1])
+        change = safe_float(fields[11])
+        change_percent = safe_float(fields[10])
+        previous_close = price - change if price is not None and change is not None else None
+
+    if change_percent is None and price is not None and previous_close and previous_close > 0:
+        change_percent = (price - previous_close) / previous_close * 100
+
+    quote_date = next((field for field in reversed(fields) if re.match(r"^\d{4}[-/]\d{2}[-/]\d{2}$", field)), "")
+    quote_time = ""
+    if quote_date:
+        index = fields.index(quote_date)
+        candidate = fields[index + 1] if index + 1 < len(fields) else ""
+        quote_time = f"{quote_date.replace('/', '-')} {candidate}".strip()
+    elif symbol.startswith("gb_") and len(fields) > 3:
+        quote_time = fields[3]
+    return price, previous_close, change_percent, quote_time
+
+
+def snapshot_validation(
+    symbol: str,
+    price: float | None,
+    previous_close: float | None,
+    change_percent: float | None,
+    quote_time: str,
+    state: dict[str, Any],
+) -> tuple[str, str]:
+    if price is None or price <= 0:
+        return "error", "missing or non-positive price"
+    if previous_close is None or previous_close <= 0:
+        return "error", "missing or non-positive previous close"
+    if change_percent is None or abs(change_percent) > 120:
+        return "error", "invalid change percent"
+    quote_date = quote_time[:10] if re.match(r"^\d{4}-\d{2}-\d{2}", quote_time) else ""
+    last_trading_day = str(state.get("lastTradingDay") or "")
+    if quote_date and last_trading_day and quote_date < last_trading_day:
+        return "stale", f"quote date {quote_date} before {last_trading_day}"
+    return "ok", ""
+
+
+def store_quote_snapshots(
+    raw_text: str,
+    sanitized_text: str,
+    symbols: list[str],
+    states: dict[str, dict[str, Any]],
+    now: datetime,
+) -> int:
+    raw_lines = quote_lines_by_symbol(raw_text)
+    sanitized_lines = quote_lines_by_symbol(sanitized_text)
+    bucket_at = quote_snapshot_bucket(now) * 1000
+    captured_at = int(now.timestamp() * 1000)
+    rows: list[tuple[Any, ...]] = []
+    for symbol in symbols:
+        raw_line = raw_lines.get(symbol, "")
+        sanitized_line = sanitized_lines.get(symbol, "")
+        price, previous_close, change_percent, quote_time = parse_quote_snapshot_line(symbol, sanitized_line)
+        state = states.get(symbol, {})
+        validation_status, validation_message = snapshot_validation(
+            symbol, price, previous_close, change_percent, quote_time, state,
+        )
+        source = "upstream"
+        if not raw_line and sanitized_line:
+            source = "fallback"
+        elif raw_line and raw_line != sanitized_line:
+            source = "normalized"
+        rows.append((
+            symbol, bucket_at, captured_at, quote_time, str(state.get("state") or "unknown"), source,
+            price, previous_close, change_percent, validation_status, validation_message,
+            raw_line, sanitized_line,
+        ))
+    if not rows:
+        return 0
+    with get_conn() as conn:
+        conn.executemany(
+            """
+            INSERT INTO market_quote_snapshots(
+              symbol, bucket_at, captured_at, quote_time, market_state, source,
+              price, previous_close, change_percent, validation_status,
+              validation_message, raw_line, sanitized_line
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(symbol, bucket_at) DO UPDATE SET
+              captured_at = excluded.captured_at,
+              quote_time = excluded.quote_time,
+              market_state = excluded.market_state,
+              source = excluded.source,
+              price = excluded.price,
+              previous_close = excluded.previous_close,
+              change_percent = excluded.change_percent,
+              validation_status = excluded.validation_status,
+              validation_message = excluded.validation_message,
+              raw_line = excluded.raw_line,
+              sanitized_line = excluded.sanitized_line
+            """,
+            rows,
+        )
+    return len(rows)
+
+
+def prune_quote_snapshots(retention_days: int = QUOTE_SNAPSHOT_RETENTION_DAYS) -> int:
+    cutoff = now_ms() - max(retention_days, 1) * 24 * 60 * 60 * 1000
+    with get_conn() as conn:
+        cursor = conn.execute("DELETE FROM market_quote_snapshots WHERE captured_at < ?", (cutoff,))
+    return max(int(cursor.rowcount), 0)
+
+
+def read_latest_quote_snapshot_text(
+    symbols: list[str],
+    max_age_seconds: int | None = None,
+) -> tuple[str, list[str]]:
+    normalized = sorted(dict.fromkeys(symbols))
+    if not normalized:
+        return "", []
+    placeholders = ",".join("?" for _ in normalized)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT snapshot.symbol, snapshot.sanitized_line, snapshot.captured_at
+            FROM market_quote_snapshots AS snapshot
+            JOIN (
+              SELECT symbol, MAX(bucket_at) AS bucket_at
+              FROM market_quote_snapshots
+              WHERE symbol IN ({placeholders})
+              GROUP BY symbol
+            ) AS latest
+              ON latest.symbol = snapshot.symbol AND latest.bucket_at = snapshot.bucket_at
+            """,
+            normalized,
+        ).fetchall()
+    cutoff = now_ms() - max_age_seconds * 1000 if max_age_seconds else 0
+    lines = {
+        str(symbol): str(line)
+        for symbol, line, captured_at in rows
+        if str(line) and (not cutoff or int(captured_at) >= cutoff)
+    }
+    text = "\n".join(lines[symbol] for symbol in normalized if symbol in lines)
+    return text + ("\n" if text else ""), [symbol for symbol in normalized if symbol not in lines]
+
+
 def parse_jsonp_call(text: str, name: str) -> Any | None:
     match = re.search(rf"{re.escape(name)}\((.+)\)\s*;?\s*$", text, re.S)
     if not match:
@@ -1763,6 +1992,52 @@ def configured_fund_codes_from_constants() -> list[str]:
     except OSError:
         return []
     return list(dict.fromkeys(re.findall(r"code:\s*'(\d{6})'", text)))
+
+
+def configured_sina_symbols_from_constants() -> list[str]:
+    constants_path = ROOT_DIR / "src" / "constants.ts"
+    try:
+        text = constants_path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    symbols = re.findall(r"sinaSymbol:\s*'([A-Za-z0-9_]+)'", text)
+    return sorted(dict.fromkeys(symbol for symbol in symbols if SINA_SYMBOL_RE.fullmatch(symbol)))
+
+
+def configured_quote_symbols() -> list[str]:
+    symbols = configured_sina_symbols_from_constants()
+    for code in configured_fund_codes_from_constants():
+        for holding in read_fund_holdings_for_backtest(code):
+            symbol = str(holding.get("sinaSymbol") or "")
+            if SINA_SYMBOL_RE.fullmatch(symbol):
+                symbols.append(symbol)
+    return sorted(dict.fromkeys(symbols))
+
+
+def quote_symbol_groups(symbols: list[str] | None = None) -> tuple[list[str], list[str]]:
+    cash: list[str] = []
+    continuous: list[str] = []
+    for symbol in symbols or configured_quote_symbols():
+        market = market_key_for_symbol(symbol)
+        if market in {"us_futures", "hk_futures", "jp_futures", "crypto"}:
+            continuous.append(symbol)
+        else:
+            cash.append(symbol)
+    return sorted(dict.fromkeys(cash)), sorted(dict.fromkeys(continuous))
+
+
+def quote_group_refresh_interval(symbols: list[str], now: datetime | None = None) -> int:
+    current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+    states = [market_state_for_symbol(symbol, current).get("state") for symbol in symbols]
+    if any(state == "live" for state in states):
+        has_cash = any(
+            market_key_for_symbol(symbol) not in {"us_futures", "hk_futures", "jp_futures", "crypto"}
+            for symbol in symbols
+        )
+        return 60 if has_cash else 5 * 60
+    if any(state == "break" for state in states):
+        return 5 * 60
+    return 15 * 60
 
 
 def configured_market_return_items_from_constants() -> list[str]:
@@ -3145,7 +3420,70 @@ def upstream_health_snapshot() -> dict[str, Any]:
 
 def background_refresh_state_snapshot() -> dict[str, Any]:
     with _BACKGROUND_REFRESH_GUARD:
-        return dict(_BACKGROUND_REFRESH_STATE)
+        state = dict(_BACKGROUND_REFRESH_STATE)
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                """
+                SELECT owner, lease_until, last_run_at, last_success_at,
+                       last_error_at, last_error, run_count
+                FROM background_jobs WHERE name = ?
+                """,
+                (BACKGROUND_JOB_NAME,),
+            ).fetchone()
+    except sqlite3.Error:
+        row = None
+    if row:
+        state.update({
+            "owner": str(row[0]),
+            "leaseUntil": int(row[1]),
+            "lastRunAt": int(row[2]),
+            "lastSuccessAt": int(row[3]),
+            "lastErrorAt": int(row[4]),
+            "lastError": str(row[5]),
+            "runCount": int(row[6]),
+        })
+    return state
+
+
+def claim_background_job(
+    owner: str,
+    *,
+    lease_seconds: int | None = None,
+    current_ms: int | None = None,
+) -> bool:
+    current = current_ms if current_ms is not None else now_ms()
+    lease_ms = max(lease_seconds or BACKGROUND_REFRESH_INTERVAL_SECONDS * 2, 120) * 1000
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT owner, lease_until FROM background_jobs WHERE name = ?",
+            (BACKGROUND_JOB_NAME,),
+        ).fetchone()
+        if row and str(row[0]) != owner and int(row[1]) > current:
+            return False
+        conn.execute(
+            """
+            INSERT INTO background_jobs(
+              name, owner, lease_until, last_run_at, last_success_at,
+              last_error_at, last_error, run_count
+            ) VALUES (?, ?, ?, 0, 0, 0, '', 0)
+            ON CONFLICT(name) DO UPDATE SET
+              owner = excluded.owner,
+              lease_until = excluded.lease_until
+            """,
+            (BACKGROUND_JOB_NAME, owner, current + lease_ms),
+        )
+    return True
+
+
+def release_background_job(owner: str) -> bool:
+    with get_conn() as conn:
+        cursor = conn.execute(
+            "UPDATE background_jobs SET lease_until = 0 WHERE name = ? AND owner = ?",
+            (BACKGROUND_JOB_NAME, owner),
+        )
+    return int(cursor.rowcount) > 0
 
 
 def build_data_health_payload() -> dict[str, Any]:
@@ -3172,9 +3510,108 @@ def build_data_health_payload() -> dict[str, Any]:
     }
 
 
-def mark_background_refresh(**updates: Any) -> None:
+def quote_snapshot_health(now: datetime | None = None) -> dict[str, Any]:
+    current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+    current_ms = int(current.timestamp() * 1000)
+    symbols = configured_sina_symbols_from_constants()
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT snapshot.symbol, snapshot.captured_at, snapshot.quote_time,
+                   snapshot.market_state, snapshot.source, snapshot.price,
+                   snapshot.previous_close, snapshot.change_percent,
+                   snapshot.validation_status, snapshot.validation_message
+            FROM market_quote_snapshots AS snapshot
+            JOIN (
+              SELECT symbol, MAX(bucket_at) AS bucket_at
+              FROM market_quote_snapshots GROUP BY symbol
+            ) AS latest
+              ON latest.symbol = snapshot.symbol AND latest.bucket_at = snapshot.bucket_at
+            """
+        ).fetchall()
+    latest_by_symbol = {str(row[0]): row for row in rows}
+    issues: list[dict[str, Any]] = []
+    fallbacks: list[dict[str, Any]] = []
+    healthy = 0
+    fallback_count = 0
+    for symbol in symbols:
+        row = latest_by_symbol.get(symbol)
+        current_state = market_state_for_symbol(symbol, current)
+        if not row:
+            issues.append({"symbol": symbol, "reason": "missing snapshot", "state": current_state["state"]})
+            continue
+        captured_at = int(row[1])
+        age_seconds = max((current_ms - captured_at) // 1000, 0)
+        market = market_key_for_symbol(symbol)
+        continuous = market in {"us_futures", "hk_futures", "jp_futures", "crypto"}
+        if current_state["state"] == "live":
+            max_age = 10 * 60 if continuous else 5 * 60
+        elif current_state["state"] == "break":
+            max_age = 10 * 60
+        else:
+            max_age = 25 * 60
+        source = str(row[4])
+        validation_status = str(row[8])
+        if source in {"fallback", "normalized"}:
+            fallback_count += 1
+            fallbacks.append({
+                "symbol": symbol,
+                "source": source,
+                "quoteTime": str(row[2]),
+                "state": current_state["state"],
+            })
+        reason = ""
+        if age_seconds > max_age:
+            reason = f"snapshot age {age_seconds}s exceeds {max_age}s"
+        elif validation_status != "ok":
+            reason = str(row[9]) or validation_status
+        if reason:
+            issues.append({
+                "symbol": symbol,
+                "reason": reason,
+                "state": current_state["state"],
+                "ageSeconds": age_seconds,
+                "quoteTime": str(row[2]),
+                "source": source,
+            })
+        else:
+            healthy += 1
+    return {
+        "status": "degraded" if issues else "ok",
+        "updatedAt": current_ms,
+        "total": len(symbols),
+        "healthy": healthy,
+        "fallbackCount": fallback_count,
+        "fallbacks": fallbacks[:20],
+        "issueCount": len(issues),
+        "issues": issues[:20],
+        "retentionDays": QUOTE_SNAPSHOT_RETENTION_DAYS,
+    }
+
+
+def mark_background_refresh(owner: str, **updates: Any) -> None:
     with _BACKGROUND_REFRESH_GUARD:
         _BACKGROUND_REFRESH_STATE.update(updates)
+    column_map = {
+        "lastRunAt": "last_run_at",
+        "lastSuccessAt": "last_success_at",
+        "lastErrorAt": "last_error_at",
+        "lastError": "last_error",
+        "runCount": "run_count",
+    }
+    assignments: list[str] = ["owner = ?"]
+    values: list[Any] = [owner]
+    for key, value in updates.items():
+        column = column_map.get(key)
+        if column:
+            assignments.append(f"{column} = ?")
+            values.append(value)
+    values.append(BACKGROUND_JOB_NAME)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE background_jobs SET {', '.join(assignments)} WHERE name = ?",
+            values,
+        )
 
 
 def refresh_configured_fund_history() -> list[str]:
@@ -3203,11 +3640,15 @@ def refresh_configured_market_history() -> list[str]:
     return errors
 
 
-def run_background_refresh_once() -> None:
+def run_background_refresh_once(owner: str = "manual") -> bool:
+    if not claim_background_job(owner):
+        return False
     now = now_ms()
+    run_count = int(background_refresh_state_snapshot().get("runCount", 0) or 0) + 1
     with _BACKGROUND_REFRESH_GUARD:
         _BACKGROUND_REFRESH_STATE["lastRunAt"] = now
-        _BACKGROUND_REFRESH_STATE["runCount"] = int(_BACKGROUND_REFRESH_STATE.get("runCount", 0) or 0) + 1
+        _BACKGROUND_REFRESH_STATE["runCount"] = run_count
+    mark_background_refresh(owner, lastRunAt=now, runCount=run_count)
 
     errors: list[str] = []
     errors.extend(refresh_configured_fund_history())
@@ -3224,12 +3665,29 @@ def run_background_refresh_once() -> None:
         errors.extend(prewarm_fund_backtest_cache())
     except Exception as exc:
         errors.append(f"backtest: {exc}")
+    try:
+        symbols = configured_sina_symbols_from_constants()
+        if symbols:
+            build_dashboard_payload(symbols, [], "")
+            snapshot_health = quote_snapshot_health()
+            if snapshot_health["issueCount"]:
+                print(
+                    f"[quote-diagnostics] {snapshot_health['issueCount']}/{snapshot_health['total']} issues",
+                    flush=True,
+                )
+    except Exception as exc:
+        errors.append(f"quotes: {exc}")
+    try:
+        prune_quote_snapshots()
+    except Exception as exc:
+        errors.append(f"snapshot-prune: {exc}")
 
     response_cache_clear_prefix("api:datahealth")
     if errors:
-        mark_background_refresh(lastErrorAt=now_ms(), lastError="; ".join(errors[:5])[:480])
+        mark_background_refresh(owner, lastErrorAt=now_ms(), lastError="; ".join(errors[:5])[:480])
     else:
-        mark_background_refresh(lastSuccessAt=now_ms(), lastError="")
+        mark_background_refresh(owner, lastSuccessAt=now_ms(), lastError="")
+    return True
 
 
 def prune_in_memory_caches() -> None:
@@ -3261,16 +3719,17 @@ def prune_in_memory_caches() -> None:
     # this a non-leak.
 
 
-def background_refresh_loop() -> None:
+def background_refresh_loop(owner: str | None = None) -> None:
+    worker_owner = owner or f"embedded:{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
     with app.app_context():
         while True:
-            run_background_refresh_once()
+            run_background_refresh_once(worker_owner)
             prune_in_memory_caches()
             time.sleep(max(BACKGROUND_REFRESH_INTERVAL_SECONDS, 60))
 
 
 def start_background_refresh_scheduler() -> None:
-    if os.environ.get("FUND_VALUATION_BACKGROUND_REFRESH", "1") == "0":
+    if os.environ.get("FUND_VALUATION_BACKGROUND_REFRESH", "0") != "1":
         return
     with _BACKGROUND_REFRESH_GUARD:
         if _BACKGROUND_REFRESH_STATE.get("started"):
@@ -3326,6 +3785,18 @@ def data_health() -> Response:
     return cached_json_response("api:datahealth", 30, build_data_health_payload)
 
 
+@app.get("/api/diagnostics/quotes")
+def quote_diagnostics() -> Response:
+    enforce_rate_limit("diagnostics")
+    expected_token = os.environ.get("FUND_VALUATION_DIAGNOSTICS_TOKEN", "")
+    provided_token = request.headers.get("X-Diagnostics-Token", "")
+    if expected_token and not hmac.compare_digest(provided_token, expected_token):
+        return json_response({"error": "Forbidden"}, status=403)
+    payload = quote_snapshot_health()
+    payload["backgroundRefresh"] = background_refresh_state_snapshot()
+    return json_response(payload)
+
+
 @app.get("/api/sina")
 def sina() -> Response:
     enforce_rate_limit("sina")
@@ -3337,17 +3808,33 @@ def sina() -> Response:
     symbols = ",".join(symbol_list)
     now_arg = request.args.get("now", "")
     def build() -> tuple[str, int]:
-        url = f"https://hq.sinajs.cn/list={symbols}"
-        status, content_type, body = fetch_upstream(
-            url,
-            referer="https://finance.sina.com.cn/",
-            content_type="text/plain; charset=utf-8",
-            cache_key=f"sina:{symbols}",
-            kind="sina",
-            ttl_seconds=30,
-        )
-        del content_type
-        return sanitize_sina_quote_text(decode_body(body), symbol_list, parse_market_now(now_arg)), status
+        snapshot_text, missing = read_latest_quote_snapshot_text(symbol_list, max_age_seconds=20 * 60)
+        fetched_text = ""
+        status = 200
+        if missing:
+            missing_key = ",".join(missing)
+            cached_fx = cache_get(f"sina:{missing_key}", 30 * 60) if all(symbol.startswith("fx_") for symbol in missing) else None
+            if cached_fx:
+                fetched_text = decode_body(cached_fx[2])
+            else:
+                status, _, body = fetch_upstream(
+                    f"https://hq.sinajs.cn/list={missing_key}",
+                    referer="https://finance.sina.com.cn/",
+                    content_type="text/plain; charset=utf-8",
+                    cache_key=f"sina:{missing_key}",
+                    kind="sina",
+                    ttl_seconds=30,
+                )
+                if status < 400:
+                    fetched_text = decode_body(body)
+        now = parse_market_now(now_arg)
+        combined = snapshot_text + fetched_text
+        sanitized = sanitize_sina_quote_text(combined, symbol_list, now)
+        snapshot_symbols = [symbol for symbol in missing if market_key_for_symbol(symbol)]
+        if snapshot_symbols and fetched_text:
+            states = {symbol: market_state_for_symbol(symbol, now) for symbol in snapshot_symbols}
+            store_quote_snapshots(fetched_text, sanitized, snapshot_symbols, states, now)
+        return sanitized, status
     return cached_text_response(f"api:sina:{now_arg}:{symbols}", 15, build)
 
 
@@ -3370,22 +3857,39 @@ def market_states() -> Response:
     return cached_json_response(cache_key, 15, build)
 
 
-def build_dashboard_payload(symbols: list[str], currencies: list[str], now_arg: str) -> dict[str, Any]:
+def build_dashboard_payload(
+    symbols: list[str],
+    currencies: list[str],
+    now_arg: str,
+    *,
+    allow_upstream: bool = True,
+) -> dict[str, Any]:
     ensure_market_calendar_seeded()
     now = parse_market_now(now_arg)
     sina_text = ""
+    fetched_symbols: list[str] = []
     if symbols:
-        joined_symbols = ",".join(symbols)
-        status, _, body = fetch_upstream(
-            f"https://hq.sinajs.cn/list={joined_symbols}",
-            referer="https://finance.sina.com.cn/",
-            content_type="text/plain; charset=utf-8",
-            cache_key=f"sina:{joined_symbols}",
-            kind="sina",
-            ttl_seconds=30,
-        )
-        if status < 400:
-            sina_text = decode_body(body)
+        if allow_upstream:
+            missing_symbols = symbols
+        else:
+            sina_text, missing_symbols = read_latest_quote_snapshot_text(symbols, max_age_seconds=20 * 60)
+        if missing_symbols:
+            joined_symbols = ",".join(missing_symbols)
+            status, _, body = fetch_upstream(
+                f"https://hq.sinajs.cn/list={joined_symbols}",
+                referer="https://finance.sina.com.cn/",
+                content_type="text/plain; charset=utf-8",
+                cache_key=f"sina:{joined_symbols}",
+                kind="sina",
+                ttl_seconds=30,
+            )
+            if status < 400:
+                fetched_text = decode_body(body)
+                sina_text += fetched_text
+                fetched_symbols = missing_symbols
+    raw_sina_text = sina_text if allow_upstream else "\n".join(
+        line for symbol, line in quote_lines_by_symbol(sina_text).items() if symbol in fetched_symbols
+    )
     sina_text = sanitize_sina_quote_text(sina_text, symbols, now)
 
     fx_text = ""
@@ -3399,21 +3903,32 @@ def build_dashboard_payload(symbols: list[str], currencies: list[str], now_arg: 
     requested_fx_symbols = [fx_symbols[currency] for currency in currencies if currency in fx_symbols]
     if requested_fx_symbols:
         joined_fx_symbols = ",".join(requested_fx_symbols)
-        status, _, body = fetch_upstream(
-            f"https://hq.sinajs.cn/list={joined_fx_symbols}",
-            referer="https://finance.sina.com.cn/",
-            content_type="text/plain; charset=utf-8",
-            cache_key=f"sina:{joined_fx_symbols}",
-            kind="sina",
-            ttl_seconds=30,
-        )
-        if status < 400:
-            fx_text = decode_body(body)
+        cached_fx = None if allow_upstream else cache_get(f"sina:{joined_fx_symbols}", 30 * 60)
+        if cached_fx:
+            fx_text = decode_body(cached_fx[2])
+        else:
+            status, _, body = fetch_upstream(
+                f"https://hq.sinajs.cn/list={joined_fx_symbols}",
+                referer="https://finance.sina.com.cn/",
+                content_type="text/plain; charset=utf-8",
+                cache_key=f"sina:{joined_fx_symbols}",
+                kind="sina",
+                ttl_seconds=30,
+            )
+            if status < 400:
+                fx_text = decode_body(body)
 
+    market_states = {symbol: market_state_for_symbol(symbol, now) for symbol in symbols}
+    try:
+        captured_symbols = symbols if allow_upstream else fetched_symbols
+        if captured_symbols:
+            store_quote_snapshots(raw_sina_text, sina_text, captured_symbols, market_states, now)
+    except Exception as exc:
+        print(f"[quote-snapshot] failed: {exc}", flush=True)
     return {
         "quotesText": sina_text,
         "fxText": fx_text,
-        "marketStates": {symbol: market_state_for_symbol(symbol, now) for symbol in symbols},
+        "marketStates": market_states,
     }
 
 
@@ -3433,7 +3948,11 @@ def dashboard() -> Response:
     now_arg = request.args.get("now", "")
     cache_key = f"api:dashboard:{now_arg}:{','.join(currencies)}:{','.join(symbols)}"
 
-    return cached_json_response(cache_key, 15, lambda: build_dashboard_payload(symbols, currencies, now_arg))
+    return cached_json_response(
+        cache_key,
+        15,
+        lambda: build_dashboard_payload(symbols, currencies, now_arg, allow_upstream=False),
+    )
 
 
 @app.get("/api/overview")
@@ -3454,7 +3973,7 @@ def overview() -> Response:
     cache_key = f"api:overview:{now_arg}:{','.join(currencies)}:{','.join(fund_codes)}:{','.join(symbols)}"
 
     def build() -> dict[str, Any]:
-        payload = build_dashboard_payload(symbols, currencies, now_arg)
+        payload = build_dashboard_payload(symbols, currencies, now_arg, allow_upstream=False)
         payload["fundSummaries"] = {
             code: summary
             for code in fund_codes

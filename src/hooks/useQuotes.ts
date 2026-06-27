@@ -15,6 +15,7 @@ import {
 } from '../api';
 import { INDICES, MARKET_ASSETS, ETF_ASSETS, FUNDS } from '../constants';
 import { getMarketState, marketLocalDate, quoteIsAfterNavClose, pickPollInterval } from '../marketHours';
+import { startAdaptivePolling } from '../polling';
 
 const DISPLAY_FX_CURRENCIES = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
 type EstimateState = 'LIVE' | 'PRE' | 'POST' | 'PARTIAL' | 'CLOSED';
@@ -551,28 +552,16 @@ export function useQuotes(
     const fundTimer0 = window.setTimeout(() => {
       if (!cancelled) void loadFunds(fundsChanged || !hasFundSnapshot);
     }, 0);
-    // Dynamic polling interval (plan B): 60s when any tracked symbol is live,
-    // 5min when everything is closed. marketStatesRef is updated as state
-    // arrives, so the interval adapts without restarting this effect.
     const fundSymbols = effectiveFundsRef.current?.flatMap((f) => f.holdings.map((h) => h.sinaSymbol)).filter(Boolean) ?? [];
     const allPollSymbols = [...marketSymbols, ...fundSymbols];
-    let marketTimer = window.setTimeout(function marketTick() {
-      if (cancelled) return;
-      void loadMarket(false);
-      const delay = pickPollInterval(allPollSymbols, marketStatesRef.current);
-      marketTimer = window.setTimeout(marketTick, delay);
-    }, pickPollInterval(allPollSymbols, marketStatesRef.current));
-    let fundTimer = window.setTimeout(function fundTick() {
-      if (cancelled) return;
-      void loadFunds(false);
-      const delay = pickPollInterval(allPollSymbols, marketStatesRef.current);
-      fundTimer = window.setTimeout(fundTick, delay);
-    }, pickPollInterval(allPollSymbols, marketStatesRef.current));
+    const stopPolling = startAdaptivePolling(
+      () => Promise.all([loadMarket(false), loadFunds(false)]),
+      () => pickPollInterval(allPollSymbols, marketStatesRef.current),
+    );
     return () => {
       cancelled = true;
       window.clearTimeout(fundTimer0);
-      window.clearTimeout(marketTimer);
-      window.clearTimeout(fundTimer);
+      stopPolling();
     };
   }, [enabled, funds, loadFundDetails, loadFundReturns]);
 

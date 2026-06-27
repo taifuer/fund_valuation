@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fetchMarketReturnSummaries } from '../api';
 import { MARKET_ASSETS, RANKING_ETFS, RANKING_INDEX_ETFS, RANKING_INDICES, RANKING_SECTOR_ETFS } from '../constants';
 import { getMarketState } from '../marketHours';
+import { startAdaptivePolling } from '../polling';
 import { rankingStateLabel } from '../displayStatus';
 import { useFundReturnData } from '../hooks/usePageData';
 import type { FundEstimate } from '../hooks/useQuotes';
@@ -198,17 +199,7 @@ function useMarketReturnRefreshTick() {
 
   useEffect(() => {
     const refresh = () => setTick(Date.now());
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') refresh();
-    };
-    const timer = window.setInterval(refresh, 5 * 60 * 1000);
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
+    return startAdaptivePolling(refresh, () => 15 * 60 * 1000);
   }, []);
 
   return tick;

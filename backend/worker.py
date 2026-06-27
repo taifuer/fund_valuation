@@ -1,0 +1,144 @@
+from __future__ import annotations
+
+import argparse
+import os
+import socket
+import time
+import uuid
+
+from .server import (
+    BACKGROUND_REFRESH_INTERVAL_SECONDS,
+    MAX_SINA_SYMBOLS_PER_REQUEST,
+    app,
+    background_refresh_state_snapshot,
+    build_dashboard_payload,
+    claim_background_job,
+    ensure_storage,
+    mark_background_refresh,
+    now_ms,
+    prewarm_fund_backtest_cache,
+    prewarm_fund_nav_cache_async,
+    prewarm_response_cache,
+    prune_in_memory_caches,
+    prune_quote_snapshots,
+    quote_group_refresh_interval,
+    quote_symbol_groups,
+    refresh_configured_fund_history,
+    refresh_configured_market_history,
+    release_background_job,
+)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Fund valuation data refresh worker")
+    parser.add_argument("--once", action="store_true", help="Run one refresh cycle and exit")
+    parser.add_argument(
+        "--interval",
+        type=int,
+        default=BACKGROUND_REFRESH_INTERVAL_SECONDS,
+        help="Seconds between refresh attempts",
+    )
+    args = parser.parse_args()
+
+    ensure_storage()
+    owner = f"worker:{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+    maintenance_interval = max(args.interval, 15 * 60)
+    print(f"Refresh worker started: owner={owner}, tick=60s", flush=True)
+
+    due = {
+        "cash_quotes": 0.0,
+        "continuous_quotes": 0.0,
+        "fund_nav": 0.0,
+        "history": 0.0,
+        "backtest": 0.0,
+        "cleanup": 0.0,
+    }
+
+    def refresh_quotes(symbols: list[str], currencies: list[str]) -> None:
+        for offset in range(0, len(symbols), MAX_SINA_SYMBOLS_PER_REQUEST):
+            chunk = symbols[offset:offset + MAX_SINA_SYMBOLS_PER_REQUEST]
+            build_dashboard_payload(chunk, currencies if offset == 0 else [], "", allow_upstream=True)
+
+    with app.app_context():
+        try:
+            while True:
+                started = time.monotonic()
+                acquired = claim_background_job(owner, lease_seconds=180)
+                tasks: list[str] = []
+                errors: list[str] = []
+                current = time.monotonic()
+                cash_symbols, continuous_symbols = quote_symbol_groups()
+                cash_interval = quote_group_refresh_interval(cash_symbols)
+                continuous_interval = quote_group_refresh_interval(continuous_symbols)
+                if acquired and current >= due["cash_quotes"]:
+                    try:
+                        refresh_quotes(cash_symbols, [])
+                        tasks.append("cash-quotes")
+                    except Exception as exc:
+                        errors.append(f"cash-quotes: {exc}")
+                    due["cash_quotes"] = current + cash_interval
+                if acquired and current >= due["continuous_quotes"]:
+                    try:
+                        refresh_quotes(continuous_symbols, ["EUR", "HKD", "JPY", "KRW", "USD"])
+                        tasks.append("continuous-quotes")
+                    except Exception as exc:
+                        errors.append(f"continuous-quotes: {exc}")
+                    due["continuous_quotes"] = current + continuous_interval
+                if acquired and current >= due["fund_nav"]:
+                    try:
+                        prewarm_fund_nav_cache_async()
+                        tasks.append("fund-nav")
+                    except Exception as exc:
+                        errors.append(f"fund-nav: {exc}")
+                    due["fund_nav"] = current + (15 * 60 if cash_interval <= 5 * 60 else 60 * 60)
+                if acquired and current >= due["history"]:
+                    try:
+                        errors.extend(refresh_configured_fund_history())
+                        errors.extend(refresh_configured_market_history())
+                        prewarm_response_cache()
+                        tasks.append("history")
+                    except Exception as exc:
+                        errors.append(f"history: {exc}")
+                    due["history"] = current + max(maintenance_interval, 60 * 60)
+                if acquired and current >= due["backtest"]:
+                    try:
+                        errors.extend(prewarm_fund_backtest_cache())
+                        tasks.append("backtest")
+                    except Exception as exc:
+                        errors.append(f"backtest: {exc}")
+                    due["backtest"] = current + 24 * 60 * 60
+                if acquired and current >= due["cleanup"]:
+                    try:
+                        prune_quote_snapshots()
+                        tasks.append("cleanup")
+                    except Exception as exc:
+                        errors.append(f"cleanup: {exc}")
+                    due["cleanup"] = current + 60 * 60
+                prune_in_memory_caches()
+                elapsed = time.monotonic() - started
+                if acquired and tasks:
+                    state = background_refresh_state_snapshot()
+                    run_count = int(state.get("runCount", 0) or 0) + 1
+                    updates = {"lastRunAt": now_ms(), "runCount": run_count}
+                    if errors:
+                        updates.update({"lastErrorAt": now_ms(), "lastError": "; ".join(errors[:5])[:480]})
+                    else:
+                        updates.update({"lastSuccessAt": now_ms(), "lastError": ""})
+                    mark_background_refresh(owner, **updates)
+                    print(f"Worker tasks {','.join(tasks)} completed in {elapsed:.1f}s", flush=True)
+                    if errors:
+                        print(f"Worker errors: {'; '.join(errors[:5])}", flush=True)
+                else:
+                    if not acquired:
+                        print("Refresh tick skipped: another worker owns the lease", flush=True)
+                if args.once:
+                    return
+                time.sleep(max(60 - elapsed, 1))
+        except KeyboardInterrupt:
+            print("Refresh worker stopped", flush=True)
+        finally:
+            release_background_job(owner)
+
+
+if __name__ == "__main__":
+    main()

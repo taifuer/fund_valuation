@@ -388,12 +388,12 @@ export function getMarketState(sinaSymbol: string, now = new Date()): MarketStat
 
 /**
  * Polling interval policy: 60s when a session-based cash market is active and
- * 5min otherwise. Futures and crypto refresh with the page but do not force all
+ * 15min otherwise. Futures and crypto refresh with the page but do not force all
  * endpoints onto their near-continuous trading cadence. Backend marketStates
  * take precedence, with getMarketState as a fallback.
  */
 export const POLL_INTERVAL_LIVE_MS = 60_000;
-export const POLL_INTERVAL_CLOSED_MS = 5 * 60_000;
+export const POLL_INTERVAL_CLOSED_MS = 15 * 60_000;
 
 export function pickPollInterval(
   symbols: string[],
