@@ -5,19 +5,13 @@ import json
 import sqlite3
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 
 _TEMP_DATA = tempfile.TemporaryDirectory()
 os.environ["FUND_VALUATION_DATA_DIR"] = _TEMP_DATA.name
-# Copy the shared holidays.json into the temp data dir so calendar tests can
-# load holiday data the same way production does.
-import shutil as _shutil  # noqa: E402
-_REPO_DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "holidays.json")
-if os.path.exists(_REPO_DATA):
-    _shutil.copyfile(_REPO_DATA, os.path.join(_TEMP_DATA.name, "holidays.json"))
 
 from backend import server  # noqa: E402
 
@@ -390,12 +384,14 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertNotIn("25580.32", text)
 
     def test_eastmoney_global_quote_falls_back_to_latest_daily_kline(self) -> None:
+        latest_date = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+        previous_date = latest_date - timedelta(days=1)
         kline_payload = {
             "data": {
                 "name": "日经225",
                 "klines": [
-                    "2026-06-18,66783.22,69317.50,69682.23,66783.22,0,0.00,4.39,4.99,3297.46,0.00",
-                    "2026-06-19,69288.91,69404.50,70020.68,69095.67,0,0.00,1.33,0.13,87.00,0.00",
+                    f"{previous_date.isoformat()},66783.22,69317.50,69682.23,66783.22,0,0.00,4.39,4.99,3297.46,0.00",
+                    f"{latest_date.isoformat()},69288.91,69404.50,70020.68,69095.67,0,0.00,1.33,0.13,87.00,0.00",
                 ],
             }
         }
@@ -408,7 +404,10 @@ class ServerDataRefreshTests(unittest.TestCase):
         with patch.object(server, "fetch_eastmoney_json", side_effect=fake_eastmoney):
             line = server.eastmoney_global_quote_line("int_nikkei")
 
-        self.assertEqual(line, 'var hq_str_int_nikkei="日经225,69404.50,87.00,0.13,2026-06-19";')
+        self.assertEqual(
+            line,
+            f'var hq_str_int_nikkei="日经225,69404.50,87.00,0.13,{latest_date.isoformat()}";',
+        )
 
     def test_fund_api_rejects_invalid_codes_before_upstream_fetch(self) -> None:
         with patch.object(server, "fetch_upstream") as fetch:
@@ -487,6 +486,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         )
 
     def test_market_states_marks_known_holidays(self) -> None:
+        self.assertNotEqual(server.HOLIDAYS_FILE.parent, server.DATA_DIR)
         response = server.app.test_client().get(
             "/api/marketstates?symbols=hkHSI,b_KOSPI,s_sh000001&now=2026-05-25T13:00:00%2B08:00"
         )
@@ -1022,6 +1022,69 @@ class ServerDataRefreshTests(unittest.TestCase):
         health = server.upstream_health_snapshot()
         self.assertEqual(health["fallbackCount"], 1)
         self.assertEqual(health["issues"][0]["key"], "quote:s_sz399006")
+
+    def test_cn_indices_use_previous_close_before_call_auction(self) -> None:
+        indices = {
+            "sh000001": "上证指数",
+            "sz399001": "深证成指",
+            "sh000300": "沪深300",
+            "sz399006": "创业板指",
+        }
+        for symbol in indices:
+            server.store_market_history(
+                "sina-cn",
+                symbol,
+                '[{"day":"2026-05-22","close":"3950.00"},{"day":"2026-05-25","close":"4000.00"},'
+                '{"day":"2026-05-26","close":"4100.00"}]',
+            )
+        raw_lines = []
+        for symbol, name in indices.items():
+            raw_lines.append(
+                f'var hq_str_{symbol}="{name},4000.0000,4000.0000,4010.0000,4010.0000,3990.0000,'
+                '0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2026-05-26,09:10:00,00";'
+            )
+
+        text = server.sanitize_sina_quote_text(
+            "\n".join(raw_lines),
+            list(indices),
+            datetime.fromisoformat("2026-05-26T09:10:00+08:00"),
+        )
+
+        for symbol, name in indices.items():
+            self.assertIn(
+                f'hq_str_{symbol}="{name},4000.0000,3950.0000,4000.0000',
+                text,
+            )
+        self.assertEqual(server.upstream_health_snapshot()["fallbackCount"], 0)
+
+    def test_cn_index_accepts_timestamped_current_call_auction_quote(self) -> None:
+        line = (
+            'var hq_str_sz399006="创业板指,4002.0000,4000.0000,4010.0000,4012.0000,3998.0000,'
+            '0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2026-05-26,09:20:00,00";'
+        )
+
+        text = server.sanitize_sina_quote_text(
+            line,
+            ["sz399006"],
+            datetime.fromisoformat("2026-05-26T09:20:00+08:00"),
+        )
+
+        self.assertEqual(text.strip(), line)
+
+    def test_cn_index_rejects_untimestamped_call_auction_quote(self) -> None:
+        server.store_market_history(
+            "sina-cn",
+            "sz399006",
+            '[{"day":"2026-05-22","close":"3950.00"},{"day":"2026-05-25","close":"4000.00"}]',
+        )
+
+        text = server.sanitize_sina_quote_text(
+            'var hq_str_s_sz399006="创业板指,4010.00,10.00,0.25,0,0";',
+            ["s_sz399006"],
+            datetime.fromisoformat("2026-05-26T09:20:00+08:00"),
+        )
+
+        self.assertIn('hq_str_s_sz399006="创业板指,4000.0000,50.0000,1.27', text)
 
     def test_sina_zero_cn_etf_quote_falls_back_to_previous_close_without_history(self) -> None:
         text = server.sanitize_sina_quote_text(

@@ -29,7 +29,7 @@ interface SelectedHistory {
 const COLLAPSED_GROUPS_KEY = 'fund_valuation:collapsed_market_groups';
 
 const GROUPS = [
-  { title: 'A股', symbols: ['s_sh000001', 's_sz399006', 's_sh000300', 's_sh000905'], cols: 'grid4' },
+  { title: 'A股', symbols: ['sh000001', 'sz399006', 'sh000300', 'sh000905'], cols: 'grid4' },
   { title: '美股', symbols: ['gb_ixic', 'gb_ndx', 'gb_inx', 'gb_dji'], cols: 'grid4' },
   { title: '亚太', symbols: ['hkHSI', 'int_nikkei', 'b_KOSPI', 'b_TWSE'], cols: 'grid4' },
   { title: '资产', symbols: ['hf_GC', 'hf_SI', 'hf_CL', 'fx_sbtcusd'], cols: 'grid4' },

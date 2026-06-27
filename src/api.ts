@@ -15,7 +15,7 @@ import type {
 } from './types';
 import { globalFutureReferencePrice } from './quoteMath';
 
-type Market = 'us' | 'cn_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'crypto' | 'fund' | 'fx';
+type Market = 'us' | 'cn_index' | 'cn_full_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'crypto' | 'fund' | 'fx';
 
 const API_BASE = ((import.meta as ImportMeta & { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
@@ -38,15 +38,16 @@ function marketType(raw: string): Market {
   if (raw.startsWith('hf_')) return 'global_future';
   if (raw.startsWith('gb_')) return 'us';
   if (raw.startsWith('s_')) return 'cn_index';
+  if (/^(sh000|sz399)\d{3}$/.test(raw)) return 'cn_full_index';
   if (raw.startsWith('int_') || raw.startsWith('b_')) return 'intl_index';
   if (raw.startsWith('f_')) return 'fund';
   if (/^hk/.test(raw)) return 'hk';
   return 'cn_stock';
 }
 
-// Current Beijing date as YYYY-MM-DD (for markets where Sina omits the date field)
-function beijingDate(): string {
-  const now = new Date();
+// Beijing date as YYYY-MM-DD (for markets where Sina omits the date field).
+function beijingDate(timestamp = Date.now()): string {
+  const now = new Date(timestamp);
   const bj = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   return bj.toISOString().slice(0, 10);
 }
@@ -81,11 +82,11 @@ function localDatetimeToBeijing(date: string, time: string, utcOffsetHours: numb
 }
 
 // Reject dates that differ from Beijing date by more than this many days (stale Sina data)
-function isStale(dateStr: string, maxDiffDays = 2): boolean {
+function isStale(dateStr: string, referenceTimestamp: number, maxDiffDays = 2): boolean {
   const datePart = dateStr.slice(0, 10);
   if (!datePart) return true;
   const d = new Date(datePart + 'T00:00:00+08:00');
-  const bj = new Date(beijingDate() + 'T00:00:00+08:00');
+  const bj = new Date(beijingDate(referenceTimestamp) + 'T00:00:00+08:00');
   const diff = Math.abs(d.getTime() - bj.getTime()) / (1000 * 60 * 60 * 24);
   return diff > maxDiffDays;
 }
@@ -126,7 +127,7 @@ function usExtendedSession(raw: string): 'pre' | 'post' | null {
 
 function maxReasonableChangePercent(market: Market): number {
   if (market === 'global_future') return 25;
-  if (market === 'cn_index' || market === 'intl_index' || market === 'hk') return 25;
+  if (market === 'cn_index' || market === 'cn_full_index' || market === 'intl_index' || market === 'hk') return 25;
   if (market === 'cn_stock') return 80;
   if (market === 'us') return 120;
   if (market === 'crypto') return 120;
@@ -191,7 +192,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
       if (!date) {
         date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
-      } else if (isStale(date)) {
+      } else if (isStale(date, fetchedAt)) {
         dateReliable = false;
       }
       break;
@@ -206,7 +207,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
           break;
         }
       }
-      if (!date || isStale(date)) {
+      if (!date || isStale(date, fetchedAt)) {
         date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
@@ -234,7 +235,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
           }
         }
       }
-      if (!date || isStale(date)) {
+      if (!date || isStale(date, fetchedAt)) {
         if (rawSymbol === 'int_nikkei') return null;
         if (hasExplicitIntlDate) return null;
         date = beijingDatetimeFromTimestamp(fetchedAt);
@@ -248,7 +249,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
       changePct = parseFloat(fields[8]) || 0;
       // fields[17] = "2026/04/29", fields[18] = "16:10" (Hong Kong time, same as Beijing time)
       date = combineBeijingDateTime(fields[17] || '', fields[18] || '');
-      if (isStale(date)) {
+      if (isStale(date, fetchedAt)) {
         date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
@@ -259,7 +260,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
       previousClose = globalFutureReferencePrice(fields[7], fields[8], price);
       changePct = previousClose ? ((price - previousClose) / previousClose) * 100 : 0;
       date = combineBeijingDateTime(fields[12] || '', fields[6] || '');
-      if (isStale(date)) {
+      if (isStale(date, fetchedAt)) {
         date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
@@ -275,12 +276,13 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
         [...fields].reverse().find((field) => /^\d{4}-\d{2}-\d{2}$/.test(field)) ?? '',
         fields[0] || '',
       );
-      if (isStale(date)) {
+      if (isStale(date, fetchedAt)) {
         date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
       break;
     }
+    case 'cn_full_index':
     case 'cn_stock':
     default:
       if (fields.length < 10) return null;
@@ -294,7 +296,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
           break;
         }
       }
-      if (!date || isStale(date)) {
+      if (!date || isStale(date, fetchedAt)) {
         date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }

@@ -45,7 +45,47 @@ await writeFile(quoteMathPath, quoteMathCompiled.outputText, 'utf8');
 const { parseSinaVar } = await importTsModule('../src/api.ts', 'api', {
   "from './quoteMath';": `from '${pathToFileURL(quoteMathPath).href}';`,
 });
-const now = Date.parse('2026-06-22T19:00:00+08:00');
+const holidaysPath = join(outDir, `holidays-dep.${Date.now()}.mjs`);
+const holidaysJson = await readFile(new URL('../config/holidays.json', import.meta.url), 'utf8');
+await writeFile(holidaysPath, `export default ${holidaysJson};`, 'utf8');
+const {
+  POLL_INTERVAL_CLOSED_MS,
+  POLL_INTERVAL_LIVE_MS,
+  pickPollInterval,
+} = await importTsModule('../src/marketHours.ts', 'marketHours', {
+  "from '../config/holidays.json';": `from '${pathToFileURL(holidaysPath).href}';`,
+});
+const {
+  expandedFundCodeFromPathname,
+  fundExpansionPath,
+  pageFromPathname,
+} = await importTsModule('../src/routing.ts', 'routing');
+const now = Date.parse('2026-06-25T19:00:00+08:00');
+
+assert.equal(
+  pickPollInterval(['fx_sbtcusd', 'hf_NQ'], new Map([
+    ['fx_sbtcusd', { state: 'live' }],
+    ['hf_NQ', { state: 'live' }],
+  ]), new Date(now)),
+  POLL_INTERVAL_CLOSED_MS,
+);
+assert.equal(
+  pickPollInterval(['fx_sbtcusd', 's_sh000001'], new Map([
+    ['fx_sbtcusd', { state: 'live' }],
+    ['s_sh000001', { state: 'live' }],
+  ]), new Date(now)),
+  POLL_INTERVAL_LIVE_MS,
+);
+assert.equal(
+  pickPollInterval(['s_sh000001'], new Map([['s_sh000001', { state: 'closed' }]]), new Date(now)),
+  POLL_INTERVAL_CLOSED_MS,
+);
+
+assert.equal(pageFromPathname('/funds/016664'), 'funds');
+assert.equal(expandedFundCodeFromPathname('/funds/016664'), '016664');
+assert.equal(expandedFundCodeFromPathname('/funds/not-a-code'), null);
+assert.equal(fundExpansionPath('016664', true), '/funds/016664');
+assert.equal(fundExpansionPath('016664', false), '/funds');
 
 assert.equal(
   futuresPriceComparable({ price: 30406, fetchedAt: now }, { price: 30723, fetchedAt: now }),
@@ -125,6 +165,13 @@ assert.equal(
   parseSinaVar('var hq_str_s_sz399006="创业板指,4371.99,120.56,2.84,0,0,2026-06-25";', now)?.data.time,
   '2026-06-25',
 );
+{
+  const parsed = parseSinaVar('var hq_str_sz399006="创业板指,4319.409,4371.989,4194.209,4328.700,4175.377,0.000,0.000,24093147333,932482905911.660,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,2026-06-25,15:00:03,00";', now);
+  assert.equal(parsed?.data.price, 4194.21);
+  assert.equal(parsed?.data.previousClose, 4371.99);
+  assert.equal(parsed?.data.changePercent, -4.07);
+  assert.equal(parsed?.data.time, '2026-06-25 15:00:03');
+}
 {
   const parsed = parseSinaVar('var hq_str_sz159326="电网设备,0.000,2.189,0.000,0.000,0.000,0.000,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,2026-06-25,09:10:00,00";', now);
   assert.equal(parsed?.data.price, 2.19);

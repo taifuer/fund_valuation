@@ -1,4 +1,4 @@
-import holidaysData from '../data/holidays.json';
+import holidaysData from '../config/holidays.json';
 
 interface Session {
   start: [number, number];
@@ -18,7 +18,7 @@ interface FuturesCalendar {
   holidays: (year: string) => Set<string>;
 }
 
-// Holiday data is loaded from data/holidays.json (shared with the backend) so
+// Holiday data is loaded from config/holidays.json (shared with the backend) so
 // adding a new year is a data edit, not a code change. Unknown years fall back
 // to an empty set (weekend-only detection) — the calendar degrades gracefully
 // instead of breaking on Jan 1.
@@ -387,9 +387,10 @@ export function getMarketState(sinaSymbol: string, now = new Date()): MarketStat
 }
 
 /**
- * Polling interval policy (plan B): 60s when any tracked symbol is live,
- * 5min when everything is closed/holiday/weekend. Driven by marketStates
- * (from the backend) with a getMarketState fallback for symbols not in the map.
+ * Polling interval policy: 60s when a session-based cash market is active and
+ * 5min otherwise. Futures and crypto refresh with the page but do not force all
+ * endpoints onto their near-continuous trading cadence. Backend marketStates
+ * take precedence, with getMarketState as a fallback.
  */
 export const POLL_INTERVAL_LIVE_MS = 60_000;
 export const POLL_INTERVAL_CLOSED_MS = 5 * 60_000;
@@ -400,6 +401,11 @@ export function pickPollInterval(
   now = new Date(),
 ): number {
   for (const symbol of symbols) {
+    const key = marketKey(symbol);
+    // Futures and crypto trade for most or all of the day. Letting them drive
+    // the cadence keeps every page at the fast interval even when all cash
+    // markets are closed. They still refresh with the page at the closed rate.
+    if (key === 'crypto' || key?.endsWith('_futures')) continue;
     const state = marketStates.get(symbol)?.state ?? getMarketState(symbol, now);
     if (state === 'live' || state === 'pre' || state === 'post' || state === 'break') {
       return POLL_INTERVAL_LIVE_MS;

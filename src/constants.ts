@@ -31,10 +31,10 @@ const profile = (
 
 export const INDICES: IndexConfig[] = [
   // A股
-  { symbol: 'SH000001', name: '上证指数', sinaSymbol: 's_sh000001', history: { source: 'sina-cn', symbol: 'sh000001' } },
-  { symbol: 'SZ399006', name: '创业板指', sinaSymbol: 's_sz399006', history: { source: 'sina-cn', symbol: 'sz399006' } },
-  { symbol: 'SH000300', name: '沪深300', sinaSymbol: 's_sh000300', history: { source: 'sina-cn', symbol: 'sh000300' } },
-  { symbol: 'SH000905', name: '中证500', sinaSymbol: 's_sh000905', history: { source: 'sina-cn', symbol: 'sh000905' } },
+  { symbol: 'SH000001', name: '上证指数', sinaSymbol: 'sh000001', history: { source: 'sina-cn', symbol: 'sh000001' } },
+  { symbol: 'SZ399006', name: '创业板指', sinaSymbol: 'sz399006', history: { source: 'sina-cn', symbol: 'sz399006' } },
+  { symbol: 'SH000300', name: '沪深300', sinaSymbol: 'sh000300', history: { source: 'sina-cn', symbol: 'sh000300' } },
+  { symbol: 'SH000905', name: '中证500', sinaSymbol: 'sh000905', history: { source: 'sina-cn', symbol: 'sh000905' } },
   // 美股
   { symbol: 'IXIC', name: '纳斯达克', sinaSymbol: 'gb_ixic', history: { source: 'sina-us', symbol: '.IXIC' } },
   { symbol: 'NDX', name: '纳指100', sinaSymbol: 'gb_ndx', futures: { sinaSymbol: 'hf_NQ', label: '纳指100期货' }, history: { source: 'sina-us', symbol: '.NDX' } },
@@ -77,9 +77,9 @@ const RANKING_BASE_INDICES: IndexConfig[] = INDICES.map((index) => {
 
 export const RANKING_INDICES: IndexConfig[] = [
   ...RANKING_BASE_INDICES,
-  { symbol: 'SZ399001', name: '深证成指', sinaSymbol: 's_sz399001', history: { source: 'sina-cn', symbol: 'sz399001' } },
-  { symbol: 'SH000016', name: '上证50', sinaSymbol: 's_sh000016', history: { source: 'sina-cn', symbol: 'sh000016' } },
-  { symbol: 'SH000688', name: '科创50', sinaSymbol: 's_sh000688', history: { source: 'sina-cn', symbol: 'sh000688' } },
+  { symbol: 'SZ399001', name: '深证成指', sinaSymbol: 'sz399001', history: { source: 'sina-cn', symbol: 'sz399001' } },
+  { symbol: 'SH000016', name: '上证50', sinaSymbol: 'sh000016', history: { source: 'sina-cn', symbol: 'sh000016' } },
+  { symbol: 'SH000688', name: '科创50', sinaSymbol: 'sh000688', history: { source: 'sina-cn', symbol: 'sh000688' } },
 ];
 
 export const RANKING_SECTOR_ETFS: IndexConfig[] = [

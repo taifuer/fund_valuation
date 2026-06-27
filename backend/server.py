@@ -246,17 +246,19 @@ def ensure_storage() -> None:
 # Holiday data is keyed by year. Add a new year block here when the year rolls
 # over; unknown years fall back to an empty set (weekend-only detection), so the
 # calendar degrades gracefully instead of breaking on Jan 1.
-# Market holiday & half-day data is loaded from data/holidays.json (shared with
-# the frontend) so adding a new year is a data edit, not a code change. Unknown
-# years fall back to an empty set (weekend-only detection) — the calendar
-# degrades gracefully instead of breaking on Jan 1.
-HOLIDAYS_FILE = DATA_DIR / "holidays.json"
+# Market holiday & half-day data is shipped as application configuration rather
+# than runtime storage. Keeping it outside DATA_DIR prevents a database volume
+# or custom FUND_VALUATION_DATA_DIR from hiding the calendar in production.
+HOLIDAYS_FILE = Path(os.environ.get(
+    "FUND_VALUATION_HOLIDAYS_FILE",
+    ROOT_DIR / "config" / "holidays.json",
+))
 _HOLIDAYS_JSON_CACHE: dict[str, Any] | None = None
 _HOLIDAYS_JSON_GUARD = threading.Lock()
 
 
 def _load_holidays_json() -> dict[str, Any]:
-    """Load and cache data/holidays.json. Returns {} if the file is missing or
+    """Load and cache config/holidays.json. Returns {} if the file is missing or
     malformed (callers then degrade to weekend-only)."""
     global _HOLIDAYS_JSON_CACHE
     if _HOLIDAYS_JSON_CACHE is not None:
@@ -1093,28 +1095,28 @@ def sina_cn_history_symbol(symbol: str) -> str | None:
     return None
 
 
-def latest_cn_history_quote_line(symbol: str, name: str, *, stock_style: bool) -> str | None:
+def latest_cn_history_quote_line(
+    symbol: str,
+    name: str,
+    *,
+    stock_style: bool,
+    as_of: str | None = None,
+) -> str | None:
     history_symbol = sina_cn_history_symbol(symbol)
     if not history_symbol:
         return None
-    summary = read_market_return_summary_from_db("sina-cn", history_symbol)
-    if not summary:
+    rows = read_market_history_from_db("sina-cn", history_symbol)
+    points = [
+        (str(row["date"]), float(row["close"]))
+        for row in rows
+        if float(row["close"]) > 0 and (as_of is None or str(row["date"]) <= as_of)
+    ]
+    if not points:
         return None
-    latest = summary.get("latest")
-    if not isinstance(latest, dict):
-        return None
-    try:
-        end_close = float(latest.get("endClose"))
-        start_close = float(latest.get("startClose"))
-        return_percent = float(latest.get("returnPercent"))
-    except (TypeError, ValueError):
-        return None
-    if end_close <= 0:
-        return None
+    end_date, end_close = points[-1]
+    start_close = points[-2][1] if len(points) >= 2 else end_close
     change = end_close - start_close if start_close > 0 else 0.0
-    if start_close <= 0:
-        return_percent = 0.0
-    end_date = str(latest.get("endDate") or summary.get("asOf") or beijing_today())
+    return_percent = change / start_close * 100 if start_close > 0 else 0.0
     if not stock_style:
         return f'var hq_str_{symbol}="{name},{end_close:.4f},{change:.4f},{return_percent:.2f},0,0,{end_date}";'
 
@@ -1157,18 +1159,82 @@ def raw_sina_cn_price(symbol: str, fields: list[str]) -> float | None:
     return None
 
 
-def sanitize_zero_cn_quote_line(line: str) -> str | None:
+def is_cn_index_quote_symbol(symbol: str) -> bool:
+    return re.match(r"^(?:s_)?(?:sh000|sz399)\d{3}$", symbol) is not None
+
+
+def cn_index_preopen_phase(now: datetime) -> str | None:
+    local = now.astimezone(ZoneInfo("Asia/Shanghai"))
+    row = market_calendar_row("cn", local.strftime("%Y-%m-%d"))
+    if not row or row["status"] not in {"open", "half_day"}:
+        return None
+    minutes = local.hour * 60 + local.minute
+    if minutes < 9 * 60 + 15:
+        return "before_auction"
+    if minutes < 9 * 60 + 30:
+        return "auction"
+    return None
+
+
+def is_current_cn_index_auction_quote(symbol: str, fields: list[str], now: datetime) -> bool:
+    # Compact s_ index quotes have no timestamp or independent previous-close
+    # field, so they cannot be proven to represent today's call auction.
+    if symbol.startswith("s_") or len(fields) < 10:
+        return False
+    previous_close = safe_float(fields[2])
+    price = safe_float(fields[3])
+    if not previous_close or previous_close <= 0 or not price or price <= 0:
+        return False
+    if abs((price - previous_close) / previous_close * 100) > 25:
+        return False
+    quote_date = ""
+    quote_time = ""
+    for index in range(len(fields) - 1, max(19, len(fields) - 12), -1):
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", fields[index]):
+            quote_date = fields[index]
+            quote_time = fields[index + 1] if index + 1 < len(fields) else ""
+            break
+    local = now.astimezone(ZoneInfo("Asia/Shanghai"))
+    if quote_date != local.strftime("%Y-%m-%d"):
+        return False
+    try:
+        quote_minutes = parse_hhmm(quote_time[:5])
+    except (TypeError, ValueError):
+        return False
+    return 9 * 60 + 15 <= quote_minutes < 9 * 60 + 30
+
+
+def sanitize_cn_quote_line(
+    line: str,
+    now: datetime,
+    preopen_phase: str | None = None,
+    previous_date: str | None = None,
+) -> str | None:
     match = re.match(r'^var\s+hq_str_(\w+)="([^"]*)"', line.strip())
     if not match:
         return line if line.strip() else None
     symbol = match.group(1)
     fields = match.group(2).split(",")
+    name = fields[0] if fields and fields[0] else symbol
+    stock_style = re.match(r"^(sh|sz)\d{6}$", symbol) is not None
+
+    if is_cn_index_quote_symbol(symbol):
+        if preopen_phase == "before_auction" or (
+            preopen_phase == "auction" and not is_current_cn_index_auction_quote(symbol, fields, now)
+        ):
+            replacement = latest_cn_history_quote_line(
+                symbol,
+                name,
+                stock_style=stock_style,
+                as_of=previous_date,
+            )
+            if replacement:
+                return replacement
+
     price = raw_sina_cn_price(symbol, fields)
     if price is None or price > 0:
         return line.rstrip()
 
-    name = fields[0] if fields and fields[0] else symbol
-    stock_style = re.match(r"^(sh|sz)\d{6}$", symbol) is not None
     replacement = latest_cn_history_quote_line(symbol, name, stock_style=stock_style)
     if replacement:
         record_quote_health(symbol, "fallback", "zero-price quote replaced with latest historical close")
@@ -1190,13 +1256,21 @@ def sanitize_zero_cn_quote_line(line: str) -> str | None:
     return line.rstrip()
 
 
-def sanitize_sina_quote_text(text: str, symbols: list[str]) -> str:
+def sanitize_sina_quote_text(text: str, symbols: list[str], now: datetime | None = None) -> str:
     text = append_eastmoney_global_quotes(text, symbols)
+    current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+    preopen_phase = None
+    previous_date = None
+    if any(is_cn_index_quote_symbol(symbol) for symbol in symbols):
+        ensure_market_calendar_seeded()
+        preopen_phase = cn_index_preopen_phase(current)
+        if preopen_phase:
+            previous_date = previous_trading_day("cn", current.astimezone(ZoneInfo("Asia/Shanghai")))
     seen_symbols: set[str] = set()
     lines = [
         sanitized
         for line in text.rstrip().splitlines()
-        if (sanitized := sanitize_zero_cn_quote_line(line))
+        if (sanitized := sanitize_cn_quote_line(line, current, preopen_phase, previous_date))
     ]
     for line in lines:
         if match := re.match(r'^var\s+hq_str_(\w+)="', line.strip()):
@@ -3261,6 +3335,7 @@ def sina() -> Response:
         max_symbols=MAX_SINA_SYMBOLS_PER_REQUEST,
     ))
     symbols = ",".join(symbol_list)
+    now_arg = request.args.get("now", "")
     def build() -> tuple[str, int]:
         url = f"https://hq.sinajs.cn/list={symbols}"
         status, content_type, body = fetch_upstream(
@@ -3272,8 +3347,8 @@ def sina() -> Response:
             ttl_seconds=30,
         )
         del content_type
-        return sanitize_sina_quote_text(decode_body(body), symbol_list), status
-    return cached_text_response(f"api:sina:{symbols}", 15, build)
+        return sanitize_sina_quote_text(decode_body(body), symbol_list, parse_market_now(now_arg)), status
+    return cached_text_response(f"api:sina:{now_arg}:{symbols}", 15, build)
 
 
 @app.get("/api/marketstates")
@@ -3296,6 +3371,8 @@ def market_states() -> Response:
 
 
 def build_dashboard_payload(symbols: list[str], currencies: list[str], now_arg: str) -> dict[str, Any]:
+    ensure_market_calendar_seeded()
+    now = parse_market_now(now_arg)
     sina_text = ""
     if symbols:
         joined_symbols = ",".join(symbols)
@@ -3309,7 +3386,7 @@ def build_dashboard_payload(symbols: list[str], currencies: list[str], now_arg: 
         )
         if status < 400:
             sina_text = decode_body(body)
-    sina_text = sanitize_sina_quote_text(sina_text, symbols)
+    sina_text = sanitize_sina_quote_text(sina_text, symbols, now)
 
     fx_text = ""
     fx_symbols = {
@@ -3333,8 +3410,6 @@ def build_dashboard_payload(symbols: list[str], currencies: list[str], now_arg: 
         if status < 400:
             fx_text = decode_body(body)
 
-    ensure_market_calendar_seeded()
-    now = parse_market_now(now_arg)
     return {
         "quotesText": sina_text,
         "fxText": fx_text,
