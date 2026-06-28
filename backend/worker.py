@@ -18,6 +18,7 @@ from .server import (
     now_ms,
     prewarm_fund_backtest_cache,
     prewarm_fund_nav_cache_async,
+    prewarm_purchase_status_cache,
     prewarm_response_cache,
     prune_in_memory_caches,
     prune_quote_snapshots,
@@ -49,6 +50,7 @@ def main() -> None:
         "cash_quotes": 0.0,
         "continuous_quotes": 0.0,
         "fund_nav": 0.0,
+        "fund_purchase": 0.0,
         "history": 0.0,
         "backtest": 0.0,
         "cleanup": 0.0,
@@ -91,6 +93,13 @@ def main() -> None:
                     except Exception as exc:
                         errors.append(f"fund-nav: {exc}")
                     due["fund_nav"] = current + (15 * 60 if cash_interval <= 5 * 60 else 60 * 60)
+                if acquired and current >= due["fund_purchase"]:
+                    try:
+                        prewarm_purchase_status_cache()
+                        tasks.append("fund-purchase")
+                    except Exception as exc:
+                        errors.append(f"fund-purchase: {exc}")
+                    due["fund_purchase"] = current + 6 * 60 * 60
                 if acquired and current >= due["history"]:
                     try:
                         errors.extend(refresh_configured_fund_history())

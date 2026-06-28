@@ -58,6 +58,8 @@ class ServerDataRefreshTests(unittest.TestCase):
             server._MARKET_HISTORY_REFRESHING.clear()
         with server._FUND_NAV_REFRESH_GUARD:
             server._FUND_NAV_REFRESHING.clear()
+        with server._FUND_PURCHASE_REFRESH_GUARD:
+            server._FUND_PURCHASE_REFRESHING = False
         with server._UPSTREAM_HEALTH_GUARD:
             server._UPSTREAM_HEALTH.clear()
         with server._BACKGROUND_REFRESH_GUARD:
@@ -486,6 +488,76 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.get_json()["016664"]["fundcode"], "016664")
         schedule_refresh.assert_called_once_with(["016664"])
 
+    def test_fund_nav_returns_partial_cache_without_blocking_on_missing_code(self) -> None:
+        body = b'jsonpgz({"fundcode":"016664","name":"test","dwjz":"1.0000","jzrq":"2026-05-21"});'
+        server.cache_put(
+            "fundnav:016664",
+            "https://fundgz.1234567.com.cn/js/016664.js",
+            200,
+            "text/plain; charset=utf-8",
+            body,
+        )
+
+        with (
+            patch.object(server, "fetch_fund_nav_payload", side_effect=AssertionError("unexpected blocking fetch")),
+            patch.object(server, "schedule_fund_nav_refresh") as schedule_refresh,
+        ):
+            response = server.app.test_client().get("/api/fundnav?codes=016664,118001")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("X-Cache"), "STALE")
+        self.assertEqual(set(response.get_json()), {"016664"})
+        schedule_refresh.assert_called_once_with(["118001"])
+
+    def test_fund_nav_uses_persisted_history_without_blocking_fetch(self) -> None:
+        fetched_at = server.now_ms()
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.executemany(
+                "INSERT INTO fund_nav_history(code, date, nav, change_percent, fetched_at) VALUES (?, ?, ?, ?, ?)",
+                [
+                    ("016664", "2026-05-21", 1.2345, 1.2, fetched_at),
+                    ("016664", "2026-05-20", 1.2199, -0.3, fetched_at),
+                ],
+            )
+
+        with (
+            patch.object(server, "fetch_fund_nav_payload", side_effect=AssertionError("unexpected blocking fetch")),
+            patch.object(server, "schedule_fund_nav_refresh") as schedule_refresh,
+        ):
+            response = server.app.test_client().get("/api/fundnav?codes=016664")
+
+        payload = response.get_json()["016664"]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload["jzrq"], "2026-05-21")
+        self.assertEqual(payload["dwjz"], "1.2345")
+        self.assertEqual(payload["gsz"], "")
+        schedule_refresh.assert_called_once_with(["016664"])
+
+    def test_fund_nav_does_not_repeat_recent_empty_upstream_attempt(self) -> None:
+        server.cache_put(
+            "fundnav:016664",
+            "https://fundgz.1234567.com.cn/js/016664.js",
+            200,
+            "text/plain; charset=utf-8",
+            b"jsonpgz();",
+        )
+        fetched_at = server.now_ms()
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.executemany(
+                "INSERT INTO fund_nav_history(code, date, nav, change_percent, fetched_at) VALUES (?, ?, ?, ?, ?)",
+                [
+                    ("016664", "2026-05-21", 1.2345, 1.2, fetched_at),
+                    ("016664", "2026-05-20", 1.2199, -0.3, fetched_at),
+                ],
+            )
+
+        with patch.object(server, "schedule_fund_nav_refresh") as schedule_refresh:
+            response = server.app.test_client().get("/api/fundnav?codes=016664")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["016664"]["dwjz"], "1.2345")
+        schedule_refresh.assert_not_called()
+
     def test_prewarm_fund_nav_cache_async_schedules_default_funds(self) -> None:
         with (
             patch.object(server, "configured_fund_codes_from_constants", return_value=["016664", "118001"]),
@@ -494,6 +566,42 @@ class ServerDataRefreshTests(unittest.TestCase):
             server.prewarm_fund_nav_cache_async()
 
         schedule_refresh.assert_called_once_with(["016664", "118001"])
+
+    def test_fund_purchase_returns_partial_stale_cache_and_refreshes_async(self) -> None:
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute(
+                """
+                INSERT INTO fund_purchase_status(
+                  code, name, fund_type, nav_date, purchase_status, redeem_status,
+                  next_open_date, min_purchase, daily_limit, fee_rate, fetched_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "016664", "test", "QDII", "2026-05-21", "开放申购", "开放赎回",
+                    "", "10", "1000", "0.10%", server.now_ms() - 7 * 60 * 60 * 1000,
+                ),
+            )
+
+        with (
+            patch.object(server, "fetch_and_store_purchase_status", side_effect=AssertionError("unexpected blocking fetch")),
+            patch.object(server, "schedule_purchase_status_refresh") as schedule_refresh,
+        ):
+            response = server.app.test_client().get("/api/fundpurchase?codes=016664,118001")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("X-Cache"), "STALE")
+        self.assertEqual(set(response.get_json()), {"016664"})
+        schedule_refresh.assert_called_once_with()
+
+    def test_prewarm_purchase_status_skips_fresh_complete_cache(self) -> None:
+        with (
+            patch.object(server, "configured_fund_codes_from_constants", return_value=["016664"]),
+            patch.object(server, "read_purchase_status_from_db", return_value={"016664": {}}),
+            patch.object(server, "fetch_and_store_purchase_status") as fetch_purchase,
+        ):
+            server.prewarm_purchase_status_cache()
+
+        fetch_purchase.assert_not_called()
 
     def test_fund_history_refresh_caps_upstream_target_count(self) -> None:
         with patch.object(server, "fetch_and_store_fund_history") as fetch_history:

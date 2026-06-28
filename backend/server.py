@@ -51,6 +51,8 @@ _MARKET_HISTORY_REFRESHING: set[str] = set()
 _MARKET_HISTORY_REFRESH_GUARD = threading.Lock()
 _FUND_NAV_REFRESHING: set[str] = set()
 _FUND_NAV_REFRESH_GUARD = threading.Lock()
+_FUND_PURCHASE_REFRESHING = False
+_FUND_PURCHASE_REFRESH_GUARD = threading.Lock()
 _UPSTREAM_HEALTH: dict[str, dict[str, Any]] = {}
 _UPSTREAM_HEALTH_GUARD = threading.Lock()
 _BACKGROUND_REFRESH_STATE: dict[str, Any] = {
@@ -2147,6 +2149,45 @@ def read_cached_fund_nav_payload(codes: list[str], max_age_seconds: int) -> dict
     return results
 
 
+def read_fund_nav_fallback_payload(codes: list[str]) -> dict[str, Any]:
+    """Represent the latest persisted official NAV in the fundnav wire format."""
+    results: dict[str, Any] = {}
+    for code in codes:
+        summary = read_fund_overview_summary_from_db(code)
+        if not summary:
+            continue
+        results[code] = {
+            "fundcode": code,
+            "name": "",
+            "jzrq": str(summary["navDate"]),
+            "dwjz": f'{float(summary["nav"]):.4f}',
+            "gsz": "",
+            "gszzl": "",
+        }
+    return results
+
+
+def available_fund_nav_payload(codes: list[str]) -> tuple[dict[str, Any], list[str]]:
+    fresh = read_cached_fund_nav_payload(codes, FUND_NAV_CACHE_TTL_SECONDS)
+    stale = read_cached_fund_nav_payload(codes, 0)
+    fallback = read_fund_nav_fallback_payload(codes)
+    payload = {
+        code: fresh.get(code) or stale.get(code) or fallback.get(code)
+        for code in codes
+        if fresh.get(code) or stale.get(code) or fallback.get(code)
+    }
+    # Successful stale values should refresh promptly. If the latest upstream
+    # response was valid HTTP but contained no estimate, retry at worker cadence
+    # instead of once per page request/cache expiry.
+    needs_refresh = [
+        code
+        for code in codes
+        if code not in fresh
+        and (code in stale or cache_get(fund_nav_upstream_cache_key(code), 15 * 60) is None)
+    ]
+    return payload, needs_refresh
+
+
 def fetch_fund_nav_one(code: str, *, force_refresh: bool = False) -> tuple[str, Any | None]:
     try:
         url = f"https://fundgz.1234567.com.cn/js/{quote(code)}.js"
@@ -2202,7 +2243,13 @@ def schedule_fund_nav_refresh(codes: list[str]) -> None:
     def refresh() -> None:
         try:
             with app.app_context():
-                payload = fetch_fund_nav_payload(normalized_codes, force_refresh=True)
+                fetched = fetch_fund_nav_payload(normalized_codes, force_refresh=True)
+                fallback = read_fund_nav_fallback_payload(normalized_codes)
+                payload = {
+                    code: fetched.get(code) or fallback.get(code)
+                    for code in normalized_codes
+                    if fetched.get(code) or fallback.get(code)
+                }
                 if payload:
                     response_cache_set(
                         fund_nav_api_cache_key(normalized_codes),
@@ -2224,6 +2271,59 @@ def prewarm_fund_nav_cache_async() -> None:
     if not fund_codes:
         return
     schedule_fund_nav_refresh(fund_codes)
+
+
+def fetch_and_store_purchase_status(*, force_refresh: bool = False) -> None:
+    ttl_seconds = 6 * 60 * 60
+    query = urlencode(
+        {
+            "t": "8",
+            "page": "1,30000",
+            "js": "reData",
+            "sort": "fcode,asc",
+            "_": int(time.time() * 1000),
+        }
+    )
+    url = f"https://fund.eastmoney.com/Data/Fund_JJJZ_Data.aspx?{query}"
+    status, _, body = fetch_upstream(
+        url,
+        referer="https://fund.eastmoney.com/Fund_sgzt.html",
+        content_type="text/plain; charset=utf-8",
+        cache_key="fundpurchase:all",
+        kind="fundpurchase",
+        ttl_seconds=ttl_seconds,
+        force_refresh=force_refresh,
+    )
+    if status < 400:
+        store_purchase_status(decode_body(body))
+
+
+def schedule_purchase_status_refresh() -> None:
+    global _FUND_PURCHASE_REFRESHING
+    with _FUND_PURCHASE_REFRESH_GUARD:
+        if _FUND_PURCHASE_REFRESHING:
+            return
+        _FUND_PURCHASE_REFRESHING = True
+
+    def refresh() -> None:
+        global _FUND_PURCHASE_REFRESHING
+        try:
+            with app.app_context():
+                fetch_and_store_purchase_status(force_refresh=True)
+        except Exception as exc:
+            print(f"[fundpurchase-refresh] failed: {exc}", flush=True)
+        finally:
+            with _FUND_PURCHASE_REFRESH_GUARD:
+                _FUND_PURCHASE_REFRESHING = False
+
+    threading.Thread(target=refresh, name="fundpurchase-refresh", daemon=True).start()
+
+
+def prewarm_purchase_status_cache() -> None:
+    codes = configured_fund_codes_from_constants()
+    if not codes or len(read_purchase_status_from_db(codes, 6 * 60 * 60)) == len(codes):
+        return
+    fetch_and_store_purchase_status()
 
 
 def purchase_status_date(raw_date: str, show_days: list[Any]) -> str:
@@ -2645,7 +2745,7 @@ def read_fund_return_summary_from_db(code: str) -> dict[str, Any] | None:
     }
 
 
-def read_purchase_status_from_db(codes: list[str], max_age_seconds: int) -> dict[str, dict[str, Any]]:
+def read_purchase_status_from_db(codes: list[str], max_age_seconds: int | None) -> dict[str, dict[str, Any]]:
     if not codes:
         return {}
     placeholders = ",".join("?" for _ in codes)
@@ -2659,7 +2759,7 @@ def read_purchase_status_from_db(codes: list[str], max_age_seconds: int) -> dict
             """,
             tuple(codes),
         ).fetchall()
-    min_fetched_at = now_ms() - max_age_seconds * 1000
+    min_fetched_at = now_ms() - max_age_seconds * 1000 if max_age_seconds is not None else None
     results: dict[str, dict[str, Any]] = {}
     for row in rows:
         (
@@ -2675,7 +2775,7 @@ def read_purchase_status_from_db(codes: list[str], max_age_seconds: int) -> dict
             fee_rate,
             fetched_at,
         ) = row
-        if int(fetched_at) < min_fetched_at:
+        if min_fetched_at is not None and int(fetched_at) < min_fetched_at:
             continue
         results[str(code)] = {
             "code": str(code),
@@ -3999,18 +4099,17 @@ def fund_nav() -> Response:
         if cached is not None:
             return cached
 
-        fresh_payload = read_cached_fund_nav_payload(codes, FUND_NAV_CACHE_TTL_SECONDS)
-        if len(fresh_payload) == len(codes):
-            return response_cache_set(cache_key, json_response(fresh_payload), FUND_NAV_CACHE_TTL_SECONDS)
-
-        stale_payload = read_cached_fund_nav_payload(codes, 0)
-        if len(stale_payload) == len(codes):
-            schedule_fund_nav_refresh(codes)
-            response = json_response(stale_payload)
-            response.headers["X-Cache"] = "STALE"
+        payload, needs_refresh = available_fund_nav_payload(codes)
+        if needs_refresh:
+            schedule_fund_nav_refresh(needs_refresh)
+        if payload:
+            response = response_cache_set(cache_key, json_response(payload), FUND_NAV_CACHE_TTL_SECONDS)
+            response.headers["X-Cache"] = "STALE" if needs_refresh else "HIT"
             response.headers["Cache-Control"] = "public, max-age=5"
             return response
 
+        # Preserve first-run behavior when neither the worker nor SQLite has
+        # produced any local data yet.
         return response_cache_set(
             cache_key,
             json_response(fetch_fund_nav_payload(codes)),
@@ -4151,33 +4250,23 @@ def fund_purchase() -> Response:
     if refresh:
         enforce_rate_limit("fundpurchase_refresh")
 
-    if not refresh:
-        cached_results = read_purchase_status_from_db(codes, ttl_seconds)
-        if len(cached_results) >= len(set(codes)):
-            return json_response(cached_results)
+    cached_results = read_purchase_status_from_db(codes, ttl_seconds)
+    if not refresh and len(cached_results) >= len(set(codes)):
+        return json_response(cached_results)
 
-    query = urlencode(
-        {
-            "t": "8",
-            "page": "1,30000",
-            "js": "reData",
-            "sort": "fcode,asc",
-            "_": int(time.time() * 1000),
-        }
-    )
-    url = f"https://fund.eastmoney.com/Data/Fund_JJJZ_Data.aspx?{query}"
-    status, _, body = fetch_upstream(
-        url,
-        referer="https://fund.eastmoney.com/Fund_sgzt.html",
-        content_type="text/plain; charset=utf-8",
-        cache_key="fundpurchase:all",
-        kind="fundpurchase",
-        ttl_seconds=ttl_seconds,
-        force_refresh=refresh,
-    )
-    if status < 400:
-        store_purchase_status(decode_body(body))
+    if refresh:
+        fetch_and_store_purchase_status(force_refresh=True)
+        return json_response(read_purchase_status_from_db(codes, ttl_seconds))
 
+    stale_results = read_purchase_status_from_db(codes, None)
+    if stale_results:
+        schedule_purchase_status_refresh()
+        response = json_response(stale_results)
+        response.headers["X-Cache"] = "STALE"
+        response.headers["Cache-Control"] = "public, max-age=60"
+        return response
+
+    fetch_and_store_purchase_status()
     return json_response(read_purchase_status_from_db(codes, ttl_seconds))
 
 
