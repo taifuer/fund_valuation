@@ -619,6 +619,20 @@ def expected_quote_date_for_symbol(symbol: str, now: datetime | None = None) -> 
     return previous_trading_day(market, local)
 
 
+def quote_date_is_usable(symbol: str, quote_date: str, now: datetime | None = None) -> bool:
+    """Accept the expected session date or its latest official previous close."""
+    current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+    expected_date = expected_quote_date_for_symbol(symbol, current)
+    if not expected_date or quote_date >= expected_date:
+        return True
+    market = market_key_for_symbol(symbol)
+    if not market or market not in MARKET_CALENDARS:
+        return False
+    calendar = MARKET_CALENDARS[market]
+    local = current.astimezone(ZoneInfo(str(calendar["timezone"])))
+    return quote_date == previous_trading_day(market, local)
+
+
 def us_futures_state(now: datetime) -> str:
     local = now.astimezone(ZoneInfo("America/New_York"))
     minutes = local.hour * 60 + local.minute
@@ -1002,8 +1016,7 @@ def sina_global_fallback_quote_line(symbol: str) -> str | None:
     date = next((field for field in fields[4:] if re.match(r"^\d{4}-\d{2}-\d{2}$", field)), "")
     if not date:
         return None
-    expected_date = expected_quote_date_for_symbol(symbol)
-    if expected_date and date < expected_date:
+    if not quote_date_is_usable(symbol, date):
         return None
     return f'var hq_str_{symbol}="{fallback_name},{price:.2f},{change:.2f},{change_percent:.2f},{date}";'
 
@@ -1033,10 +1046,10 @@ def eastmoney_global_quote_line(symbol: str) -> str | None:
                 updated_at = beijing_datetime_from_timestamp(int(timestamp))
             except (TypeError, ValueError, OSError):
                 updated_at = datetime.now(ZoneInfo("Asia/Shanghai"))
-            expected_date = expected_quote_date_for_symbol(symbol)
             date = updated_at.date().isoformat()
             time_text = updated_at.strftime("%H:%M:%S")
-            if expected_date and date >= expected_date:
+            expected_date = expected_quote_date_for_symbol(symbol)
+            if expected_date and quote_date_is_usable(symbol, date):
                 name = str(data.get("f58") or fallback_name)
                 return f'var hq_str_{symbol}="{name},{price:.2f},{change:.2f},{change_percent:.2f},{date},{time_text}";'
             if not expected_date and abs((datetime.now(ZoneInfo("Asia/Shanghai")) - updated_at).days) <= 7:
@@ -1081,7 +1094,7 @@ def eastmoney_global_kline_quote_line(symbol: str, secid: str, fallback_name: st
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
         return None
     expected_date = expected_quote_date_for_symbol(symbol)
-    if expected_date and date < expected_date:
+    if expected_date and not quote_date_is_usable(symbol, date):
         return None
     if not expected_date and abs((datetime.now(ZoneInfo("Asia/Shanghai")).date() - datetime.fromisoformat(date).date()).days) > 7:
         return None
@@ -1481,6 +1494,7 @@ def prune_quote_snapshots(retention_days: int = QUOTE_SNAPSHOT_RETENTION_DAYS) -
 def read_latest_quote_snapshot_text(
     symbols: list[str],
     max_age_seconds: int | None = None,
+    max_age_by_symbol: dict[str, int] | None = None,
 ) -> tuple[str, list[str]]:
     normalized = sorted(dict.fromkeys(symbols))
     if not normalized:
@@ -1501,14 +1515,30 @@ def read_latest_quote_snapshot_text(
             """,
             normalized,
         ).fetchall()
-    cutoff = now_ms() - max_age_seconds * 1000 if max_age_seconds else 0
-    lines = {
-        str(symbol): str(line)
-        for symbol, line, captured_at in rows
-        if str(line) and (not cutoff or int(captured_at) >= cutoff)
-    }
+    current_ms = now_ms()
+    lines: dict[str, str] = {}
+    for symbol, line, captured_at in rows:
+        normalized_symbol = str(symbol)
+        age_limit = (max_age_by_symbol or {}).get(normalized_symbol, max_age_seconds or 0)
+        cutoff = current_ms - age_limit * 1000 if age_limit else 0
+        if str(line) and (not cutoff or int(captured_at) >= cutoff):
+            lines[normalized_symbol] = str(line)
     text = "\n".join(lines[symbol] for symbol in normalized if symbol in lines)
     return text + ("\n" if text else ""), [symbol for symbol in normalized if symbol not in lines]
+
+
+def quote_snapshot_max_age_seconds(symbol: str, state: dict[str, Any]) -> int:
+    market = market_key_for_symbol(symbol)
+    current_state = str(state.get("state") or "closed")
+    if current_state == "live":
+        if market in {"us_futures", "hk_futures", "jp_futures"}:
+            return 3 * 60
+        if market == "crypto":
+            return 6 * 60
+        return 2 * 60
+    if current_state == "break":
+        return 6 * 60
+    return 20 * 60
 
 
 def parse_jsonp_call(text: str, name: str) -> Any | None:
@@ -2030,14 +2060,21 @@ def quote_symbol_groups(symbols: list[str] | None = None) -> tuple[list[str], li
 
 def quote_group_refresh_interval(symbols: list[str], now: datetime | None = None) -> int:
     current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
-    states = [market_state_for_symbol(symbol, current).get("state") for symbol in symbols]
-    if any(state == "live" for state in states):
-        has_cash = any(
-            market_key_for_symbol(symbol) not in {"us_futures", "hk_futures", "jp_futures", "crypto"}
-            for symbol in symbols
-        )
-        return 60 if has_cash else 5 * 60
-    if any(state == "break" for state in states):
+    states = [
+        (symbol, market_key_for_symbol(symbol), market_state_for_symbol(symbol, current).get("state"))
+        for symbol in symbols
+    ]
+    continuous_markets = {"us_futures", "hk_futures", "jp_futures", "crypto"}
+    if any(state == "live" and market not in continuous_markets for _symbol, market, state in states):
+        return 60
+    if any(
+        state == "live" and market in {"us_futures", "hk_futures", "jp_futures"}
+        for _symbol, market, state in states
+    ):
+        return 2 * 60
+    if any(state == "live" and market == "crypto" for _symbol, market, state in states):
+        return 5 * 60
+    if any(state == "break" for _symbol, _market, state in states):
         return 5 * 60
     return 15 * 60
 
@@ -3908,7 +3945,18 @@ def sina() -> Response:
     symbols = ",".join(symbol_list)
     now_arg = request.args.get("now", "")
     def build() -> tuple[str, int]:
-        snapshot_text, missing = read_latest_quote_snapshot_text(symbol_list, max_age_seconds=20 * 60)
+        ensure_market_calendar_seeded()
+        now = parse_market_now(now_arg)
+        states = {symbol: market_state_for_symbol(symbol, now) for symbol in symbol_list}
+        max_ages = {
+            symbol: quote_snapshot_max_age_seconds(symbol, states[symbol])
+            for symbol in symbol_list
+        }
+        snapshot_text, missing = read_latest_quote_snapshot_text(
+            symbol_list,
+            max_age_seconds=20 * 60,
+            max_age_by_symbol=max_ages,
+        )
         fetched_text = ""
         status = 200
         if missing:
@@ -3927,13 +3975,21 @@ def sina() -> Response:
                 )
                 if status < 400:
                     fetched_text = decode_body(body)
-        now = parse_market_now(now_arg)
         combined = snapshot_text + fetched_text
-        sanitized = sanitize_sina_quote_text(combined, symbol_list, now)
-        snapshot_symbols = [symbol for symbol in missing if market_key_for_symbol(symbol)]
+        sanitized_fresh = sanitize_sina_quote_text(combined, symbol_list, now)
+        resolved_symbols = set(quote_lines_by_symbol(sanitized_fresh))
+        snapshot_symbols = [
+            symbol for symbol in missing
+            if market_key_for_symbol(symbol) and symbol in resolved_symbols
+        ]
         if snapshot_symbols and fetched_text:
-            states = {symbol: market_state_for_symbol(symbol, now) for symbol in snapshot_symbols}
-            store_quote_snapshots(fetched_text, sanitized, snapshot_symbols, states, now)
+            store_quote_snapshots(fetched_text, sanitized_fresh, snapshot_symbols, states, now)
+        unresolved = [symbol for symbol in symbol_list if symbol not in resolved_symbols]
+        stale_text, _ = read_latest_quote_snapshot_text(unresolved)
+        if stale_text:
+            for symbol in quote_lines_by_symbol(stale_text):
+                record_quote_health(symbol, "stale", "latest valid snapshot used after upstream miss")
+        sanitized = sanitized_fresh + stale_text
         return sanitized, status
     return cached_text_response(f"api:sina:{now_arg}:{symbols}", 15, build)
 
@@ -3966,13 +4022,22 @@ def build_dashboard_payload(
 ) -> dict[str, Any]:
     ensure_market_calendar_seeded()
     now = parse_market_now(now_arg)
+    market_states = {symbol: market_state_for_symbol(symbol, now) for symbol in symbols}
     sina_text = ""
     fetched_symbols: list[str] = []
     if symbols:
         if allow_upstream:
             missing_symbols = symbols
         else:
-            sina_text, missing_symbols = read_latest_quote_snapshot_text(symbols, max_age_seconds=20 * 60)
+            max_ages = {
+                symbol: quote_snapshot_max_age_seconds(symbol, market_states[symbol])
+                for symbol in symbols
+            }
+            sina_text, missing_symbols = read_latest_quote_snapshot_text(
+                symbols,
+                max_age_seconds=20 * 60,
+                max_age_by_symbol=max_ages,
+            )
         if missing_symbols:
             joined_symbols = ",".join(missing_symbols)
             status, _, body = fetch_upstream(
@@ -3990,7 +4055,14 @@ def build_dashboard_payload(
     raw_sina_text = sina_text if allow_upstream else "\n".join(
         line for symbol, line in quote_lines_by_symbol(sina_text).items() if symbol in fetched_symbols
     )
-    sina_text = sanitize_sina_quote_text(sina_text, symbols, now)
+    fresh_sina_text = sanitize_sina_quote_text(sina_text, symbols, now)
+    resolved_symbols = set(quote_lines_by_symbol(fresh_sina_text))
+    stale_symbols = [symbol for symbol in symbols if symbol not in resolved_symbols]
+    stale_text, _ = read_latest_quote_snapshot_text(stale_symbols)
+    if stale_text:
+        for symbol in quote_lines_by_symbol(stale_text):
+            record_quote_health(symbol, "stale", "latest valid snapshot used after upstream miss")
+    sina_text = fresh_sina_text + stale_text
 
     fx_text = ""
     fx_symbols = {
@@ -4018,11 +4090,13 @@ def build_dashboard_payload(
             if status < 400:
                 fx_text = decode_body(body)
 
-    market_states = {symbol: market_state_for_symbol(symbol, now) for symbol in symbols}
     try:
-        captured_symbols = symbols if allow_upstream else fetched_symbols
+        captured_symbols = [
+            symbol for symbol in (symbols if allow_upstream else fetched_symbols)
+            if symbol in resolved_symbols
+        ]
         if captured_symbols:
-            store_quote_snapshots(raw_sina_text, sina_text, captured_symbols, market_states, now)
+            store_quote_snapshots(raw_sina_text, fresh_sina_text, captured_symbols, market_states, now)
     except Exception as exc:
         print(f"[quote-snapshot] failed: {exc}", flush=True)
     return {

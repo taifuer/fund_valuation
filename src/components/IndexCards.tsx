@@ -77,17 +77,6 @@ function Card({
       </div>
     );
   }
-  if (!data) {
-    return (
-      <div className={`${styles.card} ${idx.history ? styles.cardClickable : ''}`}>
-        <span className={`${styles.state} ${styles.stateStale}`}>无行情</span>
-        <div className={styles.label}>{idx.name}</div>
-        <div className={styles.price}>--</div>
-        <div className={styles.change}>--</div>
-        <span className={styles.quoteDate}>--</span>
-      </div>
-    );
-  }
   const state = quoteMarketState(idx.sinaSymbol, marketStates);
   const futuresState = idx.futures
     ? quoteMarketState(idx.futures.sinaSymbol, marketStates)
@@ -99,6 +88,17 @@ function Card({
     futuresState,
   });
   const displayData = useFutures && futuresData ? futuresData : data;
+  if (!displayData) {
+    return (
+      <div className={`${styles.card} ${idx.history ? styles.cardClickable : ''}`}>
+        <span className={`${styles.state} ${styles.stateStale}`}>无行情</span>
+        <div className={styles.label}>{idx.name}</div>
+        <div className={styles.price}>--</div>
+        <div className={styles.change}>--</div>
+        <span className={styles.quoteDate}>--</span>
+      </div>
+    );
+  }
   const up = displayData.change >= 0;
   const activeState = useFutures && idx.futures ? futuresState : state;
   const displayState = quoteDisplayState({

@@ -43,7 +43,7 @@
 
 Flask 后端会把上游原始响应保存到 `data/raw/`，并把基金历史净值、基金持仓、持仓股票日 K、指数/资产日 K 和估值回测结果写入 `data/fund_valuation.db`。
 历史接口默认优先读取 SQLite；当已有缓存明显早于当前日期且最近 30 分钟未检查过上游时，会做一次小范围增量刷新后返回，避免历史走势长期停留在旧交易日。
-独立刷新 worker 会定时预热历史数据、基金净值和估值回测，并按关键交易时段 5 分钟、其他时段 15 分钟保存结构化行情快照。快照默认保留 30 天，用于数据时效诊断和异常回放。
+独立刷新 worker 会定时预热历史数据、基金净值和估值回测，并按现货 1 分钟、期货 2 分钟、加密资产 5 分钟、闭市 15 分钟的节奏保存结构化行情快照。快照默认保留 30 天，用于数据时效诊断和异常回放。
 ```
 
 基金 T 日实时估算净值的计算方式：
@@ -127,7 +127,7 @@ npm run dev
 open http://localhost:5173
 ```
 
-刷新 worker 使用 SQLite 租约避免多实例重复抓取，每分钟检查任务计划：现货开盘时行情每 60 秒更新，期货/加密资产每 5 分钟更新，全部闭市后降为 15 分钟；基金净值闭市后降为每小时，历史数据每小时检查一次，回测每日预热一次。`FUND_VALUATION_REFRESH_INTERVAL` 用于设置历史维护周期下限，`FUND_VALUATION_SNAPSHOT_RETENTION_DAYS` 用于调整行情快照保留天数。Web 进程优先读取 worker 快照，仅快照缺失或过期时冷启动抓取上游；内置刷新默认关闭，仅兼容旧部署时可显式设置 `FUND_VALUATION_BACKGROUND_REFRESH=1`。
+刷新 worker 使用 SQLite 租约避免多实例重复抓取，每分钟检查任务计划：现货开盘时行情每 60 秒更新，期货每 2 分钟更新，仅加密资产交易时每 5 分钟更新，全部闭市后降为 15 分钟；基金净值闭市后降为每小时，历史数据每小时检查一次，回测每日预热一次。`FUND_VALUATION_REFRESH_INTERVAL` 用于设置历史维护周期下限，`FUND_VALUATION_SNAPSHOT_RETENTION_DAYS` 用于调整行情快照保留天数。Web 进程优先读取 worker 快照，仅快照缺失或过期时冷启动抓取上游；内置刷新默认关闭，仅兼容旧部署时可显式设置 `FUND_VALUATION_BACKGROUND_REFRESH=1`。
 
 内部行情诊断接口为 `/api/diagnostics/quotes`，返回快照缺失、延迟、兜底和异常值统计。设置 `FUND_VALUATION_DIAGNOSTICS_TOKEN` 后，请求必须携带同值的 `X-Diagnostics-Token` 请求头。
 

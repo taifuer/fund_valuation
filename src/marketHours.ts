@@ -387,12 +387,13 @@ export function getMarketState(sinaSymbol: string, now = new Date()): MarketStat
 }
 
 /**
- * Polling interval policy: 60s when a session-based cash market is active and
- * 15min otherwise. Futures and crypto refresh with the page but do not force all
- * endpoints onto their near-continuous trading cadence. Backend marketStates
- * take precedence, with getMarketState as a fallback.
+ * Polling interval policy: 60s for active cash markets, 2min when only futures
+ * are active, and 15min when all session-based markets are closed. Crypto does
+ * not force a faster whole-page cadence. Backend marketStates take precedence,
+ * with getMarketState as a fallback.
  */
 export const POLL_INTERVAL_LIVE_MS = 60_000;
+export const POLL_INTERVAL_FUTURES_MS = 2 * 60_000;
 export const POLL_INTERVAL_CLOSED_MS = 15 * 60_000;
 
 export function pickPollInterval(
@@ -400,16 +401,18 @@ export function pickPollInterval(
   marketStates: Map<string, { state?: string }>,
   now = new Date(),
 ): number {
+  let hasLiveFutures = false;
   for (const symbol of symbols) {
     const key = marketKey(symbol);
-    // Futures and crypto trade for most or all of the day. Letting them drive
-    // the cadence keeps every page at the fast interval even when all cash
-    // markets are closed. They still refresh with the page at the closed rate.
-    if (key === 'crypto' || key?.endsWith('_futures')) continue;
     const state = marketStates.get(symbol)?.state ?? getMarketState(symbol, now);
+    if (key?.endsWith('_futures')) {
+      if (state === 'live') hasLiveFutures = true;
+      continue;
+    }
+    if (key === 'crypto') continue;
     if (state === 'live' || state === 'pre' || state === 'post' || state === 'break') {
       return POLL_INTERVAL_LIVE_MS;
     }
   }
-  return POLL_INTERVAL_CLOSED_MS;
+  return hasLiveFutures ? POLL_INTERVAL_FUTURES_MS : POLL_INTERVAL_CLOSED_MS;
 }

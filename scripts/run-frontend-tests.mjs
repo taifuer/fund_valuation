@@ -50,6 +50,7 @@ const holidaysJson = await readFile(new URL('../config/holidays.json', import.me
 await writeFile(holidaysPath, `export default ${holidaysJson};`, 'utf8');
 const {
   POLL_INTERVAL_CLOSED_MS,
+  POLL_INTERVAL_FUTURES_MS,
   POLL_INTERVAL_LIVE_MS,
   pickPollInterval,
 } = await importTsModule('../src/marketHours.ts', 'marketHours', {
@@ -64,6 +65,7 @@ const { startAdaptivePolling } = await importTsModule('../src/polling.ts', 'poll
 const now = Date.parse('2026-06-25T19:00:00+08:00');
 
 assert.equal(POLL_INTERVAL_CLOSED_MS, 15 * 60_000);
+assert.equal(POLL_INTERVAL_FUTURES_MS, 2 * 60_000);
 
 {
   const documentListeners = new Map();
@@ -108,7 +110,7 @@ assert.equal(
     ['fx_sbtcusd', { state: 'live' }],
     ['hf_NQ', { state: 'live' }],
   ]), new Date(now)),
-  POLL_INTERVAL_CLOSED_MS,
+  POLL_INTERVAL_FUTURES_MS,
 );
 assert.equal(
   pickPollInterval(['fx_sbtcusd', 's_sh000001'], new Map([
@@ -145,6 +147,25 @@ assert.equal(
     now,
   }),
   false,
+);
+assert.equal(
+  shouldUseFuturesQuote({
+    futures: { price: 70020, fetchedAt: now, time: '2026-06-25 19:00:00' },
+    spotState: 'live',
+    futuresState: 'live',
+    now,
+  }),
+  true,
+);
+assert.equal(
+  shouldUseFuturesQuote({
+    spot: { price: 69404, fetchedAt: now, dateReliable: true, time: '2026-06-24 14:30:00' },
+    futures: { price: 70020, fetchedAt: now, time: '2026-06-25 19:00:00' },
+    spotState: 'live',
+    futuresState: 'live',
+    now,
+  }),
+  true,
 );
 assert.equal(
   shouldUseFuturesQuote({

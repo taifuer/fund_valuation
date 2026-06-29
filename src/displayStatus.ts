@@ -21,6 +21,15 @@ function beijingTimestamp(value: string): number | null {
 
 export function quoteIsFresh(quote: QuoteData, now = Date.now()): boolean {
   if (now - quote.fetchedAt >= 90_000) return false;
+  if (quote.dateReliable !== false) {
+    const quoteDate = quote.time.slice(0, 10);
+    const beijingNow = new Date(now + 8 * 60 * 60 * 1000).toISOString();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(quoteDate) && quoteDate !== beijingNow.slice(0, 10)) {
+      return false;
+    }
+    const timestamp = beijingTimestamp(quote.time);
+    if (timestamp != null && Math.abs(now - timestamp) > 10 * 60 * 1000) return false;
+  }
   if (quote.symbol !== 'fx_sbtcusd') return true;
   const timestamp = beijingTimestamp(quote.time);
   return timestamp != null && Math.abs(now - timestamp) <= 10 * 60 * 1000;

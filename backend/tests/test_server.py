@@ -385,6 +385,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         with (
             patch.object(server, "fetch_upstream", side_effect=fake_fetch),
             patch.object(server, "fetch_eastmoney_json", return_value=None),
+            patch.object(server, "quote_date_is_usable", return_value=True),
         ):
             response = server.app.test_client().get("/api/sina?list=b_TWSE")
 
@@ -717,6 +718,40 @@ class ServerDataRefreshTests(unittest.TestCase):
                 state = server.market_state_for_symbol(symbol, datetime.fromisoformat(raw_now))
                 self.assertEqual(state["state"], expected)
 
+    def test_live_quote_snapshot_expires_faster_than_closed_snapshot(self) -> None:
+        now = datetime.now(ZoneInfo("Asia/Shanghai"))
+        line = (
+            'var hq_str_sh000001="上证指数,4000.0000,3990.0000,4010.0000,4010.0000,3990.0000,'
+            '0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2026-06-29,09:41:00,00";'
+        )
+        states = {"sh000001": {"state": "live", "lastTradingDay": "2026-06-29"}}
+        server.store_quote_snapshots(line, line, ["sh000001"], states, now)
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute(
+                "UPDATE market_quote_snapshots SET captured_at = ? WHERE symbol = ?",
+                (server.now_ms() - 3 * 60 * 1000, "sh000001"),
+            )
+
+        live_text, live_missing = server.read_latest_quote_snapshot_text(
+            ["sh000001"], max_age_by_symbol={"sh000001": 2 * 60},
+        )
+        closed_text, closed_missing = server.read_latest_quote_snapshot_text(
+            ["sh000001"], max_age_by_symbol={"sh000001": 20 * 60},
+        )
+
+        self.assertEqual(live_text, "")
+        self.assertEqual(live_missing, ["sh000001"])
+        self.assertIn("sh000001", closed_text)
+        self.assertEqual(closed_missing, [])
+
+    def test_asia_quote_date_accepts_previous_close_after_market_opens(self) -> None:
+        server.ensure_market_calendar_seeded(2026)
+        monday_open = datetime.fromisoformat("2026-06-29T08:05:00+08:00")
+
+        self.assertTrue(server.quote_date_is_usable("int_nikkei", "2026-06-26", monday_open))
+        self.assertTrue(server.quote_date_is_usable("b_KOSPI", "2026-06-26", monday_open))
+        self.assertFalse(server.quote_date_is_usable("int_nikkei", "2026-06-25", monday_open))
+
     def test_quote_snapshots_are_bucketed_and_record_normalization(self) -> None:
         now = datetime.fromisoformat("2026-05-26T09:10:00+08:00")
         raw = (
@@ -801,6 +836,12 @@ class ServerDataRefreshTests(unittest.TestCase):
                 ["fx_sbtcusd"], datetime.fromisoformat("2026-05-23T10:00:00+08:00")
             ),
             5 * 60,
+        )
+        self.assertEqual(
+            server.quote_group_refresh_interval(
+                ["hf_NQ", "fx_sbtcusd"], datetime.fromisoformat("2026-05-26T19:00:00+08:00")
+            ),
+            2 * 60,
         )
 
     def test_quote_snapshot_health_reports_fresh_and_missing_symbols(self) -> None:

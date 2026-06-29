@@ -2,6 +2,7 @@ export interface FuturesQuoteLike {
   price: number;
   fetchedAt: number;
   dateReliable?: boolean;
+  time?: string;
 }
 
 export function futuresPriceComparable(spot?: FuturesQuoteLike, futures?: FuturesQuoteLike): boolean {
@@ -25,9 +26,13 @@ export function shouldUseFuturesQuote({
   now?: number;
   freshMs?: number;
 }): boolean {
-  if (!spot || !futures) return false;
-  if (spotState === 'live') return false;
+  if (!futures) return false;
   if (futuresState !== 'live') return false;
   if (now - futures.fetchedAt >= freshMs) return false;
-  return futuresPriceComparable(spot, futures) || spot.dateReliable === false;
+  if (!spot) return true;
+  const beijingToday = new Date(now + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const spotDate = spot.time?.slice(0, 10) ?? '';
+  const spotIsCurrentDay = spotDate === beijingToday;
+  if (spotState === 'live' && spot.dateReliable !== false && (!spotDate || spotIsCurrentDay)) return false;
+  return futuresPriceComparable(spot, futures);
 }

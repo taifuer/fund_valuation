@@ -237,9 +237,12 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
       }
       if (!date || isStale(date, fetchedAt)) {
         if (rawSymbol === 'int_nikkei') return null;
-        if (hasExplicitIntlDate) return null;
-        date = beijingDatetimeFromTimestamp(fetchedAt);
-        dateReliable = false;
+        if (hasExplicitIntlDate) {
+          dateReliable = false;
+        } else {
+          date = beijingDatetimeFromTimestamp(fetchedAt);
+          dateReliable = false;
+        }
       }
       break;
     case 'hk':
