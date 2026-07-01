@@ -9,14 +9,35 @@ import {
   fetchMarketStates,
   fetchOverviewSnapshot,
   fetchSinaFundNavs,
+  fetchSystemStatus,
 } from '../api';
 import { ETF_ASSETS, INDICES, MARKET_ASSETS, RANKING_ETFS, RANKING_INDICES } from '../constants';
 import { pickPollInterval } from '../marketHours';
 import { startAdaptivePolling } from '../polling';
-import type { Fund, FundNavData, FundReturnSummary, FxRateData, MarketStateData, QuoteData } from '../types';
+import type { Fund, FundNavData, FundReturnSummary, FxRateData, MarketStateData, QuoteData, SystemStatus } from '../types';
 import type { FundEstimate } from './useQuotes';
 
 const DISPLAY_FX_CURRENCIES = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
+
+export function useSystemStatus() {
+  const [status, setStatus] = useState<SystemStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const next = await fetchSystemStatus();
+      if (!cancelled) setStatus(next);
+    }
+    void load();
+    const stopPolling = startAdaptivePolling(load, () => 60_000);
+    return () => {
+      cancelled = true;
+      stopPolling();
+    };
+  }, []);
+
+  return status;
+}
 
 interface FundHistoryNav {
   navDate: string;

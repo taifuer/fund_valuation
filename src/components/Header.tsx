@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { FxRateData } from '../types';
+import type { PageKey } from '../routing';
+import type { SystemStatus } from '../types';
 import Logo from './Logo';
 import styles from './Header.module.css';
 
@@ -18,9 +20,10 @@ function formatTime() {
 
 interface Props {
   fxRates: Map<string, FxRateData>;
-  activePage: 'overview' | 'funds' | 'ranking' | 'risk';
-  onPageChange: (page: 'overview' | 'funds' | 'ranking' | 'risk') => void;
+  activePage: PageKey;
+  onPageChange: (page: PageKey) => void;
   statusMessage?: string;
+  systemStatus?: SystemStatus | null;
 }
 
 const FX_ORDER = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
@@ -30,9 +33,15 @@ export default function Header({
   activePage,
   onPageChange,
   statusMessage = '',
+  systemStatus = null,
 }: Props) {
   const [time, setTime] = useState(formatTime());
   const displayRates = FX_ORDER.map((currency) => fxRates.get(currency)).filter((rate): rate is FxRateData => rate != null);
+  const freshnessLabel = systemStatus?.status === 'ok'
+    ? '数据刷新正常'
+    : systemStatus?.status === 'degraded'
+      ? `数据刷新存在延迟（${systemStatus.quoteIssueCount} 项）`
+      : '数据状态暂不可用';
 
   useEffect(() => {
     const timer = setInterval(() => setTime(formatTime()), 1000);
@@ -95,7 +104,11 @@ export default function Header({
         <div className={styles.meta}>
           <div className={styles.datetime}>
             <span>
-              <span className={styles.live} />
+              <span
+                className={`${styles.live} ${systemStatus?.status === 'degraded' ? styles.liveDegraded : ''} ${!systemStatus || systemStatus.status === 'offline' ? styles.liveOffline : ''}`}
+                title={freshnessLabel}
+                aria-label={freshnessLabel}
+              />
               {time}（北京时间）
             </span>
           </div>

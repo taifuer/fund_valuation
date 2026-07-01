@@ -276,11 +276,50 @@
 }
 
 .fundManager {
-  align-items: center;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.16);
   display: flex;
+  flex-direction: column;
   gap: 10px;
+  max-width: 560px;
+  padding: 16px;
+  width: calc(100% - 24px);
+}
+
+.managerOverlay {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.32);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: fixed;
+  z-index: 100;
+}
+
+.managerHeader {
+  align-items: flex-start;
+  display: flex;
   justify-content: space-between;
-  margin: 0 0 8px;
+  width: 100%;
+}
+
+.managerHeader strong { color: #0f172a; display: block; font-size: 14px; }
+.managerHeader span { color: #94a3b8; display: block; font-size: 11px; margin-top: 2px; }
+.managerClose { background: transparent; border: 0; color: #64748b; cursor: pointer; font-size: 22px; line-height: 22px; }
+
+.managerActions { display: flex; gap: 6px; width: 100%; }
+
+.managerTrigger {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 10px;
 }
 
 .addFundForm {
@@ -357,9 +396,10 @@
   font-size: 12px;
   min-width: 0;
   overflow: hidden;
-  text-align: right;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+  width: 100%;
 }
 
 .fundLoading {
@@ -431,6 +471,10 @@
     align-items: stretch;
     flex-direction: column;
   }
+
+  .fundManager { padding: 14px; }
+  .managerActions { flex-direction: column; }
+  .managerActions .managerButton { width: 100%; }
 
   .fundSearchInput,
   .managerButton,

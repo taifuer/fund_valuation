@@ -338,7 +338,7 @@
   }
 
   .table {
-    min-width: 760px;
+    min-width: 0;
   }
 
   .table th,
@@ -350,4 +350,23 @@
     min-width: 28px;
     padding: 0 5px;
   }
+
+  .rankingTable th:nth-child(n+4),
+  .rankingTable td:nth-child(n+4),
+  .rankingTable col:nth-child(n+4),
+  .riskTable th:nth-child(3),
+  .riskTable td:nth-child(3),
+  .riskTable col:nth-child(3),
+  .riskTable th:nth-child(n+5),
+  .riskTable td:nth-child(n+5),
+  .riskTable col:nth-child(n+5) {
+    display: none;
+  }
+
+  .rankingTable .rankCol,
+  .riskTable .rankCol { width: 18%; }
+  .rankingTable .nameCol,
+  .riskTable .nameCol { width: 52%; }
+  .rankingTable .returnCol,
+  .riskTable .riskCol { width: 30%; }
 }

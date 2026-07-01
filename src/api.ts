@@ -12,6 +12,7 @@ import type {
   MarketHistoryPoint,
   MarketReturnSummary,
   MarketStateData,
+  SystemStatus,
 } from './types';
 import { globalFutureReferencePrice } from './quoteMath';
 
@@ -546,7 +547,7 @@ const dashboardSnapshotPending = new Map<string, Promise<DashboardSnapshot | nul
 const overviewSnapshotPending = new Map<string, Promise<OverviewSnapshot | null>>();
 
 function parseDashboardSnapshotPayload(
-  json: { quotesText?: unknown; fxText?: unknown; marketStates?: Record<string, MarketStateData> },
+  json: { quotes?: unknown; quotesText?: unknown; fxText?: unknown; marketStates?: Record<string, MarketStateData> },
   symbols: string[],
   fetchedAt: number,
 ): DashboardSnapshot {
@@ -557,9 +558,38 @@ function parseDashboardSnapshotPayload(
   ]]);
   const marketStates = new Map<string, MarketStateData>();
 
+  const structuredQuotes = asObject(json.quotes);
+  if (structuredQuotes) {
+    for (const symbol of symbols) {
+      const raw = asObject(structuredQuotes[symbol]);
+      if (!raw) continue;
+      const price = Number(raw.price);
+      const previousClose = Number(raw.previousClose);
+      const changePercent = Number(raw.changePercent);
+      if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(previousClose) || previousClose <= 0 || !Number.isFinite(changePercent)) continue;
+      const quote: QuoteData = {
+        symbol,
+        name: symbol,
+        price,
+        previousClose,
+        change: Number(raw.change) || price - previousClose,
+        changePercent,
+        time: String(raw.time ?? ''),
+        dateReliable: raw.dateReliable !== false,
+        fetchedAt: Number(raw.fetchedAt) || fetchedAt,
+        session: raw.session === 'pre' || raw.session === 'post' ? raw.session : 'regular',
+        regularPrice: Number.isFinite(Number(raw.regularPrice)) ? Number(raw.regularPrice) : undefined,
+        regularChangePercent: Number.isFinite(Number(raw.regularChangePercent)) ? Number(raw.regularChangePercent) : undefined,
+        regularTime: raw.regularTime ? String(raw.regularTime) : undefined,
+      };
+      quoteCache.set(symbol, quote);
+      quotes.set(symbol, quote);
+    }
+  }
+
   for (const line of String(json.quotesText ?? '').split('\n')) {
     const parsed = parseSinaVar(line.trim(), fetchedAt);
-    if (parsed) {
+    if (parsed && !quotes.has(parsed.symbol)) {
       quoteCache.set(parsed.symbol, parsed.data);
       quotes.set(parsed.symbol, parsed.data);
     }
@@ -666,6 +696,40 @@ export async function fetchDataHealth(): Promise<DataHealth | null> {
   } catch {
     return null;
   }
+}
+
+export async function fetchSystemStatus(): Promise<SystemStatus> {
+  try {
+    const res = await fetch(apiUrl('/api/status'), { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const raw = await res.json();
+    return {
+      status: raw.status === 'ok' ? 'ok' : 'degraded',
+      updatedAt: Number(raw.updatedAt) || Date.now(),
+      quoteIssueCount: Number(raw.quoteIssueCount) || 0,
+      quoteTotal: Number(raw.quoteTotal) || 0,
+      workerLastSuccessAt: Number(raw.workerLastSuccessAt) || 0,
+    };
+  } catch {
+    return {
+      status: 'offline',
+      updatedAt: Date.now(),
+      quoteIssueCount: 0,
+      quoteTotal: 0,
+      workerLastSuccessAt: 0,
+    };
+  }
+}
+
+export async function fetchQuoteDiagnostics(token: string): Promise<Record<string, unknown>> {
+  const res = await fetch(apiUrl('/api/diagnostics/quotes'), {
+    cache: 'no-store',
+    headers: { 'X-Diagnostics-Token': token },
+  });
+  if (!res.ok) {
+    throw new Error(res.status === 403 ? '诊断令牌无效或服务端未启用诊断' : `诊断请求失败（${res.status}）`);
+  }
+  return await res.json() as Record<string, unknown>;
 }
 
 interface EastMoneyFundRaw {

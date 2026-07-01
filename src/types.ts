@@ -209,6 +209,14 @@ export interface MarketStateData {
   lastTradingDay?: string | null;
 }
 
+export interface SystemStatus {
+  status: 'ok' | 'degraded' | 'offline';
+  updatedAt: number;
+  quoteIssueCount: number;
+  quoteTotal: number;
+  workerLastSuccessAt: number;
+}
+
 export interface MarketHistoryConfig {
   source: 'sina-cn' | 'sina-us' | 'sina-futures' | 'tencent-hk';
   symbol: string;

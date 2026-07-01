@@ -1,0 +1,2072 @@
+{
+  "version": 1,
+  "indices": [
+    {
+      "symbol": "SH000001",
+      "name": "上证指数",
+      "sinaSymbol": "sh000001",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh000001"
+      }
+    },
+    {
+      "symbol": "SZ399006",
+      "name": "创业板指",
+      "sinaSymbol": "sz399006",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz399006"
+      }
+    },
+    {
+      "symbol": "SH000300",
+      "name": "沪深300",
+      "sinaSymbol": "sh000300",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh000300"
+      }
+    },
+    {
+      "symbol": "SH000905",
+      "name": "中证500",
+      "sinaSymbol": "sh000905",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh000905"
+      }
+    },
+    {
+      "symbol": "IXIC",
+      "name": "纳斯达克",
+      "sinaSymbol": "gb_ixic",
+      "history": {
+        "source": "sina-us",
+        "symbol": ".IXIC"
+      }
+    },
+    {
+      "symbol": "NDX",
+      "name": "纳指100",
+      "sinaSymbol": "gb_ndx",
+      "futures": {
+        "sinaSymbol": "hf_NQ",
+        "label": "纳指100期货"
+      },
+      "history": {
+        "source": "sina-us",
+        "symbol": ".NDX"
+      }
+    },
+    {
+      "symbol": "INX",
+      "name": "标普500",
+      "sinaSymbol": "gb_inx",
+      "futures": {
+        "sinaSymbol": "hf_ES",
+        "label": "标普500期货"
+      },
+      "history": {
+        "source": "sina-us",
+        "symbol": ".INX"
+      }
+    },
+    {
+      "symbol": "DJI",
+      "name": "道琼斯",
+      "sinaSymbol": "gb_dji",
+      "futures": {
+        "sinaSymbol": "hf_YM",
+        "label": "道指期货"
+      },
+      "history": {
+        "source": "sina-us",
+        "symbol": ".DJI"
+      }
+    },
+    {
+      "symbol": "HSI",
+      "name": "恒生指数",
+      "sinaSymbol": "hkHSI",
+      "futures": {
+        "sinaSymbol": "hf_HSI",
+        "label": "恒指期货"
+      },
+      "history": {
+        "source": "sina-futures",
+        "symbol": "HSI"
+      }
+    },
+    {
+      "symbol": "N225",
+      "name": "日经225",
+      "sinaSymbol": "int_nikkei",
+      "futures": {
+        "sinaSymbol": "hf_NK",
+        "label": "日经225期货"
+      },
+      "history": {
+        "source": "sina-futures",
+        "symbol": "NK"
+      }
+    },
+    {
+      "symbol": "KOSPI",
+      "name": "韩国KOSPI",
+      "sinaSymbol": "b_KOSPI"
+    },
+    {
+      "symbol": "TWSE",
+      "name": "台湾加权",
+      "sinaSymbol": "b_TWSE"
+    }
+  ],
+  "marketAssets": [
+    {
+      "symbol": "GC",
+      "name": "黄金",
+      "sinaSymbol": "hf_GC",
+      "history": {
+        "source": "sina-futures",
+        "symbol": "GC"
+      }
+    },
+    {
+      "symbol": "SI",
+      "name": "白银",
+      "sinaSymbol": "hf_SI",
+      "history": {
+        "source": "sina-futures",
+        "symbol": "SI"
+      }
+    },
+    {
+      "symbol": "CL",
+      "name": "原油",
+      "sinaSymbol": "hf_CL",
+      "history": {
+        "source": "sina-futures",
+        "symbol": "CL"
+      }
+    },
+    {
+      "symbol": "BTC",
+      "name": "比特币",
+      "sinaSymbol": "fx_sbtcusd"
+    }
+  ],
+  "etfAssets": [
+    {
+      "symbol": "159695",
+      "name": "通信ETF",
+      "sinaSymbol": "sz159695",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159695"
+      }
+    },
+    {
+      "symbol": "159558",
+      "name": "半导体设备ETF",
+      "sinaSymbol": "sz159558",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159558"
+      }
+    },
+    {
+      "symbol": "159326",
+      "name": "电网设备ETF",
+      "sinaSymbol": "sz159326",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159326"
+      }
+    },
+    {
+      "symbol": "159770",
+      "name": "机器人ETF",
+      "sinaSymbol": "sz159770",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159770"
+      }
+    },
+    {
+      "symbol": "159755",
+      "name": "电池ETF",
+      "sinaSymbol": "sz159755",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159755"
+      }
+    },
+    {
+      "symbol": "159206",
+      "name": "卫星ETF",
+      "sinaSymbol": "sz159206",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159206"
+      }
+    },
+    {
+      "symbol": "510170",
+      "name": "大宗商品ETF",
+      "sinaSymbol": "sh510170",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh510170"
+      }
+    },
+    {
+      "symbol": "512890",
+      "name": "红利低波ETF",
+      "sinaSymbol": "sh512890",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh512890"
+      }
+    }
+  ],
+  "rankingIndices": [
+    {
+      "symbol": "SH000001",
+      "name": "上证指数",
+      "sinaSymbol": "sh000001",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh000001"
+      }
+    },
+    {
+      "symbol": "SZ399006",
+      "name": "创业板指",
+      "sinaSymbol": "sz399006",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz399006"
+      }
+    },
+    {
+      "symbol": "SH000300",
+      "name": "沪深300",
+      "sinaSymbol": "sh000300",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh000300"
+      }
+    },
+    {
+      "symbol": "SH000905",
+      "name": "中证500",
+      "sinaSymbol": "sh000905",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh000905"
+      }
+    },
+    {
+      "symbol": "IXIC",
+      "name": "纳斯达克",
+      "sinaSymbol": "gb_ixic",
+      "history": {
+        "source": "sina-us",
+        "symbol": ".IXIC"
+      }
+    },
+    {
+      "symbol": "NDX",
+      "name": "纳指100",
+      "sinaSymbol": "gb_ndx",
+      "futures": {
+        "sinaSymbol": "hf_NQ",
+        "label": "纳指100期货"
+      },
+      "history": {
+        "source": "sina-us",
+        "symbol": ".NDX"
+      }
+    },
+    {
+      "symbol": "INX",
+      "name": "标普500",
+      "sinaSymbol": "gb_inx",
+      "futures": {
+        "sinaSymbol": "hf_ES",
+        "label": "标普500期货"
+      },
+      "history": {
+        "source": "sina-us",
+        "symbol": ".INX"
+      }
+    },
+    {
+      "symbol": "DJI",
+      "name": "道琼斯",
+      "sinaSymbol": "gb_dji",
+      "futures": {
+        "sinaSymbol": "hf_YM",
+        "label": "道指期货"
+      },
+      "history": {
+        "source": "sina-us",
+        "symbol": ".DJI"
+      }
+    },
+    {
+      "symbol": "HSI",
+      "name": "恒生指数",
+      "sinaSymbol": "hkHSI",
+      "futures": {
+        "sinaSymbol": "hf_HSI",
+        "label": "恒指期货"
+      },
+      "history": {
+        "source": "tencent-hk",
+        "symbol": "hkHSI"
+      }
+    },
+    {
+      "symbol": "N225",
+      "name": "日经225",
+      "sinaSymbol": "int_nikkei",
+      "futures": {
+        "sinaSymbol": "hf_NK",
+        "label": "日经225期货"
+      }
+    },
+    {
+      "symbol": "KOSPI",
+      "name": "韩国KOSPI",
+      "sinaSymbol": "b_KOSPI"
+    },
+    {
+      "symbol": "TWSE",
+      "name": "台湾加权",
+      "sinaSymbol": "b_TWSE"
+    },
+    {
+      "symbol": "SZ399001",
+      "name": "深证成指",
+      "sinaSymbol": "sz399001",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz399001"
+      }
+    },
+    {
+      "symbol": "SH000016",
+      "name": "上证50",
+      "sinaSymbol": "sh000016",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh000016"
+      }
+    },
+    {
+      "symbol": "SH000688",
+      "name": "科创50",
+      "sinaSymbol": "sh000688",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh000688"
+      }
+    }
+  ],
+  "rankingSectorEtfs": [
+    {
+      "symbol": "159695",
+      "name": "通信ETF",
+      "sinaSymbol": "sz159695",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159695"
+      }
+    },
+    {
+      "symbol": "159558",
+      "name": "半导体设备ETF",
+      "sinaSymbol": "sz159558",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159558"
+      }
+    },
+    {
+      "symbol": "159326",
+      "name": "电网设备ETF",
+      "sinaSymbol": "sz159326",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159326"
+      }
+    },
+    {
+      "symbol": "159770",
+      "name": "机器人ETF",
+      "sinaSymbol": "sz159770",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159770"
+      }
+    },
+    {
+      "symbol": "159755",
+      "name": "电池ETF",
+      "sinaSymbol": "sz159755",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159755"
+      }
+    },
+    {
+      "symbol": "159206",
+      "name": "卫星ETF",
+      "sinaSymbol": "sz159206",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159206"
+      }
+    },
+    {
+      "symbol": "510170",
+      "name": "大宗商品ETF",
+      "sinaSymbol": "sh510170",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh510170"
+      }
+    },
+    {
+      "symbol": "512890",
+      "name": "红利低波ETF",
+      "sinaSymbol": "sh512890",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh512890"
+      }
+    },
+    {
+      "symbol": "159928",
+      "name": "消费ETF",
+      "sinaSymbol": "sz159928",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159928"
+      }
+    },
+    {
+      "symbol": "515790",
+      "name": "光伏ETF",
+      "sinaSymbol": "sh515790",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh515790"
+      }
+    },
+    {
+      "symbol": "159992",
+      "name": "创新药ETF",
+      "sinaSymbol": "sz159992",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159992"
+      }
+    },
+    {
+      "symbol": "512400",
+      "name": "有色ETF",
+      "sinaSymbol": "sh512400",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh512400"
+      }
+    },
+    {
+      "symbol": "513310",
+      "name": "中韩半导体ETF",
+      "sinaSymbol": "sh513310",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh513310"
+      }
+    },
+    {
+      "symbol": "515070",
+      "name": "人工智能ETF",
+      "sinaSymbol": "sh515070",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh515070"
+      }
+    },
+    {
+      "symbol": "512880",
+      "name": "证券ETF",
+      "sinaSymbol": "sh512880",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh512880"
+      }
+    },
+    {
+      "symbol": "512800",
+      "name": "银行ETF",
+      "sinaSymbol": "sh512800",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh512800"
+      }
+    },
+    {
+      "symbol": "561560",
+      "name": "电力ETF",
+      "sinaSymbol": "sh561560",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh561560"
+      }
+    }
+  ],
+  "rankingIndexEtfs": [
+    {
+      "symbol": "510050",
+      "name": "上证50ETF",
+      "sinaSymbol": "sh510050",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh510050"
+      }
+    },
+    {
+      "symbol": "510300",
+      "name": "沪深300ETF",
+      "sinaSymbol": "sh510300",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh510300"
+      }
+    },
+    {
+      "symbol": "510500",
+      "name": "中证500ETF",
+      "sinaSymbol": "sh510500",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh510500"
+      }
+    },
+    {
+      "symbol": "159915",
+      "name": "创业板ETF",
+      "sinaSymbol": "sz159915",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159915"
+      }
+    },
+    {
+      "symbol": "588000",
+      "name": "科创50ETF",
+      "sinaSymbol": "sh588000",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh588000"
+      }
+    },
+    {
+      "symbol": "159920",
+      "name": "恒生ETF",
+      "sinaSymbol": "sz159920",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sz159920"
+      }
+    },
+    {
+      "symbol": "513520",
+      "name": "日经ETF",
+      "sinaSymbol": "sh513520",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh513520"
+      }
+    },
+    {
+      "symbol": "513100",
+      "name": "纳指ETF",
+      "sinaSymbol": "sh513100",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh513100"
+      }
+    },
+    {
+      "symbol": "513500",
+      "name": "标普ETF",
+      "sinaSymbol": "sh513500",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh513500"
+      }
+    },
+    {
+      "symbol": "513180",
+      "name": "恒生科技ETF",
+      "sinaSymbol": "sh513180",
+      "history": {
+        "source": "sina-cn",
+        "symbol": "sh513180"
+      }
+    }
+  ],
+  "funds": [
+    {
+      "symbol": "017436",
+      "name": "华宝纳斯达克精选",
+      "code": "017436",
+      "profile": {
+        "inceptionDate": "2023-03-02",
+        "assetScale": "39.51亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.20%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "NFLX",
+          "name": "Netflix",
+          "sinaSymbol": "gb_nflx",
+          "weight": 0.0932,
+          "currency": "USD"
+        },
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.0928,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AAPL",
+          "name": "Apple",
+          "sinaSymbol": "gb_aapl",
+          "weight": 0.0776,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MSFT",
+          "name": "Microsoft",
+          "sinaSymbol": "gb_msft",
+          "weight": 0.075,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom",
+          "sinaSymbol": "gb_avgo",
+          "weight": 0.0743,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSLA",
+          "name": "Tesla",
+          "sinaSymbol": "gb_tsla",
+          "weight": 0.0733,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GOOGL",
+          "name": "Alphabet",
+          "sinaSymbol": "gb_googl",
+          "weight": 0.0682,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AMZN",
+          "name": "Amazon",
+          "sinaSymbol": "gb_amzn",
+          "weight": 0.0634,
+          "currency": "USD"
+        },
+        {
+          "symbol": "META",
+          "name": "Meta",
+          "sinaSymbol": "gb_meta",
+          "weight": 0.0577,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MRVL",
+          "name": "Marvell",
+          "sinaSymbol": "gb_mrvl",
+          "weight": 0.0496,
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "symbol": "017091",
+      "name": "景顺长城纳斯达克科技",
+      "code": "017091",
+      "profile": {
+        "inceptionDate": "2022-12-09",
+        "assetScale": "23.05亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "0.80%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.1269,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AAPL",
+          "name": "Apple",
+          "sinaSymbol": "gb_aapl",
+          "weight": 0.1231,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MSFT",
+          "name": "Microsoft",
+          "sinaSymbol": "gb_msft",
+          "weight": 0.1212,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom",
+          "sinaSymbol": "gb_avgo",
+          "weight": 0.0725,
+          "currency": "USD"
+        },
+        {
+          "symbol": "META",
+          "name": "Meta",
+          "sinaSymbol": "gb_meta",
+          "weight": 0.0679,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GOOGL",
+          "name": "Alphabet A",
+          "sinaSymbol": "gb_googl",
+          "weight": 0.061,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GOOG",
+          "name": "Alphabet C",
+          "sinaSymbol": "gb_goog",
+          "weight": 0.0569,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MU",
+          "name": "美光科技",
+          "sinaSymbol": "gb_mu",
+          "weight": 0.0294,
+          "currency": "USD"
+        },
+        {
+          "symbol": "PLTR",
+          "name": "Palantir",
+          "sinaSymbol": "gb_pltr",
+          "weight": 0.0245,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AMD",
+          "name": "AMD",
+          "sinaSymbol": "gb_amd",
+          "weight": 0.024,
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "symbol": "022184",
+      "name": "富国全球科技互联网",
+      "code": "022184",
+      "profile": {
+        "inceptionDate": "2024-09-18",
+        "assetScale": "8.34亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.20%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.40%"
+      },
+      "holdings": [
+        {
+          "symbol": "TSM",
+          "name": "台积电",
+          "sinaSymbol": "gb_tsm",
+          "weight": 0.1006,
+          "currency": "USD"
+        },
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.098,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GOOGL",
+          "name": "Alphabet A",
+          "sinaSymbol": "gb_googl",
+          "weight": 0.0856,
+          "currency": "USD"
+        },
+        {
+          "symbol": "09899",
+          "name": "网易云音乐",
+          "sinaSymbol": "hk09899",
+          "weight": 0.0817,
+          "currency": "HKD"
+        },
+        {
+          "symbol": "AMD",
+          "name": "AMD",
+          "sinaSymbol": "gb_amd",
+          "weight": 0.074,
+          "currency": "USD"
+        },
+        {
+          "symbol": "00522",
+          "name": "ASMPT",
+          "sinaSymbol": "hk00522",
+          "weight": 0.0629,
+          "currency": "HKD"
+        },
+        {
+          "symbol": "000660",
+          "name": "SK海力士",
+          "sinaSymbol": "kr000660",
+          "weight": 0.0411,
+          "currency": "KRW"
+        },
+        {
+          "symbol": "INTC",
+          "name": "Intel",
+          "sinaSymbol": "gb_intc",
+          "weight": 0.0366,
+          "currency": "USD"
+        },
+        {
+          "symbol": "ASML",
+          "name": "ASML",
+          "sinaSymbol": "gb_asml",
+          "weight": 0.0358,
+          "currency": "USD"
+        },
+        {
+          "symbol": "005930",
+          "name": "三星电子",
+          "sinaSymbol": "kr005930",
+          "weight": 0.0333,
+          "currency": "KRW"
+        }
+      ]
+    },
+    {
+      "symbol": "161128",
+      "name": "易方达标普信息科技",
+      "code": "161128",
+      "profile": {
+        "inceptionDate": "2016-12-13",
+        "assetScale": "33.29亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "0.80%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "AAPL",
+          "name": "Apple",
+          "sinaSymbol": "gb_aapl",
+          "weight": 0.16,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MSFT",
+          "name": "Microsoft",
+          "sinaSymbol": "gb_msft",
+          "weight": 0.15,
+          "currency": "USD"
+        },
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.14,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom",
+          "sinaSymbol": "gb_avgo",
+          "weight": 0.06,
+          "currency": "USD"
+        },
+        {
+          "symbol": "CRM",
+          "name": "Salesforce",
+          "sinaSymbol": "gb_crm",
+          "weight": 0.04,
+          "currency": "USD"
+        },
+        {
+          "symbol": "ORCL",
+          "name": "Oracle",
+          "sinaSymbol": "gb_orcl",
+          "weight": 0.04,
+          "currency": "USD"
+        },
+        {
+          "symbol": "CSCO",
+          "name": "Cisco",
+          "sinaSymbol": "gb_csco",
+          "weight": 0.03,
+          "currency": "USD"
+        },
+        {
+          "symbol": "ACN",
+          "name": "Accenture",
+          "sinaSymbol": "gb_acn",
+          "weight": 0.03,
+          "currency": "USD"
+        },
+        {
+          "symbol": "IBM",
+          "name": "IBM",
+          "sinaSymbol": "gb_ibm",
+          "weight": 0.03,
+          "currency": "USD"
+        },
+        {
+          "symbol": "ADBE",
+          "name": "Adobe",
+          "sinaSymbol": "gb_adbe",
+          "weight": 0.03,
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "symbol": "006555",
+      "name": "浦银安盛全球智能科技",
+      "code": "006555",
+      "profile": {
+        "inceptionDate": "2019-01-29",
+        "assetScale": "10.73亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.20%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.0811,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GOOG",
+          "name": "Alphabet",
+          "sinaSymbol": "gb_goog",
+          "weight": 0.0787,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSM",
+          "name": "台积电",
+          "sinaSymbol": "gb_tsm",
+          "weight": 0.0745,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom",
+          "sinaSymbol": "gb_avgo",
+          "weight": 0.0731,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSLA",
+          "name": "Tesla",
+          "sinaSymbol": "gb_tsla",
+          "weight": 0.0623,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MU",
+          "name": "美光科技",
+          "sinaSymbol": "gb_mu",
+          "weight": 0.0603,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MSFT",
+          "name": "Microsoft",
+          "sinaSymbol": "gb_msft",
+          "weight": 0.0395,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AMZN",
+          "name": "Amazon",
+          "sinaSymbol": "gb_amzn",
+          "weight": 0.0369,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AAPL",
+          "name": "Apple",
+          "sinaSymbol": "gb_aapl",
+          "weight": 0.0329,
+          "currency": "USD"
+        },
+        {
+          "symbol": "LITE",
+          "name": "Lumentum",
+          "sinaSymbol": "gb_lite",
+          "weight": 0.0295,
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "symbol": "006373",
+      "name": "国富全球科技互联",
+      "code": "006373",
+      "profile": {
+        "inceptionDate": "2018-11-20",
+        "assetScale": "29.89亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.20%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.09,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MSFT",
+          "name": "Microsoft",
+          "sinaSymbol": "gb_msft",
+          "weight": 0.08,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AAPL",
+          "name": "Apple",
+          "sinaSymbol": "gb_aapl",
+          "weight": 0.07,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GOOGL",
+          "name": "Alphabet",
+          "sinaSymbol": "gb_googl",
+          "weight": 0.07,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AMZN",
+          "name": "Amazon",
+          "sinaSymbol": "gb_amzn",
+          "weight": 0.06,
+          "currency": "USD"
+        },
+        {
+          "symbol": "META",
+          "name": "Meta",
+          "sinaSymbol": "gb_meta",
+          "weight": 0.06,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSM",
+          "name": "台积电",
+          "sinaSymbol": "gb_tsm",
+          "weight": 0.05,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom",
+          "sinaSymbol": "gb_avgo",
+          "weight": 0.05,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSLA",
+          "name": "Tesla",
+          "sinaSymbol": "gb_tsla",
+          "weight": 0.04,
+          "currency": "USD"
+        },
+        {
+          "symbol": "NFLX",
+          "name": "Netflix",
+          "sinaSymbol": "gb_nflx",
+          "weight": 0.03,
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "symbol": "270023",
+      "name": "广发全球精选",
+      "code": "270023",
+      "profile": {
+        "inceptionDate": "2010-08-18",
+        "assetScale": "112.68亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.20%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "ASML",
+          "name": "阿斯麦",
+          "sinaSymbol": "gb_asml",
+          "weight": 0.0521,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GOOG",
+          "name": "Alphabet",
+          "sinaSymbol": "gb_goog",
+          "weight": 0.0494,
+          "currency": "USD"
+        },
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.0447,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AAPL",
+          "name": "Apple",
+          "sinaSymbol": "gb_aapl",
+          "weight": 0.0407,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AMZN",
+          "name": "Amazon",
+          "sinaSymbol": "gb_amzn",
+          "weight": 0.0402,
+          "currency": "USD"
+        },
+        {
+          "symbol": "LRCX",
+          "name": "泛林集团",
+          "sinaSymbol": "gb_lrcx",
+          "weight": 0.0401,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MU",
+          "name": "美光科技",
+          "sinaSymbol": "gb_mu",
+          "weight": 0.0326,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom",
+          "sinaSymbol": "gb_avgo",
+          "weight": 0.0327,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MSFT",
+          "name": "Microsoft",
+          "sinaSymbol": "gb_msft",
+          "weight": 0.03,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSM",
+          "name": "台积电",
+          "sinaSymbol": "gb_tsm",
+          "weight": 0.03,
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "symbol": "001668",
+      "name": "汇添富全球移动互联",
+      "code": "001668",
+      "profile": {
+        "inceptionDate": "2017-01-25",
+        "assetScale": "14.91亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.20%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.0896,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GOOGL",
+          "name": "Alphabet",
+          "sinaSymbol": "gb_googl",
+          "weight": 0.0814,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MSFT",
+          "name": "Microsoft",
+          "sinaSymbol": "gb_msft",
+          "weight": 0.05,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AMZN",
+          "name": "Amazon",
+          "sinaSymbol": "gb_amzn",
+          "weight": 0.0484,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AAPL",
+          "name": "Apple",
+          "sinaSymbol": "gb_aapl",
+          "weight": 0.0445,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom",
+          "sinaSymbol": "gb_avgo",
+          "weight": 0.0389,
+          "currency": "USD"
+        },
+        {
+          "symbol": "META",
+          "name": "Meta",
+          "sinaSymbol": "gb_meta",
+          "weight": 0.0348,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSM",
+          "name": "台积电",
+          "sinaSymbol": "gb_tsm",
+          "weight": 0.0334,
+          "currency": "USD"
+        },
+        {
+          "symbol": "NFLX",
+          "name": "Netflix",
+          "sinaSymbol": "gb_nflx",
+          "weight": 0.0236,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MU",
+          "name": "美光科技",
+          "sinaSymbol": "gb_mu",
+          "weight": 0.0221,
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "symbol": "000043",
+      "name": "嘉实美国成长",
+      "code": "000043",
+      "profile": {
+        "inceptionDate": "2013-06-14",
+        "assetScale": "43.44亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.20%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "--"
+      },
+      "holdings": [
+        {
+          "symbol": "AAPL",
+          "name": "Apple",
+          "sinaSymbol": "gb_aapl",
+          "weight": 0.0968,
+          "currency": "USD"
+        },
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.0867,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MSFT",
+          "name": "Microsoft",
+          "sinaSymbol": "gb_msft",
+          "weight": 0.0714,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AMZN",
+          "name": "Amazon",
+          "sinaSymbol": "gb_amzn",
+          "weight": 0.0664,
+          "currency": "USD"
+        },
+        {
+          "symbol": "META",
+          "name": "Meta",
+          "sinaSymbol": "gb_meta",
+          "weight": 0.0518,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GOOGL",
+          "name": "Alphabet",
+          "sinaSymbol": "gb_googl",
+          "weight": 0.058,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom",
+          "sinaSymbol": "gb_avgo",
+          "weight": 0.0289,
+          "currency": "USD"
+        },
+        {
+          "symbol": "LLY",
+          "name": "Eli Lilly",
+          "sinaSymbol": "gb_lly",
+          "weight": 0.0244,
+          "currency": "USD"
+        },
+        {
+          "symbol": "NFLX",
+          "name": "Netflix",
+          "sinaSymbol": "gb_nflx",
+          "weight": 0.0192,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSLA",
+          "name": "Tesla",
+          "sinaSymbol": "gb_tsla",
+          "weight": 0.0186,
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "symbol": "008253",
+      "name": "华宝致远混合",
+      "code": "008253",
+      "profile": {
+        "inceptionDate": "2019-11-27",
+        "assetScale": "2.26亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.20%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.08,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AAPL",
+          "name": "Apple",
+          "sinaSymbol": "gb_aapl",
+          "weight": 0.07,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MSFT",
+          "name": "Microsoft",
+          "sinaSymbol": "gb_msft",
+          "weight": 0.07,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GOOGL",
+          "name": "Alphabet",
+          "sinaSymbol": "gb_googl",
+          "weight": 0.06,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AMZN",
+          "name": "Amazon",
+          "sinaSymbol": "gb_amzn",
+          "weight": 0.05,
+          "currency": "USD"
+        },
+        {
+          "symbol": "META",
+          "name": "Meta",
+          "sinaSymbol": "gb_meta",
+          "weight": 0.05,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSLA",
+          "name": "Tesla",
+          "sinaSymbol": "gb_tsla",
+          "weight": 0.04,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSM",
+          "name": "台积电",
+          "sinaSymbol": "gb_tsm",
+          "weight": 0.04,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom",
+          "sinaSymbol": "gb_avgo",
+          "weight": 0.03,
+          "currency": "USD"
+        },
+        {
+          "symbol": "NFLX",
+          "name": "Netflix",
+          "sinaSymbol": "gb_nflx",
+          "weight": 0.03,
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "symbol": "012920",
+      "name": "易方达全球成长精选",
+      "code": "012920",
+      "profile": {
+        "inceptionDate": "2022-01-11",
+        "assetScale": "37.05亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.20%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "TSM",
+          "name": "台积电",
+          "sinaSymbol": "gb_tsm",
+          "weight": 0.0888,
+          "currency": "USD"
+        },
+        {
+          "symbol": "LITE",
+          "name": "Lumentum",
+          "sinaSymbol": "gb_lite",
+          "weight": 0.0868,
+          "currency": "USD"
+        },
+        {
+          "symbol": "sz300502",
+          "name": "新易盛",
+          "sinaSymbol": "sz300502",
+          "weight": 0.0602,
+          "currency": "CNY"
+        },
+        {
+          "symbol": "GLW",
+          "name": "Corning",
+          "sinaSymbol": "gb_glw",
+          "weight": 0.0467,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AXTI",
+          "name": "AXT Inc",
+          "sinaSymbol": "gb_axti",
+          "weight": 0.0467,
+          "currency": "USD"
+        },
+        {
+          "symbol": "sz300308",
+          "name": "中际旭创",
+          "sinaSymbol": "sz300308",
+          "weight": 0.0467,
+          "currency": "CNY"
+        },
+        {
+          "symbol": "sh688498",
+          "name": "源杰科技",
+          "sinaSymbol": "sh688498",
+          "weight": 0.0449,
+          "currency": "CNY"
+        },
+        {
+          "symbol": "TSEM",
+          "name": "Tower",
+          "sinaSymbol": "gb_tsem",
+          "weight": 0.0372,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GOOGL",
+          "name": "Alphabet",
+          "sinaSymbol": "gb_googl",
+          "weight": 0.0336,
+          "currency": "USD"
+        },
+        {
+          "symbol": "sz002384",
+          "name": "东山精密",
+          "sinaSymbol": "sz002384",
+          "weight": 0.0267,
+          "currency": "CNY"
+        }
+      ]
+    },
+    {
+      "symbol": "017730",
+      "name": "嘉实全球产业升级",
+      "code": "017730",
+      "profile": {
+        "inceptionDate": "2023-02-09",
+        "assetScale": "9.22亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.20%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.09,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom",
+          "sinaSymbol": "gb_avgo",
+          "weight": 0.08,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSM",
+          "name": "台积电",
+          "sinaSymbol": "gb_tsm",
+          "weight": 0.07,
+          "currency": "USD"
+        },
+        {
+          "symbol": "ASML",
+          "name": "阿斯麦",
+          "sinaSymbol": "gb_asml",
+          "weight": 0.06,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MSFT",
+          "name": "Microsoft",
+          "sinaSymbol": "gb_msft",
+          "weight": 0.06,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AMZN",
+          "name": "Amazon",
+          "sinaSymbol": "gb_amzn",
+          "weight": 0.05,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AAPL",
+          "name": "Apple",
+          "sinaSymbol": "gb_aapl",
+          "weight": 0.05,
+          "currency": "USD"
+        },
+        {
+          "symbol": "META",
+          "name": "Meta",
+          "sinaSymbol": "gb_meta",
+          "weight": 0.05,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GOOGL",
+          "name": "Alphabet",
+          "sinaSymbol": "gb_googl",
+          "weight": 0.04,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MU",
+          "name": "美光科技",
+          "sinaSymbol": "gb_mu",
+          "weight": 0.04,
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "symbol": "016664",
+      "name": "天弘全球高端制造",
+      "code": "016664",
+      "profile": {
+        "inceptionDate": "2023-04-26",
+        "assetScale": "5.61亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.20%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.09,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSM",
+          "name": "台积电",
+          "sinaSymbol": "gb_tsm",
+          "weight": 0.08,
+          "currency": "USD"
+        },
+        {
+          "symbol": "ASML",
+          "name": "阿斯麦",
+          "sinaSymbol": "gb_asml",
+          "weight": 0.07,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom",
+          "sinaSymbol": "gb_avgo",
+          "weight": 0.07,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AMD",
+          "name": "AMD",
+          "sinaSymbol": "gb_amd",
+          "weight": 0.06,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AMAT",
+          "name": "应用材料",
+          "sinaSymbol": "gb_amat",
+          "weight": 0.06,
+          "currency": "USD"
+        },
+        {
+          "symbol": "LRCX",
+          "name": "泛林集团",
+          "sinaSymbol": "gb_lrcx",
+          "weight": 0.05,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MU",
+          "name": "美光科技",
+          "sinaSymbol": "gb_mu",
+          "weight": 0.05,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MRVL",
+          "name": "Marvell",
+          "sinaSymbol": "gb_mrvl",
+          "weight": 0.04,
+          "currency": "USD"
+        },
+        {
+          "symbol": "QCOM",
+          "name": "高通",
+          "sinaSymbol": "gb_qcom",
+          "weight": 0.04,
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "symbol": "501312",
+      "name": "华宝海外科技",
+      "code": "501312",
+      "profile": {
+        "inceptionDate": "2023-04-11",
+        "assetScale": "7.99亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.00%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.09,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AAPL",
+          "name": "Apple",
+          "sinaSymbol": "gb_aapl",
+          "weight": 0.08,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MSFT",
+          "name": "Microsoft",
+          "sinaSymbol": "gb_msft",
+          "weight": 0.08,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AMZN",
+          "name": "Amazon",
+          "sinaSymbol": "gb_amzn",
+          "weight": 0.06,
+          "currency": "USD"
+        },
+        {
+          "symbol": "META",
+          "name": "Meta",
+          "sinaSymbol": "gb_meta",
+          "weight": 0.06,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GOOGL",
+          "name": "Alphabet",
+          "sinaSymbol": "gb_googl",
+          "weight": 0.06,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSLA",
+          "name": "Tesla",
+          "sinaSymbol": "gb_tsla",
+          "weight": 0.05,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom",
+          "sinaSymbol": "gb_avgo",
+          "weight": 0.05,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AMD",
+          "name": "AMD",
+          "sinaSymbol": "gb_amd",
+          "weight": 0.03,
+          "currency": "USD"
+        },
+        {
+          "symbol": "NFLX",
+          "name": "Netflix",
+          "sinaSymbol": "gb_nflx",
+          "weight": 0.03,
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "symbol": "005698",
+      "name": "华夏全球科技先锋",
+      "code": "005698",
+      "profile": {
+        "inceptionDate": "2018-04-17",
+        "assetScale": "33.00亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.20%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "CIEN",
+          "name": "Ciena",
+          "sinaSymbol": "gb_cien",
+          "weight": 0.0556,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSM",
+          "name": "台积电",
+          "sinaSymbol": "gb_tsm",
+          "weight": 0.0487,
+          "currency": "USD"
+        },
+        {
+          "symbol": "LITE",
+          "name": "Lumentum",
+          "sinaSymbol": "gb_lite",
+          "weight": 0.0472,
+          "currency": "USD"
+        },
+        {
+          "symbol": "COHR",
+          "name": "Coherent",
+          "sinaSymbol": "gb_cohr",
+          "weight": 0.0459,
+          "currency": "USD"
+        },
+        {
+          "symbol": "VIAV",
+          "name": "Viavi Solutions",
+          "sinaSymbol": "gb_viav",
+          "weight": 0.0452,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GLW",
+          "name": "Corning",
+          "sinaSymbol": "gb_glw",
+          "weight": 0.0415,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MU",
+          "name": "美光科技",
+          "sinaSymbol": "gb_mu",
+          "weight": 0.023,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AEIS",
+          "name": "Advanced Energy",
+          "sinaSymbol": "gb_aeis",
+          "weight": 0.0163,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TER",
+          "name": "Teradyne",
+          "sinaSymbol": "gb_ter",
+          "weight": 0.0162,
+          "currency": "USD"
+        },
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.015,
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "symbol": "016701",
+      "name": "银华海外数字经济",
+      "code": "016701",
+      "profile": {
+        "inceptionDate": "2023-03-15",
+        "assetScale": "11.46亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.20%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.09,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MSFT",
+          "name": "Microsoft",
+          "sinaSymbol": "gb_msft",
+          "weight": 0.08,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AAPL",
+          "name": "Apple",
+          "sinaSymbol": "gb_aapl",
+          "weight": 0.07,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GOOGL",
+          "name": "Alphabet",
+          "sinaSymbol": "gb_googl",
+          "weight": 0.07,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AMZN",
+          "name": "Amazon",
+          "sinaSymbol": "gb_amzn",
+          "weight": 0.06,
+          "currency": "USD"
+        },
+        {
+          "symbol": "META",
+          "name": "Meta",
+          "sinaSymbol": "gb_meta",
+          "weight": 0.06,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom",
+          "sinaSymbol": "gb_avgo",
+          "weight": 0.05,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSM",
+          "name": "台积电",
+          "sinaSymbol": "gb_tsm",
+          "weight": 0.04,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TSLA",
+          "name": "Tesla",
+          "sinaSymbol": "gb_tsla",
+          "weight": 0.04,
+          "currency": "USD"
+        },
+        {
+          "symbol": "CRM",
+          "name": "Salesforce",
+          "sinaSymbol": "gb_crm",
+          "weight": 0.03,
+          "currency": "USD"
+        }
+      ]
+    },
+    {
+      "symbol": "539002",
+      "name": "建信新兴市场混合",
+      "code": "539002",
+      "profile": {
+        "inceptionDate": "2011-06-21",
+        "assetScale": "11.20亿元",
+        "scaleDate": "2026-03-31",
+        "managementFee": "1.20%",
+        "custodianFee": "0.20%",
+        "salesServiceFee": "0.00%"
+      },
+      "holdings": [
+        {
+          "symbol": "TSM",
+          "name": "台积电",
+          "sinaSymbol": "gb_tsm",
+          "weight": 0.08,
+          "currency": "USD"
+        },
+        {
+          "symbol": "BABA",
+          "name": "阿里巴巴",
+          "sinaSymbol": "gb_baba",
+          "weight": 0.06,
+          "currency": "USD"
+        },
+        {
+          "symbol": "NVDA",
+          "name": "NVIDIA",
+          "sinaSymbol": "gb_nvda",
+          "weight": 0.05,
+          "currency": "USD"
+        },
+        {
+          "symbol": "SE",
+          "name": "Sea Limited",
+          "sinaSymbol": "gb_se",
+          "weight": 0.04,
+          "currency": "USD"
+        },
+        {
+          "symbol": "NU",
+          "name": "Nu Holdings",
+          "sinaSymbol": "gb_nu",
+          "weight": 0.04,
+          "currency": "USD"
+        },
+        {
+          "symbol": "MELI",
+          "name": "MercadoLibre",
+          "sinaSymbol": "gb_meli",
+          "weight": 0.04,
+          "currency": "USD"
+        },
+        {
+          "symbol": "GRAB",
+          "name": "Grab",
+          "sinaSymbol": "gb_grab",
+          "weight": 0.03,
+          "currency": "USD"
+        },
+        {
+          "symbol": "BEKE",
+          "name": "贝壳",
+          "sinaSymbol": "gb_beke",
+          "weight": 0.03,
+          "currency": "USD"
+        },
+        {
+          "symbol": "PDD",
+          "name": "拼多多",
+          "sinaSymbol": "gb_pdd",
+          "weight": 0.03,
+          "currency": "USD"
+        },
+        {
+          "symbol": "TCOM",
+          "name": "携程",
+          "sinaSymbol": "gb_tcom",
+          "weight": 0.03,
+          "currency": "USD"
+        }
+      ]
+    }
+  ]
+}

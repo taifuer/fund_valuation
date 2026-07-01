@@ -1,6 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuotes, type FundEstimate } from './hooks/useQuotes';
-import { useHeaderFxRates, useOverviewData, useRankingMarketData } from './hooks/usePageData';
+import { useHeaderFxRates, useOverviewData, useRankingMarketData, useSystemStatus } from './hooks/usePageData';
 import { fetchFundNavs, fetchSinaFundNavs } from './api';
 import { FUNDS } from './constants';
 import {
@@ -19,6 +19,7 @@ import styles from './App.module.css';
 
 const RankingPage = lazy(() => import('./components/RankingPage'));
 const RiskPage = lazy(() => import('./components/RiskPage'));
+const DiagnosticsPage = lazy(() => import('./components/DiagnosticsPage'));
 
 type SortMode = 'estimate' | 'official';
 type SortDirection = 'desc' | 'asc';
@@ -27,6 +28,8 @@ type FundDisplayMode = 'compact' | 'detail';
 const FUND_SECTION_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_section';
 const FUND_SUMMARY_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_summary';
 const FUND_MANAGER_KEY = 'fund_valuation:managed_funds';
+const MAX_CUSTOM_FUNDS = 50;
+const MAX_FUND_IMPORT_BYTES = 64 * 1024;
 const FUND_DISPLAY_MODE_KEY = 'fund_valuation:fund_display_mode';
 
 interface FundSummary {
@@ -80,23 +83,34 @@ function readManagedFundSettings(): ManagedFundSettings {
   try {
     const raw = window.localStorage.getItem(FUND_MANAGER_KEY);
     if (!raw) return EMPTY_MANAGED_SETTINGS;
-    const parsed = JSON.parse(raw) as Partial<ManagedFundSettings>;
-    return {
-      hiddenDefaultCodes: Array.isArray(parsed.hiddenDefaultCodes)
-        ? parsed.hiddenDefaultCodes.filter((code) => /^\d{6}$/.test(code))
-        : [],
-      customFunds: Array.isArray(parsed.customFunds)
-        ? parsed.customFunds
-            .map((fund) => ({
-              code: String(fund.code ?? '').trim(),
-              name: String(fund.name ?? '').trim(),
-            }))
-            .filter((fund) => /^\d{6}$/.test(fund.code) && fund.name)
-        : [],
-    };
+    return normalizeManagedFundSettings(JSON.parse(raw));
   } catch {
     return EMPTY_MANAGED_SETTINGS;
   }
+}
+
+function normalizeManagedFundSettings(value: unknown): ManagedFundSettings {
+  const parsed = value && typeof value === 'object' ? value as Partial<ManagedFundSettings> : {};
+  const defaultCodes = new Set(FUNDS.map((fund) => fund.code));
+  const hiddenDefaultCodes = Array.isArray(parsed.hiddenDefaultCodes)
+    ? [...new Set(parsed.hiddenDefaultCodes.map(String))]
+        .filter((code) => defaultCodes.has(code))
+    : [];
+  const seenCustomCodes = new Set<string>();
+  const customFunds = Array.isArray(parsed.customFunds)
+    ? parsed.customFunds
+        .map((fund) => ({ code: String(fund?.code ?? '').trim(), name: String(fund?.name ?? '').trim().slice(0, 80) }))
+        .filter((fund) => {
+          if (!/^\d{6}$/.test(fund.code) || !fund.name || defaultCodes.has(fund.code) || seenCustomCodes.has(fund.code)) return false;
+          seenCustomCodes.add(fund.code);
+          return true;
+        })
+        .slice(0, MAX_CUSTOM_FUNDS)
+    : [];
+  return {
+    hiddenDefaultCodes,
+    customFunds,
+  };
 }
 
 function writeManagedFundSettings(settings: ManagedFundSettings) {
@@ -248,6 +262,7 @@ export default function App() {
   const overviewData = useOverviewData(funds, activePage === 'overview');
   const headerFxRates = useHeaderFxRates(activePage !== 'overview');
   const marketPageData = useRankingMarketData(activePage === 'ranking');
+  const systemStatus = useSystemStatus();
   const activeFxRates = activePage === 'overview' && overviewData.fxRates.size > 0
     ? overviewData.fxRates
     : headerFxRates.size > 0 ? headerFxRates : fxRates;
@@ -265,7 +280,27 @@ export default function App() {
   const [fundSearchQuery, setFundSearchQuery] = useState('');
   const [addingFund, setAddingFund] = useState(false);
   const [fundManageMessage, setFundManageMessage] = useState('');
+  const [fundManagerOpen, setFundManagerOpen] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const managerTriggerRef = useRef<HTMLButtonElement>(null);
+  const managerDialogRef = useRef<HTMLElement>(null);
   const [pageStatusMessage, setPageStatusMessage] = useState('');
+
+  useEffect(() => {
+    if (!fundManagerOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    managerDialogRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFundManagerOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      managerTriggerRef.current?.focus();
+    };
+  }, [fundManagerOpen]);
 
   const sortedEstimates = useMemo(() => {
     const sorted = [...fundEstimates].sort((a, b) => {
@@ -446,6 +481,35 @@ export default function App() {
     setFundManageMessage(`已恢复默认 ${FUNDS.length} 只基金`);
   }
 
+  function exportFundSettings() {
+    const blob = new Blob([JSON.stringify(managedFunds, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'fund-watchlist.json';
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setFundManageMessage('基金列表已导出');
+  }
+
+  async function importFundSettings(file: File | undefined) {
+    if (!file) return;
+    if (file.size > MAX_FUND_IMPORT_BYTES) {
+      setFundManageMessage('导入失败，基金列表文件不能超过 64 KB');
+      return;
+    }
+    try {
+      const parsed = JSON.parse(await file.text());
+      const normalized = normalizeManagedFundSettings(parsed);
+      updateManagedFunds(normalized);
+      setFundManageMessage(`已导入 ${normalized.customFunds.length} 只自定义基金`);
+    } catch {
+      setFundManageMessage('导入失败，请选择有效的基金列表 JSON');
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = '';
+    }
+  }
+
   function toggleFundSection() {
     setFundCollapsed((prev) => {
       const next = !prev;
@@ -474,6 +538,7 @@ export default function App() {
         activePage={activePage}
         onPageChange={navigatePage}
         statusMessage={pageStatusMessage}
+        systemStatus={systemStatus}
       />
       {activeError && <div className={styles.error}>{activeError}</div>}
       {activePage === 'overview' ? (
@@ -552,11 +617,19 @@ export default function App() {
                       详细
                     </button>
                   </div>
+                  <button ref={managerTriggerRef} type="button" className={styles.managerTrigger} onClick={() => setFundManagerOpen(true)}>
+                    管理基金
+                  </button>
                 </div>
               )}
             </div>
-            {!fundCollapsed && (
-              <div className={styles.fundManager}>
+            {!fundCollapsed && fundManagerOpen && (
+              <div className={styles.managerOverlay} role="presentation" onClick={() => setFundManagerOpen(false)}>
+                <section ref={managerDialogRef} className={styles.fundManager} role="dialog" aria-modal="true" aria-label="管理基金" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+                  <div className={styles.managerHeader}>
+                    <div><strong>管理基金</strong><span>配置仅保存在当前浏览器</span></div>
+                    <button type="button" className={styles.managerClose} aria-label="关闭基金管理" onClick={() => setFundManagerOpen(false)}>×</button>
+                  </div>
                 <div className={styles.addFundForm}>
                   <input
                     className={styles.fundSearchInput}
@@ -579,7 +652,19 @@ export default function App() {
                     恢复默认
                   </button>
                 </div>
+                <div className={styles.managerActions}>
+                  <button type="button" className={styles.managerButton} onClick={exportFundSettings}>导出列表</button>
+                  <button type="button" className={styles.managerButton} onClick={() => importInputRef.current?.click()}>导入列表</button>
+                  <input
+                    ref={importInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    hidden
+                    onChange={(event) => void importFundSettings(event.target.files?.[0])}
+                  />
+                </div>
                 {fundManageMessage && <div className={styles.managerMessage}>{fundManageMessage}</div>}
+                </section>
               </div>
             )}
             {!fundCollapsed && fundLoading && sortedEstimates.length === 0 && (
@@ -614,7 +699,7 @@ export default function App() {
             onStatusMessageChange={setPageStatusMessage}
           />
         </Suspense>
-      ) : (
+      ) : activePage === 'risk' ? (
         <Suspense fallback={<div className={styles.pageFallback}>风险页面加载中...</div>}>
           <RiskPage
             funds={funds}
@@ -622,6 +707,10 @@ export default function App() {
             marketLoading={false}
             onStatusMessageChange={setPageStatusMessage}
           />
+        </Suspense>
+      ) : (
+        <Suspense fallback={<div className={styles.pageFallback}>诊断页面加载中...</div>}>
+          <DiagnosticsPage />
         </Suspense>
       )}
       <footer className={styles.footer}>

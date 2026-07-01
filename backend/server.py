@@ -29,6 +29,14 @@ import requests
 from flask import Flask, Response, g, jsonify, request
 from werkzeug.exceptions import HTTPException, TooManyRequests
 
+from .config import (
+    configured_fund_codes as universe_fund_codes,
+    configured_market_return_items as universe_market_return_items,
+    configured_sina_symbols as universe_sina_symbols,
+    default_fund_holdings as universe_fund_holdings,
+)
+from .quotes import normalize_quote_text
+
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("FUND_VALUATION_DATA_DIR", ROOT_DIR / "data"))
@@ -86,6 +94,7 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "sina": (240, 60),
     "dashboard": (180, 60),
     "overview": (180, 60),
+    "status": (120, 60),
     "datahealth": (120, 60),
     "diagnostics": (30, 60),
     "marketstates": (240, 60),
@@ -106,7 +115,7 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "fundbacktest_refresh": (6, 60),
 }
 
-BACKTEST_MODEL_VERSION = "top_holdings_v1"
+BACKTEST_MODEL_VERSION = "quarterly_holdings_fx_v2"
 EASTMONEY_GLOBAL_QUOTES: dict[str, tuple[str, str]] = {
     "int_nikkei": ("100.N225", "日经指数"),
 }
@@ -218,6 +227,15 @@ def ensure_storage() -> None:
               change_percent REAL NOT NULL,
               fetched_at INTEGER NOT NULL,
               PRIMARY KEY (sina_symbol, date)
+            );
+
+            CREATE TABLE IF NOT EXISTS fx_daily_history (
+              currency TEXT NOT NULL,
+              date TEXT NOT NULL,
+              rate REAL NOT NULL,
+              change_percent REAL NOT NULL,
+              fetched_at INTEGER NOT NULL,
+              PRIMARY KEY (currency, date)
             );
 
             CREATE TABLE IF NOT EXISTS fund_estimate_backtest (
@@ -1949,67 +1967,96 @@ def read_fund_holdings_from_db(code: str) -> list[dict[str, Any]]:
     ]
 
 
-def parse_default_fund_holdings_from_constants(code: str) -> list[dict[str, Any]]:
-    constants_path = ROOT_DIR / "src" / "constants.ts"
-    try:
-        text = constants_path.read_text(encoding="utf-8")
-    except OSError:
-        return []
+def read_fund_holding_snapshots(code: str) -> list[tuple[str, list[dict[str, Any]]]]:
+    with get_conn() as conn:
+        report_dates = [
+            str(row[0])
+            for row in conn.execute(
+                "SELECT DISTINCT report_date FROM fund_holdings WHERE code = ? ORDER BY report_date ASC",
+                (code,),
+            ).fetchall()
+        ]
+    snapshots: list[tuple[str, list[dict[str, Any]]]] = []
+    for report_date in report_dates:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT rank, stock_code, stock_name, weight, market, sina_symbol, currency, fetched_at
+                FROM fund_holdings WHERE code = ? AND report_date = ? ORDER BY rank ASC
+                """,
+                (code, report_date),
+            ).fetchall()
+        snapshots.append((report_date, [
+            {
+                "code": code,
+                "reportDate": report_date,
+                "rank": int(rank),
+                "stockCode": str(stock_code),
+                "symbol": str(stock_code),
+                "name": str(stock_name),
+                "weight": float(weight),
+                "market": str(market),
+                "sinaSymbol": str(sina_symbol),
+                "currency": str(currency),
+                "fetchedAt": int(fetched_at),
+            }
+            for rank, stock_code, stock_name, weight, market, sina_symbol, currency, fetched_at in rows
+        ]))
+    return snapshots
 
-    # Fallback report date: most recent quarter-end relative to today, so this
-    # does not lie as the years roll over (was hardcoded "2026-03-31").
-    today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
-    quarter_end_month = ((today.month - 1) // 3) * 3  # last completed quarter end month
-    if quarter_end_month == 0:
-        quarter_end = datetime(today.year - 1, 12, 31).date()
-    else:
-        quarter_end = datetime(today.year, quarter_end_month, 1).date()
-        # last day of that quarter month
-        if quarter_end_month == 12:
-            next_month = datetime(today.year + 1, 1, 1).date()
-        else:
-            next_month = datetime(today.year, quarter_end_month + 1, 1).date()
-        quarter_end = next_month - timedelta(days=1)
-    fallback_report_date = quarter_end.isoformat()
 
-    match = re.search(
-        rf"symbol:\s*'{re.escape(code)}'.*?code:\s*'{re.escape(code)}'.*?holdings:\s*\[(.*?)\]\s*,\s*\}}",
-        text,
-        re.S,
-    )
-    if not match:
-        return []
-
-    helpers = {
-        "us": ("us", "USD", lambda symbol: f"gb_{symbol.lower()}"),
-        "cn": ("cn", "CNY", lambda symbol: symbol.lower()),
-        "hk": ("hk", "HKD", lambda symbol: f"hk{symbol.zfill(5)}"),
-        "kr": ("kr", "KRW", lambda symbol: f"kr{symbol}"),
-    }
-    holdings: list[dict[str, Any]] = []
-    for rank, item in enumerate(
-        re.finditer(r"(us|cn|hk|kr)\('([^']+)'\s*,\s*'([^']+)'\s*,\s*([0-9.]+)\)", match.group(1)),
-        start=1,
-    ):
-        helper, symbol, name, weight_raw = item.groups()
-        market, currency, sina_symbol_fn = helpers[helper]
-        try:
-            weight = float(weight_raw)
-        except ValueError:
+def store_fx_daily_history(text: str) -> int:
+    fetched_at = now_ms()
+    points: list[tuple[str, str, float, float, int]] = []
+    for line in text.splitlines():
+        match = re.match(r'^var\s+hq_str_fx_s([a-z]{3})cny="([^"]*)"', line.strip(), re.I)
+        if not match:
             continue
-        holdings.append({
-            "code": code,
-            "reportDate": fallback_report_date,
-            "rank": rank,
-            "stockCode": symbol.upper(),
-            "symbol": symbol.upper(),
-            "name": name,
-            "weight": weight,
-            "market": market,
-            "sinaSymbol": sina_symbol_fn(symbol),
-            "currency": currency,
-        })
-    return holdings
+        currency = match.group(1).upper()
+        fields = match.group(2).split(",")
+        date = next((field for field in reversed(fields) if re.match(r"^\d{4}-\d{2}-\d{2}$", field)), "")
+        rate = safe_float(fields[1]) if len(fields) > 1 else None
+        change_percent = safe_float(fields[10]) if len(fields) > 10 else None
+        if date and rate and rate > 0:
+            points.append((currency, date, rate, change_percent or 0.0, fetched_at))
+    if not points:
+        return 0
+    with get_conn() as conn:
+        conn.executemany(
+            """
+            INSERT INTO fx_daily_history(currency, date, rate, change_percent, fetched_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(currency, date) DO UPDATE SET
+              rate = excluded.rate,
+              change_percent = excluded.change_percent,
+              fetched_at = excluded.fetched_at
+            """,
+            points,
+        )
+    return len(points)
+
+
+def read_fx_changes(currencies: list[str], start_date: str, end_date: str) -> dict[str, dict[str, float]]:
+    normalized = sorted(dict.fromkeys(currency for currency in currencies if currency != "CNY"))
+    if not normalized:
+        return {}
+    placeholders = ",".join("?" for _ in normalized)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT currency, date, change_percent FROM fx_daily_history
+            WHERE currency IN ({placeholders}) AND date BETWEEN ? AND ?
+            """,
+            (*normalized, start_date, end_date),
+        ).fetchall()
+    results: dict[str, dict[str, float]] = {}
+    for currency, date, change_percent in rows:
+        results.setdefault(str(currency), {})[str(date)] = float(change_percent)
+    return results
+
+
+def parse_default_fund_holdings_from_constants(code: str) -> list[dict[str, Any]]:
+    return universe_fund_holdings(code)
 
 
 def read_fund_holdings_for_backtest(code: str) -> list[dict[str, Any]]:
@@ -2018,22 +2065,11 @@ def read_fund_holdings_for_backtest(code: str) -> list[dict[str, Any]]:
 
 
 def configured_fund_codes_from_constants() -> list[str]:
-    constants_path = ROOT_DIR / "src" / "constants.ts"
-    try:
-        text = constants_path.read_text(encoding="utf-8")
-    except OSError:
-        return []
-    return list(dict.fromkeys(re.findall(r"code:\s*'(\d{6})'", text)))
+    return universe_fund_codes()
 
 
 def configured_sina_symbols_from_constants() -> list[str]:
-    constants_path = ROOT_DIR / "src" / "constants.ts"
-    try:
-        text = constants_path.read_text(encoding="utf-8")
-    except OSError:
-        return []
-    symbols = re.findall(r"sinaSymbol:\s*'([A-Za-z0-9_]+)'", text)
-    return sorted(dict.fromkeys(symbol for symbol in symbols if SINA_SYMBOL_RE.fullmatch(symbol)))
+    return universe_sina_symbols()
 
 
 def configured_quote_symbols() -> list[str]:
@@ -2080,22 +2116,7 @@ def quote_group_refresh_interval(symbols: list[str], now: datetime | None = None
 
 
 def configured_market_return_items_from_constants() -> list[str]:
-    constants_path = ROOT_DIR / "src" / "constants.ts"
-    try:
-        text = constants_path.read_text(encoding="utf-8")
-    except OSError:
-        return []
-    pairs = re.findall(
-        r"history:\s*\{\s*source:\s*'([^']+)'\s*,\s*symbol:\s*'([^']+)'",
-        text,
-    )
-    items = [
-        f"{source}:{symbol}"
-        for source, symbol in pairs
-        if source in {"sina-cn", "sina-us", "sina-futures", "tencent-hk"}
-        and MARKET_HISTORY_SYMBOL_RE.fullmatch(symbol)
-    ]
-    return sorted(dict.fromkeys(items))
+    return universe_market_return_items()
 
 
 def prewarm_response_cache() -> None:
@@ -3159,24 +3180,44 @@ def compute_fund_backtest(code: str, days: int, *, refresh: bool = False) -> dic
         if cached and time.monotonic() - cached[0] < _BACKTEST_RESULT_CACHE_TTL_SECONDS:
             return cached[1]
 
-    holdings = read_fund_holdings_for_backtest(code)
-    holdings = [item for item in holdings if item.get("sinaSymbol")]
+    snapshots = read_fund_holding_snapshots(code)
+    if not snapshots:
+        fallback_holdings = [item for item in read_fund_holdings_for_backtest(code) if item.get("sinaSymbol")]
+        fallback_date = str(fallback_holdings[0].get("reportDate") or "1900-01-01") if fallback_holdings else "1900-01-01"
+        snapshots = [(fallback_date, fallback_holdings)] if fallback_holdings else []
+    snapshots = [
+        (report_date, [item for item in holdings if item.get("sinaSymbol")])
+        for report_date, holdings in snapshots
+    ]
+    all_holdings = [item for _report_date, holdings in snapshots for item in holdings]
     nav_changes = read_fund_nav_changes(code, days)
-    if not holdings or len(nav_changes) < 2:
+    if not all_holdings or len(nav_changes) < 2:
         return None
 
     if refresh:
-        for symbol in dict.fromkeys(str(item.get("sinaSymbol") or "") for item in holdings):
+        for symbol in dict.fromkeys(str(item.get("sinaSymbol") or "") for item in all_holdings):
             if symbol:
                 fetch_and_store_stock_history(symbol, refresh=True)
 
     start_date = nav_changes[0][0]
     end_date = nav_changes[-1][0]
-    changes = read_stock_changes([str(item["sinaSymbol"]) for item in holdings], start_date, end_date)
-    total_weight = sum(float(item.get("weight") or 0) for item in holdings)
+    changes = read_stock_changes([str(item["sinaSymbol"]) for item in all_holdings], start_date, end_date)
+    fx_changes = read_fx_changes([str(item.get("currency") or "CNY") for item in all_holdings], start_date, end_date)
     points: list[dict[str, float]] = []
 
+    def holdings_for_date(date: str) -> list[dict[str, Any]]:
+        # A report becomes broadly available after publication; 45 days avoids
+        # applying quarter-end holdings before investors could know them.
+        available = [
+            holdings
+            for report_date, holdings in snapshots
+            if (datetime.fromisoformat(report_date).date() + timedelta(days=45)).isoformat() <= date
+        ]
+        return available[-1] if available else snapshots[0][1]
+
     for date, actual_change in nav_changes:
+        holdings = holdings_for_date(date)
+        total_weight = sum(float(item.get("weight") or 0) for item in holdings)
         predicted = 0.0
         covered_weight = 0.0
         for item in holdings:
@@ -3184,7 +3225,10 @@ def compute_fund_backtest(code: str, days: int, *, refresh: bool = False) -> dic
             change = changes.get(str(item["sinaSymbol"]), {}).get(date)
             if change is None:
                 continue
-            predicted += weight * change
+            currency = str(item.get("currency") or "CNY")
+            fx_change = fx_changes.get(currency, {}).get(date, 0.0)
+            rmb_change = ((1 + change / 100) * (1 + fx_change / 100) - 1) * 100
+            predicted += weight * rmb_change
             covered_weight += weight
         if covered_weight <= 0:
             continue
@@ -3246,7 +3290,9 @@ def compute_fund_backtest(code: str, days: int, *, refresh: bool = False) -> dic
 
     store_backtest_points(code, points)
     coverage_avg = sum(float(point["coverage"]) for point in points) / len(points)
-    top_holding_weight = total_weight * 100
+    latest_holdings = snapshots[-1][1]
+    latest_total_weight = sum(float(item.get("weight") or 0) for item in latest_holdings)
+    top_holding_weight = latest_total_weight * 100
     train_summary = {
         "raw": backtest_metrics(train_points, "predictedChange"),
         "linear": backtest_metrics(train_points, "rawFittedChange"),
@@ -3267,8 +3313,10 @@ def compute_fund_backtest(code: str, days: int, *, refresh: bool = False) -> dic
         "validationSampleCount": len(validation_points),
         "startDate": points[0]["date"],
         "endDate": points[-1]["date"],
-        "holdingCount": len(holdings),
-        "supportedHoldingCount": len([item for item in holdings if stock_history_url(str(item.get("sinaSymbol") or ""))]),
+        "holdingCount": len(latest_holdings),
+        "holdingSnapshotCount": len(snapshots),
+        "supportedHoldingCount": len([item for item in latest_holdings if stock_history_url(str(item.get("sinaSymbol") or ""))]),
+        "fxHistoryCurrencies": sorted(fx_changes),
         "coverageAvg": round(coverage_avg * 100, 2),
         "topHoldingWeight": round(top_holding_weight, 2),
         "fit": {"alpha": round(alpha, 4), "beta": round(beta, 4), "source": "predictedChange"},
@@ -3287,8 +3335,8 @@ def compute_fund_backtest(code: str, days: int, *, refresh: bool = False) -> dic
         "fitted": backtest_metrics(points, "fittedChange"),
         "points": points,
         "limitations": [
-            "当前版本使用最新披露/配置的前十大持仓回测，尚未按历史季度切换持仓。",
-            "历史汇率暂未纳入，外币持仓回测使用股票本币涨跌。",
+            "回测会按报告期切换已保存的前十大持仓；缺少早期报告时使用最早可用持仓。",
+            "历史汇率按本地已沉淀交易日数据纳入；缺失日期按汇率涨跌 0 处理。",
             "未披露持仓、现金仓位和基金费用会体现在残差中。",
         ],
     }
@@ -3679,14 +3727,7 @@ def quote_snapshot_health(now: datetime | None = None) -> dict[str, Any]:
             continue
         captured_at = int(row[1])
         age_seconds = max((current_ms - captured_at) // 1000, 0)
-        market = market_key_for_symbol(symbol)
-        continuous = market in {"us_futures", "hk_futures", "jp_futures", "crypto"}
-        if current_state["state"] == "live":
-            max_age = 10 * 60 if continuous else 5 * 60
-        elif current_state["state"] == "break":
-            max_age = 10 * 60
-        else:
-            max_age = 25 * 60
+        max_age = quote_snapshot_max_age_seconds(symbol, current_state) + 60
         source = str(row[4])
         validation_status = str(row[8])
         if source in {"fallback", "normalized"}:
@@ -3896,7 +3937,7 @@ def add_response_headers(response: Response) -> Response:
             )
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Diagnostics-Token"
     return response
 
 
@@ -3913,7 +3954,22 @@ def handle_error(exc: Exception) -> Response:
 
 @app.get("/api/health")
 def health() -> Response:
-    return jsonify({"ok": True, "db": str(DB_PATH)})
+    return jsonify({"ok": True})
+
+
+@app.get("/api/ready")
+def readiness() -> Response:
+    try:
+        with get_conn() as conn:
+            conn.execute("SELECT 1").fetchone()
+    except sqlite3.Error:
+        return jsonify({"ready": False, "database": "unavailable"}), 503
+    worker = background_refresh_state_snapshot()
+    return jsonify({
+        "ready": True,
+        "database": "ok",
+        "workerLastSuccessAt": int(worker.get("lastSuccessAt", 0) or 0),
+    })
 
 
 @app.get("/api/datahealth")
@@ -3922,12 +3978,32 @@ def data_health() -> Response:
     return cached_json_response("api:datahealth", 30, build_data_health_payload)
 
 
+@app.get("/api/status")
+def public_status() -> Response:
+    enforce_rate_limit("status")
+
+    def build() -> dict[str, Any]:
+        quote_state = quote_snapshot_health()
+        worker = background_refresh_state_snapshot()
+        worker_last_success = int(worker.get("lastSuccessAt", 0) or 0)
+        worker_fresh = worker_last_success > 0 and now_ms() - worker_last_success <= 20 * 60 * 1000
+        return {
+            "status": "ok" if quote_state["issueCount"] == 0 and worker_fresh else "degraded",
+            "updatedAt": now_ms(),
+            "quoteIssueCount": int(quote_state["issueCount"]),
+            "quoteTotal": int(quote_state["total"]),
+            "workerLastSuccessAt": worker_last_success,
+        }
+
+    return cached_json_response("api:status", 30, build)
+
+
 @app.get("/api/diagnostics/quotes")
 def quote_diagnostics() -> Response:
     enforce_rate_limit("diagnostics")
     expected_token = os.environ.get("FUND_VALUATION_DIAGNOSTICS_TOKEN", "")
     provided_token = request.headers.get("X-Diagnostics-Token", "")
-    if expected_token and not hmac.compare_digest(provided_token, expected_token):
+    if not expected_token or not hmac.compare_digest(provided_token, expected_token):
         return json_response({"error": "Forbidden"}, status=403)
     payload = quote_snapshot_health()
     payload["backgroundRefresh"] = background_refresh_state_snapshot()
@@ -4089,6 +4165,8 @@ def build_dashboard_payload(
             )
             if status < 400:
                 fx_text = decode_body(body)
+        if fx_text:
+            store_fx_daily_history(fx_text)
 
     try:
         captured_symbols = [
@@ -4101,6 +4179,7 @@ def build_dashboard_payload(
         print(f"[quote-snapshot] failed: {exc}", flush=True)
     return {
         "quotesText": sina_text,
+        "quotes": normalize_quote_text(sina_text, int(now.timestamp() * 1000)),
         "fxText": fx_text,
         "marketStates": market_states,
     }

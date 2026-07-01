@@ -5,18 +5,23 @@ import re
 import sqlite3
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TypeVar
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
+
+from .config import configured_fund_codes, configured_market_return_items
 
 from .server import (
     DB_PATH,
-    ROOT_DIR,
     cache_any,
     decode_body,
     ensure_storage,
     fetch_upstream,
     market_history_url,
     parse_jsonp_call,
+    parse_fund_holdings,
+    store_fund_holdings,
     store_fund_history,
     store_market_history,
 )
@@ -45,24 +50,34 @@ def unique(items: list[str]) -> list[str]:
 
 
 def load_targets() -> tuple[list[str], list[MarketTarget]]:
-    constants_path = ROOT_DIR / "src" / "constants.ts"
-    text = constants_path.read_text(encoding="utf-8")
+    markets = [
+        MarketTarget(source=item.split(":", 1)[0], symbol=item.split(":", 1)[1])
+        for item in configured_market_return_items()
+    ]
+    return configured_fund_codes(), markets
 
-    fund_codes = unique(re.findall(r"code:\s*'(\d+)'", text))
-    market_pairs = re.findall(
-        r"history:\s*\{\s*source:\s*'([^']+)'\s*,\s*symbol:\s*'([^']+)'",
-        text,
-    )
-    markets: list[MarketTarget] = []
-    seen_markets: set[tuple[str, str]] = set()
-    for source, symbol in market_pairs:
-        key = (source, symbol)
-        if key in seen_markets:
-            continue
-        seen_markets.add(key)
-        markets.append(MarketTarget(source=source, symbol=symbol))
 
-    return fund_codes, markets
+def backfill_fund_holdings(code: str, years: int) -> int:
+    stored_periods = 0
+    current_year = datetime.now(ZoneInfo("Asia/Shanghai")).year
+    for year in range(current_year, current_year - max(years, 0), -1):
+        for quarter in (4, 3, 2, 1):
+            query = urlencode({"type": "jjcc", "code": code, "topline": 10, "year": year, "month": quarter})
+            status, _, body = fetch_upstream(
+                f"https://fundf10.eastmoney.com/FundArchivesDatas.aspx?{query}",
+                referer=f"https://fundf10.eastmoney.com/ccmx_{code}.html",
+                content_type="text/plain; charset=utf-8",
+                cache_key=f"fundholdings:{code}:{year}:{quarter}",
+                kind="fundholdings",
+                ttl_seconds=24 * 60 * 60,
+            )
+            if status >= 400:
+                continue
+            holdings = parse_fund_holdings(code, decode_body(body))
+            if holdings:
+                store_fund_holdings(code, holdings)
+                stored_periods += 1
+    return stored_periods
 
 
 def count_rows(table: str, where: str, params: tuple[str, ...]) -> int:
@@ -245,6 +260,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES, help="Maximum fund pages per fund")
     parser.add_argument("--fund-limit", type=int, help="Limit fund count, useful for smoke checks")
     parser.add_argument("--market-limit", type=int, help="Limit market count, useful for smoke checks")
+    parser.add_argument("--holdings-years", type=int, default=0, help="Also backfill quarterly holdings for N years")
     return parser.parse_args()
 
 
@@ -278,6 +294,9 @@ def main() -> None:
             )
             total_new_fund_rows += new_rows
             print(f"[fund {index}/{len(fund_codes)}] {code}: +{new_rows} rows ({fetched_rows} fetched)", flush=True)
+            if args.holdings_years > 0 and not args.cache_only:
+                periods = backfill_fund_holdings(code, args.holdings_years)
+                print(f"[holdings {index}/{len(fund_codes)}] {code}: {periods} periods", flush=True)
 
     total_new_market_rows = 0
     if not args.skip_markets:

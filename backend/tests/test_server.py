@@ -45,6 +45,7 @@ class ServerDataRefreshTests(unittest.TestCase):
                 DELETE FROM market_history;
                 DELETE FROM market_calendar;
                 DELETE FROM stock_daily_history;
+                DELETE FROM fx_daily_history;
                 DELETE FROM fund_estimate_backtest;
                 DELETE FROM market_quote_snapshots;
                 DELETE FROM background_jobs;
@@ -269,6 +270,8 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(second.status_code, 200)
         payload = first.get_json()
         self.assertIn("上证指数", payload["quotesText"])
+        self.assertAlmostEqual(payload["quotes"]["s_sh000001"]["price"], 3000.0)
+        self.assertAlmostEqual(payload["quotes"]["s_sh000001"]["changePercent"], 0.33)
         self.assertIn("美元人民币", payload["fxText"])
         self.assertEqual(payload["marketStates"]["s_sh000001"]["state"], "live")
         self.assertEqual(first.headers.get("X-Cache"), "MISS")
@@ -865,8 +868,9 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(health["issueCount"], 1)
         self.assertEqual(health["issues"][0]["symbol"], "sz399006")
 
-    def test_quote_diagnostics_supports_optional_token(self) -> None:
+    def test_quote_diagnostics_requires_configured_token(self) -> None:
         client = server.app.test_client()
+        self.assertEqual(client.get("/api/diagnostics/quotes").status_code, 403)
         with patch.dict(os.environ, {"FUND_VALUATION_DIAGNOSTICS_TOKEN": "secret"}):
             denied = client.get("/api/diagnostics/quotes")
             allowed = client.get("/api/diagnostics/quotes", headers={"X-Diagnostics-Token": "secret"})
@@ -874,6 +878,32 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(allowed.status_code, 200)
         self.assertIn("backgroundRefresh", allowed.get_json())
+
+    def test_health_does_not_expose_database_path_and_readiness_checks_db(self) -> None:
+        client = server.app.test_client()
+        health = client.get("/api/health")
+        ready = client.get("/api/ready")
+
+        self.assertEqual(health.get_json(), {"ok": True})
+        self.assertEqual(ready.status_code, 200)
+        self.assertTrue(ready.get_json()["ready"])
+        self.assertNotIn("db", health.get_json())
+
+    def test_shared_universe_supplies_funds_holdings_and_market_targets(self) -> None:
+        codes = server.configured_fund_codes_from_constants()
+        holdings = server.parse_default_fund_holdings_from_constants(codes[0])
+
+        self.assertEqual(len(codes), 17)
+        self.assertGreater(len(holdings), 0)
+        self.assertRegex(holdings[0]["sinaSymbol"], r"^[A-Za-z0-9_]+$")
+        self.assertIn("sina-cn:sh000001", server.configured_market_return_items_from_constants())
+
+    def test_fx_daily_history_is_persisted_for_backtests(self) -> None:
+        text = 'var hq_str_fx_susdcny="美元人民币,7.1000,0,0,0,0,0,0,0,09:30:00,0.12,2026-06-29";'
+
+        self.assertEqual(server.store_fx_daily_history(text), 1)
+        changes = server.read_fx_changes(["USD"], "2026-06-01", "2026-06-30")
+        self.assertAlmostEqual(changes["USD"]["2026-06-29"], 0.12)
 
     def test_fund_profiles_parses_basic_profile(self) -> None:
         upstream_body = """
