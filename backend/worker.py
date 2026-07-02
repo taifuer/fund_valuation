@@ -24,6 +24,7 @@ from .server import (
     prune_quote_snapshots,
     quote_group_refresh_interval,
     quote_symbol_groups,
+    refresh_ecb_fx_history,
     refresh_configured_fund_history,
     refresh_configured_market_history,
     release_background_job,
@@ -104,6 +105,8 @@ def main() -> None:
                     try:
                         errors.extend(refresh_configured_fund_history())
                         errors.extend(refresh_configured_market_history())
+                        if refresh_ecb_fx_history() <= 0:
+                            errors.append("fx-history: no ECB rows stored")
                         prewarm_response_cache()
                         tasks.append("history")
                     except Exception as exc:

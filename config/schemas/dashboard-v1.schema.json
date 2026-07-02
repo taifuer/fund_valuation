@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/taifuer/fund_valuation/config/schemas/dashboard-v1.schema.json",
+  "title": "Dashboard snapshot v1",
+  "type": "object",
+  "required": ["schemaVersion", "quotes", "quotesText", "fxText", "marketStates"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "quotes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["symbol", "price", "previousClose", "changePercent", "fetchedAt"],
+        "properties": {
+          "symbol": { "type": "string" },
+          "price": { "type": "number", "exclusiveMinimum": 0 },
+          "previousClose": { "type": "number", "exclusiveMinimum": 0 },
+          "changePercent": { "type": "number" },
+          "fetchedAt": { "type": "integer" }
+        }
+      }
+    },
+    "quotesText": { "type": "string" },
+    "fxText": { "type": "string" },
+    "marketStates": { "type": "object" }
+  }
+}

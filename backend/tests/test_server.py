@@ -14,6 +14,7 @@ _TEMP_DATA = tempfile.TemporaryDirectory()
 os.environ["FUND_VALUATION_DATA_DIR"] = _TEMP_DATA.name
 
 from backend import server  # noqa: E402
+from backend.fx_history import parse_ecb_reference_rates  # noqa: E402
 
 
 class FakeResponse:
@@ -269,6 +270,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
         payload = first.get_json()
+        self.assertEqual(payload["schemaVersion"], 1)
         self.assertIn("上证指数", payload["quotesText"])
         self.assertAlmostEqual(payload["quotes"]["s_sh000001"]["price"], 3000.0)
         self.assertAlmostEqual(payload["quotes"]["s_sh000001"]["changePercent"], 0.33)
@@ -369,7 +371,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         text = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("44946.64", text)
-        self.assertIn('var hq_str_int_nikkei="日经225,69174.75,-613.63,-0.88,2026-06-24";', text)
+        self.assertIn('var hq_str_int_nikkei="日经225,69174.75,-613.63,-0.88,2026-06-24,14:30:01";', text)
 
     def test_sina_proxy_uses_sina_world_index_fallback_for_taiwan(self) -> None:
         stale_body = (
@@ -394,7 +396,7 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         text = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn('var hq_str_b_TWSE="台湾加权,46465.20,587.81,1.28,2026-06-19";', text)
+        self.assertIn('var hq_str_b_TWSE="台湾加权,46465.20,587.81,1.28,2026-06-19,15:21:45";', text)
 
     def test_sina_proxy_drops_stale_taiwan_when_fallback_unavailable(self) -> None:
         stale_body = (
@@ -878,6 +880,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(allowed.status_code, 200)
         self.assertIn("backgroundRefresh", allowed.get_json())
+        self.assertIn("requestMetrics", allowed.get_json())
 
     def test_health_does_not_expose_database_path_and_readiness_checks_db(self) -> None:
         client = server.app.test_client()
@@ -887,7 +890,17 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(health.get_json(), {"ok": True})
         self.assertEqual(ready.status_code, 200)
         self.assertTrue(ready.get_json()["ready"])
+        self.assertEqual(ready.get_json()["schemaVersion"], 2)
         self.assertNotIn("db", health.get_json())
+        self.assertRegex(health.headers["X-Request-ID"], r"^[a-f0-9]{32}$")
+        self.assertEqual(health.headers["X-API-Schema-Version"], "1")
+
+    def test_api_meta_exposes_supported_contract_versions(self) -> None:
+        response = server.app.test_client().get("/api/meta", headers={"X-Request-ID": "test-request-1"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["X-Request-ID"], "test-request-1")
+        self.assertEqual(response.get_json(), {"apiSchemaVersion": 1, "dashboardSchemaVersion": 1})
 
     def test_shared_universe_supplies_funds_holdings_and_market_targets(self) -> None:
         codes = server.configured_fund_codes_from_constants()
@@ -904,6 +917,25 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(server.store_fx_daily_history(text), 1)
         changes = server.read_fx_changes(["USD"], "2026-06-01", "2026-06-30")
         self.assertAlmostEqual(changes["USD"]["2026-06-29"], 0.12)
+
+    def test_ecb_reference_rates_are_crossed_to_cny_and_stored_with_daily_changes(self) -> None:
+        text = "\n".join([
+            "CURRENCY,TIME_PERIOD,OBS_VALUE",
+            "CNY,2026-06-30,7.7000",
+            "USD,2026-06-30,1.1000",
+            "JPY,2026-06-30,170.0000",
+            "CNY,2026-07-01,7.7700",
+            "USD,2026-07-01,1.1100",
+            "JPY,2026-07-01,171.0000",
+        ])
+
+        parsed = parse_ecb_reference_rates(text)
+        self.assertIn(("EUR", "2026-06-30", 7.7), parsed)
+        self.assertIn(("USD", "2026-06-30", 7.0), parsed)
+        self.assertEqual(server.store_ecb_reference_rates(text, 123), 6)
+        changes = server.read_fx_changes(["USD", "EUR"], "2026-06-30", "2026-07-01")
+        self.assertAlmostEqual(changes["USD"]["2026-07-01"], 0.0)
+        self.assertAlmostEqual(changes["EUR"]["2026-07-01"], (7.77 / 7.7 - 1) * 100)
 
     def test_fund_profiles_parses_basic_profile(self) -> None:
         upstream_body = """

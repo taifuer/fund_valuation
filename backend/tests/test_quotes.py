@@ -57,6 +57,17 @@ class QuoteNormalizationTests(unittest.TestCase):
 
         self.assertIsNone(record)
 
+    def test_kospi_timestamp_is_already_beijing_time(self) -> None:
+        record = normalize_quote_line(
+            "b_KOSPI",
+            'var hq_str_b_KOSPI="韩国KOSPI指数,7648.09,-655.32,-7.89,2:27 AM,14:27:00,2026-07-02,14:33:00,7933.10,8303.41";',
+            captured_at("2026-07-02T14:34:00"),
+        )
+
+        self.assertIsNotNone(record)
+        assert record is not None
+        self.assertEqual(record["time"], "2026-07-02 14:33:00")
+
 
 if __name__ == "__main__":
     unittest.main()

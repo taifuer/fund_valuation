@@ -42,5 +42,16 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  db-tools:
+    build:
+      context: .
+      target: backend
+    command: ["python", "-m", "backend.db_admin", "status"]
+    environment:
+      FUND_VALUATION_DATA_DIR: /app/data
+    volumes:
+      - fund-data:/app/data
+    profiles: [tools]
+
 volumes:
   fund-data:

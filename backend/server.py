@@ -36,12 +36,11 @@ from .config import (
     default_fund_holdings as universe_fund_holdings,
 )
 from .quotes import normalize_quote_text
+from .contracts import API_SCHEMA_VERSION, DASHBOARD_SCHEMA_VERSION, validate_dashboard_payload
+from .observability import REQUEST_METRICS, log_event
+from .fx_history import fx_history_summary, latest_fx_history_date, store_ecb_reference_rates
+from .storage import DATA_DIR, DB_PATH, RAW_DIR, ROOT_DIR, SCHEMA_VERSION, get_conn, ensure_storage as ensure_database_storage
 
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = Path(os.environ.get("FUND_VALUATION_DATA_DIR", ROOT_DIR / "data"))
-DB_PATH = DATA_DIR / "fund_valuation.db"
-RAW_DIR = DATA_DIR / "raw"
 
 DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -95,6 +94,7 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "dashboard": (180, 60),
     "overview": (180, 60),
     "status": (120, 60),
+    "meta": (120, 60),
     "datahealth": (120, 60),
     "diagnostics": (30, 60),
     "marketstates": (240, 60),
@@ -115,7 +115,7 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "fundbacktest_refresh": (6, 60),
 }
 
-BACKTEST_MODEL_VERSION = "quarterly_holdings_fx_v2"
+BACKTEST_MODEL_VERSION = "quarterly_holdings_fx_v3"
 EASTMONEY_GLOBAL_QUOTES: dict[str, tuple[str, str]] = {
     "int_nikkei": ("100.N225", "日经指数"),
 }
@@ -131,171 +131,12 @@ def now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def get_conn() -> sqlite3.Connection:
-    """Open a SQLite connection with busy_timeout + synchronous=NORMAL for safe
-    concurrent access.
-
-    journal_mode=WAL is set once in ensure_storage() (it persists in the DB file
-    header), so we do not re-issue it on every short-lived connection — that
-    would be a redundant round-trip on hot paths like market_state_for_symbol
-    which open several connections per symbol.
-
-    All DB access in this module should go through this helper so the background
-    refresh thread, request threads, and ad-hoc refresh threads do not deadlock
-    on the default zero busy timeout.
-    """
-    conn = sqlite3.connect(DB_PATH, timeout=5.0)
-    conn.execute("PRAGMA busy_timeout = 5000")
-    conn.execute("PRAGMA synchronous = NORMAL")
-    return conn
-
-
 def beijing_today() -> str:
     return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
 
 def ensure_storage() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    RAW_DIR.mkdir(parents=True, exist_ok=True)
-    # Set WAL mode once (it persists in the DB file header). Done here rather
-    # than per-connection in get_conn() to avoid a redundant PRAGMA round-trip
-    # on every short-lived connection.
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("PRAGMA journal_mode = WAL")
-    with get_conn() as conn:
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS response_cache (
-              cache_key TEXT PRIMARY KEY,
-              url TEXT NOT NULL,
-              status INTEGER NOT NULL,
-              content_type TEXT NOT NULL,
-              body BLOB NOT NULL,
-              fetched_at INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS fund_nav_history (
-              code TEXT NOT NULL,
-              date TEXT NOT NULL,
-              nav REAL NOT NULL,
-              change_percent REAL NOT NULL,
-              fetched_at INTEGER NOT NULL,
-              PRIMARY KEY (code, date)
-            );
-
-            CREATE TABLE IF NOT EXISTS fund_purchase_status (
-              code TEXT PRIMARY KEY,
-              name TEXT NOT NULL,
-              fund_type TEXT NOT NULL,
-              nav_date TEXT NOT NULL,
-              purchase_status TEXT NOT NULL,
-              redeem_status TEXT NOT NULL,
-              next_open_date TEXT NOT NULL,
-              min_purchase TEXT NOT NULL,
-              daily_limit TEXT NOT NULL,
-              fee_rate TEXT NOT NULL,
-              fetched_at INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS fund_holdings (
-              code TEXT NOT NULL,
-              report_date TEXT NOT NULL,
-              rank INTEGER NOT NULL,
-              stock_code TEXT NOT NULL,
-              stock_name TEXT NOT NULL,
-              weight REAL NOT NULL,
-              market TEXT NOT NULL,
-              sina_symbol TEXT NOT NULL,
-              currency TEXT NOT NULL,
-              fetched_at INTEGER NOT NULL,
-              PRIMARY KEY (code, report_date, rank)
-            );
-
-            CREATE TABLE IF NOT EXISTS market_history (
-              source TEXT NOT NULL,
-              symbol TEXT NOT NULL,
-              date TEXT NOT NULL,
-              close REAL NOT NULL,
-              fetched_at INTEGER NOT NULL,
-              PRIMARY KEY (source, symbol, date)
-            );
-
-            CREATE TABLE IF NOT EXISTS stock_daily_history (
-              sina_symbol TEXT NOT NULL,
-              date TEXT NOT NULL,
-              close REAL NOT NULL,
-              change_percent REAL NOT NULL,
-              fetched_at INTEGER NOT NULL,
-              PRIMARY KEY (sina_symbol, date)
-            );
-
-            CREATE TABLE IF NOT EXISTS fx_daily_history (
-              currency TEXT NOT NULL,
-              date TEXT NOT NULL,
-              rate REAL NOT NULL,
-              change_percent REAL NOT NULL,
-              fetched_at INTEGER NOT NULL,
-              PRIMARY KEY (currency, date)
-            );
-
-            CREATE TABLE IF NOT EXISTS fund_estimate_backtest (
-              code TEXT NOT NULL,
-              date TEXT NOT NULL,
-              model_version TEXT NOT NULL,
-              predicted_change REAL NOT NULL,
-              fitted_change REAL NOT NULL,
-              actual_change REAL NOT NULL,
-              error REAL NOT NULL,
-              fitted_error REAL NOT NULL,
-              coverage REAL NOT NULL,
-              fetched_at INTEGER NOT NULL,
-              PRIMARY KEY (code, date, model_version)
-            );
-
-            CREATE TABLE IF NOT EXISTS market_calendar (
-              market TEXT NOT NULL,
-              date TEXT NOT NULL,
-              status TEXT NOT NULL,
-              sessions TEXT NOT NULL,
-              timezone TEXT NOT NULL,
-              source TEXT NOT NULL,
-              fetched_at INTEGER NOT NULL,
-              PRIMARY KEY (market, date)
-            );
-
-            CREATE TABLE IF NOT EXISTS background_jobs (
-              name TEXT PRIMARY KEY,
-              owner TEXT NOT NULL,
-              lease_until INTEGER NOT NULL,
-              last_run_at INTEGER NOT NULL,
-              last_success_at INTEGER NOT NULL,
-              last_error_at INTEGER NOT NULL,
-              last_error TEXT NOT NULL,
-              run_count INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS market_quote_snapshots (
-              symbol TEXT NOT NULL,
-              bucket_at INTEGER NOT NULL,
-              captured_at INTEGER NOT NULL,
-              quote_time TEXT NOT NULL,
-              market_state TEXT NOT NULL,
-              source TEXT NOT NULL,
-              price REAL,
-              previous_close REAL,
-              change_percent REAL,
-              validation_status TEXT NOT NULL,
-              validation_message TEXT NOT NULL,
-              raw_line TEXT NOT NULL,
-              sanitized_line TEXT NOT NULL,
-              PRIMARY KEY (symbol, bucket_at)
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_market_quote_snapshots_captured
-              ON market_quote_snapshots(captured_at);
-
-            """
-        )
+    ensure_database_storage()
     ensure_market_calendar_seeded()
 
 
@@ -1031,12 +872,18 @@ def sina_global_fallback_quote_line(symbol: str) -> str | None:
         change_percent = float(fields[3])
     except (TypeError, ValueError):
         return None
-    date = next((field for field in fields[4:] if re.match(r"^\d{4}-\d{2}-\d{2}$", field)), "")
+    date_index = next(
+        (index for index in range(4, len(fields)) if re.match(r"^\d{4}-\d{2}-\d{2}$", fields[index])),
+        -1,
+    )
+    date = fields[date_index] if date_index >= 0 else ""
     if not date:
         return None
     if not quote_date_is_usable(symbol, date):
         return None
-    return f'var hq_str_{symbol}="{fallback_name},{price:.2f},{change:.2f},{change_percent:.2f},{date}";'
+    time_text = fields[date_index + 1] if date_index + 1 < len(fields) and re.match(r"^\d{1,2}:\d{2}(?::\d{2})?$", fields[date_index + 1]) else ""
+    timestamp = f",{date},{time_text}" if time_text else f",{date}"
+    return f'var hq_str_{symbol}="{fallback_name},{price:.2f},{change:.2f},{change_percent:.2f}{timestamp}";'
 
 
 def eastmoney_global_quote_line(symbol: str) -> str | None:
@@ -2053,6 +1900,30 @@ def read_fx_changes(currencies: list[str], start_date: str, end_date: str) -> di
     for currency, date, change_percent in rows:
         results.setdefault(str(currency), {})[str(date)] = float(change_percent)
     return results
+
+
+def refresh_ecb_fx_history(*, start_date: str | None = None, force_refresh: bool = False) -> int:
+    if not start_date:
+        latest_date = latest_fx_history_date()
+        if latest_date:
+            start_date = (datetime.fromisoformat(latest_date).date() - timedelta(days=7)).isoformat()
+        else:
+            start_date = (datetime.now(ZoneInfo("Asia/Shanghai")).date() - timedelta(days=6 * 366)).isoformat()
+    series = "D.CNY+USD+JPY+KRW+HKD.EUR.SP00.A"
+    query = urlencode({"startPeriod": start_date, "format": "csvdata"})
+    url = f"https://data-api.ecb.europa.eu/service/data/EXR/{series}?{query}"
+    status, _, body = fetch_upstream(
+        url,
+        referer="https://data.ecb.europa.eu/",
+        content_type="text/csv; charset=utf-8",
+        cache_key=f"fxhistory:ecb:{start_date}",
+        kind="fxhistory",
+        ttl_seconds=6 * 60 * 60,
+        force_refresh=force_refresh,
+    )
+    if status >= 400:
+        return 0
+    return store_ecb_reference_rates(decode_body(body), now_ms())
 
 
 def parse_default_fund_holdings_from_constants(code: str) -> list[dict[str, Any]]:
@@ -3920,6 +3791,8 @@ def start_background_refresh_scheduler() -> None:
 @app.before_request
 def mark_request_start() -> None:
     g.request_started_at = time.perf_counter()
+    incoming_request_id = request.headers.get("X-Request-ID", "")
+    g.request_id = incoming_request_id if re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", incoming_request_id) else uuid.uuid4().hex
 
 
 @app.after_request
@@ -3928,16 +3801,25 @@ def add_response_headers(response: Response) -> Response:
     if isinstance(started_at, float):
         elapsed_ms = (time.perf_counter() - started_at) * 1000
         response.headers["X-Elapsed-ms"] = f"{elapsed_ms:.1f}"
+        route = request.url_rule.rule if request.url_rule else request.path
+        cache_status = response.headers.get("X-Cache", "")
+        REQUEST_METRICS.record(route, response.status_code, elapsed_ms, cache_status)
         if elapsed_ms >= SLOW_REQUEST_LOG_MS:
-            cache_status = response.headers.get("X-Cache", "-")
-            print(
-                f"[slow-request] {request.method} {request.full_path.rstrip('?')} "
-                f"{response.status_code} {elapsed_ms:.1f}ms cache={cache_status}",
-                flush=True,
+            log_event(
+                "slow_request",
+                requestId=getattr(g, "request_id", ""),
+                method=request.method,
+                route=route,
+                status=response.status_code,
+                durationMs=round(elapsed_ms, 1),
+                cache=cache_status or "NONE",
             )
+    response.headers["X-Request-ID"] = getattr(g, "request_id", "")
+    response.headers["X-API-Schema-Version"] = str(API_SCHEMA_VERSION)
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Diagnostics-Token"
+    response.headers["Access-Control-Expose-Headers"] = "X-Request-ID, X-Elapsed-ms, X-API-Schema-Version, X-Cache"
     return response
 
 
@@ -3948,7 +3830,13 @@ def handle_error(exc: Exception) -> Response:
     if isinstance(exc, ValueError):
         return json_response({"error": str(exc) or "Invalid request"}, status=400)
     # Do not echo str(exc) for unexpected errors — it may leak upstream URLs/paths.
-    print(f"[handle_error] {type(exc).__name__}: {exc}", flush=True)
+    log_event(
+        "request_error",
+        requestId=getattr(g, "request_id", ""),
+        route=request.path,
+        exception=type(exc).__name__,
+        message=str(exc)[:300],
+    )
     return json_response({"error": "Upstream data error"}, status=502)
 
 
@@ -3957,17 +3845,30 @@ def health() -> Response:
     return jsonify({"ok": True})
 
 
+@app.get("/api/meta")
+def api_meta() -> Response:
+    enforce_rate_limit("meta")
+    return jsonify({
+        "apiSchemaVersion": API_SCHEMA_VERSION,
+        "dashboardSchemaVersion": DASHBOARD_SCHEMA_VERSION,
+    })
+
+
 @app.get("/api/ready")
 def readiness() -> Response:
     try:
         with get_conn() as conn:
             conn.execute("SELECT 1").fetchone()
+            database_version = int(conn.execute("PRAGMA user_version").fetchone()[0])
     except sqlite3.Error:
         return jsonify({"ready": False, "database": "unavailable"}), 503
+    if database_version != SCHEMA_VERSION:
+        return jsonify({"ready": False, "database": "migration-required", "schemaVersion": database_version}), 503
     worker = background_refresh_state_snapshot()
     return jsonify({
         "ready": True,
         "database": "ok",
+        "schemaVersion": database_version,
         "workerLastSuccessAt": int(worker.get("lastSuccessAt", 0) or 0),
     })
 
@@ -4007,6 +3908,8 @@ def quote_diagnostics() -> Response:
         return json_response({"error": "Forbidden"}, status=403)
     payload = quote_snapshot_health()
     payload["backgroundRefresh"] = background_refresh_state_snapshot()
+    payload["requestMetrics"] = REQUEST_METRICS.snapshot()
+    payload["fxHistory"] = fx_history_summary()
     return json_response(payload)
 
 
@@ -4177,12 +4080,13 @@ def build_dashboard_payload(
             store_quote_snapshots(raw_sina_text, fresh_sina_text, captured_symbols, market_states, now)
     except Exception as exc:
         print(f"[quote-snapshot] failed: {exc}", flush=True)
-    return {
+    return validate_dashboard_payload({
+        "schemaVersion": DASHBOARD_SCHEMA_VERSION,
         "quotesText": sina_text,
         "quotes": normalize_quote_text(sina_text, int(now.timestamp() * 1000)),
         "fxText": fx_text,
         "marketStates": market_states,
-    }
+    })
 
 
 @app.get("/api/dashboard")

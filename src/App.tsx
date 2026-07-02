@@ -292,7 +292,24 @@ export default function App() {
     document.body.style.overflow = 'hidden';
     managerDialogRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setFundManagerOpen(false);
+      if (event.key === 'Escape') {
+        setFundManagerOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab' || !managerDialogRef.current) return;
+      const focusable = [...managerDialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      )].filter((element) => !element.hasAttribute('hidden'));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => {

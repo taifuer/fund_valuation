@@ -5,7 +5,7 @@ import re
 import sqlite3
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TypeVar
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
@@ -21,6 +21,7 @@ from .server import (
     market_history_url,
     parse_jsonp_call,
     parse_fund_holdings,
+    refresh_ecb_fx_history,
     store_fund_holdings,
     store_fund_history,
     store_market_history,
@@ -261,6 +262,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fund-limit", type=int, help="Limit fund count, useful for smoke checks")
     parser.add_argument("--market-limit", type=int, help="Limit market count, useful for smoke checks")
     parser.add_argument("--holdings-years", type=int, default=0, help="Also backfill quarterly holdings for N years")
+    parser.add_argument("--fx-years", type=int, default=0, help="Backfill N years of ECB reference rates; default is incremental")
+    parser.add_argument("--skip-fx", action="store_true", help="Skip ECB historical exchange rates")
     return parser.parse_args()
 
 
@@ -310,7 +313,15 @@ def main() -> None:
                 flush=True,
             )
 
-    print(f"Done. New rows: funds +{total_new_fund_rows}, markets +{total_new_market_rows}", flush=True)
+    fx_rows = 0
+    if not args.skip_fx and not args.cache_only:
+        fx_start = None
+        if args.fx_years > 0:
+            fx_start = (datetime.now(ZoneInfo("Asia/Shanghai")).date() - timedelta(days=args.fx_years * 366)).isoformat()
+        fx_rows = refresh_ecb_fx_history(start_date=fx_start, force_refresh=not args.use_cache)
+        print(f"[fx] ECB reference rates: {fx_rows} rows stored", flush=True)
+
+    print(f"Done. New rows: funds +{total_new_fund_rows}, markets +{total_new_market_rows}, fx {fx_rows}", flush=True)
 
 
 if __name__ == "__main__":

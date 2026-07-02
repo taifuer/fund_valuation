@@ -57,14 +57,6 @@ def dated_field(fields: list[str]) -> tuple[str, str]:
     return "", ""
 
 
-def korea_time_to_beijing(date: str, time_text: str) -> str:
-    try:
-        local = datetime.fromisoformat(f"{date}T{time_text}").replace(tzinfo=ZoneInfo("Asia/Seoul"))
-        return local.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        return combine_date_time(date, time_text)
-
-
 def us_extended_datetime(raw: str, fallback_year: str) -> tuple[str, str | None]:
     match = re.match(r"^([A-Za-z]{3})\s+(\d{1,2})\s+(\d{1,2}):(\d{2})(AM|PM)\s+(EDT|EST)$", raw)
     if not match or not fallback_year:
@@ -136,7 +128,9 @@ def normalize_quote_line(symbol: str, line: str, captured_at: int) -> dict[str, 
         change_percent = number(fields[3])
         previous_close = price - change if price is not None and change is not None else None
         date, time_text = dated_field(fields)
-        quote_time = korea_time_to_beijing(date, time_text) if symbol == "b_KOSPI" and time_text else combine_date_time(date, time_text)
+        # Sina's global-index feed already reports Asia-Pacific timestamps in
+        # Beijing time, including b_KOSPI. Do not subtract the Korea offset.
+        quote_time = combine_date_time(date, time_text)
     elif symbol == "fx_sbtcusd" and len(fields) >= 12:
         price = number(fields[1])
         change = number(fields[11])

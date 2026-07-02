@@ -1,5 +1,7 @@
 # 全球资产看板
 
+[![CI](https://github.com/taifuer/fund_valuation/actions/workflows/ci.yml/badge.svg)](https://github.com/taifuer/fund_valuation/actions/workflows/ci.yml)
+
 追踪全球指数、资产、ETF 与 QDII 主动基金，覆盖实时概览、区间收益、回撤风险和基金 T 日估算净值。
 
 ## 特性
@@ -80,8 +82,13 @@ fund_valuation/
 │   └── universe.json              # 前后端共用的标的与默认基金配置
 ├── backend/
 │   ├── config.py                  # 共享配置读取与校验
+│   ├── contracts.py               # API 契约版本与结构校验
+│   ├── db_admin.py                # SQLite 迁移、备份与恢复命令
+│   ├── fx_history.py              # ECB 历史参考汇率换算与入库
+│   ├── observability.py           # 请求指标与结构化日志
 │   ├── quotes.py                  # 行情响应结构化
 │   ├── server.py                  # Flask API（抓取 + SQLite 缓存）
+│   ├── storage.py                 # SQLite 连接与版本化迁移
 │   ├── wsgi.py                    # Gunicorn 生产入口
 │   ├── worker.py                  # 独立数据刷新、行情快照与清理进程
 │   └── backfill.py                # 历史数据增量回填脚本
@@ -136,7 +143,7 @@ open http://localhost:5173
 
 刷新 worker 使用 SQLite 租约避免多实例重复抓取，每分钟检查任务计划：现货开盘时行情每 60 秒更新，期货每 2 分钟更新，仅加密资产交易时每 5 分钟更新，全部闭市后降为 15 分钟；基金净值闭市后降为每小时，历史数据每小时检查一次，回测每日预热一次。`FUND_VALUATION_REFRESH_INTERVAL` 用于设置历史维护周期下限，`FUND_VALUATION_SNAPSHOT_RETENTION_DAYS` 用于调整行情快照保留天数。Web 进程优先读取 worker 快照，仅快照缺失或过期时冷启动抓取上游；内置刷新默认关闭，仅兼容旧部署时可显式设置 `FUND_VALUATION_BACKGROUND_REFRESH=1`。
 
-公开状态接口 `/api/status` 只返回汇总后的刷新状态。内部诊断页位于 `/diagnostics`，对应接口 `/api/diagnostics/quotes` 会返回快照缺失、延迟、兜底和异常值统计；必须设置 `FUND_VALUATION_DIAGNOSTICS_TOKEN`，并在诊断页输入同值令牌后才能查询。
+公开状态接口 `/api/status` 只返回汇总后的刷新状态，`/api/meta` 返回当前 API 契约版本。内部诊断页位于 `/diagnostics`，对应接口 `/api/diagnostics/quotes` 会返回快照缺失、延迟、兜底、请求耗时和缓存命中统计；必须设置 `FUND_VALUATION_DIAGNOSTICS_TOKEN`，并在诊断页输入同值令牌后才能查询。每个 API 响应都包含 `X-Request-ID`、`X-Elapsed-ms` 和 `X-API-Schema-Version` 响应头，慢请求与未处理异常使用 JSON 结构化日志输出。
 
 历史数据回填脚本默认读取 `config/universe.json` 中配置的基金、指数和资产，写入 `data/fund_valuation.db`。常用参数：
 
@@ -149,7 +156,20 @@ npm run backend:backfill -- --use-cache          # 优先复用 response_cache �
 npm run backend:backfill -- --fund-code 118001   # 额外回填自定义基金代码
 npm run backend:backfill -- --fund-codes 118001,457001
 npm run backend:backfill -- --holdings-years 5   # 补抓近 5 年季度持仓，用于历史回测
+npm run backend:backfill -- --fx-years 6         # 补抓近 6 年 ECB 参考汇率
+npm run backend:backfill -- --skip-fx            # 跳过历史汇率增量更新
 ```
+
+SQLite 会在后端、worker 或回填脚本启动时自动执行向前兼容的版本化迁移。常用维护命令：
+
+```bash
+npm run backend:db -- status
+npm run backend:db -- migrate
+npm run backend:db -- backup
+npm run backend:db -- restore data/backups/fund_valuation-YYYYMMDD-HHMMSS.db --confirm RESTORE
+```
+
+恢复前会自动备份当前数据库。生产恢复时仍建议先停止 backend 和 worker，完成后再启动服务。
 
 ## 构建部署
 
@@ -168,6 +188,13 @@ FUND_VALUATION_DIAGNOSTICS_TOKEN='replace-with-a-random-token' docker compose up
 
 默认访问 `http://localhost:8080`。`/api/health` 用于进程存活检查，`/api/ready` 同时检查 SQLite 是否可用。生产环境应通过 `.env` 或部署平台注入诊断令牌，不要写入仓库。
 
+容器内数据库维护可使用工具 profile：
+
+```bash
+docker compose --profile tools run --rm db-tools python -m backend.db_admin backup
+docker compose --profile tools run --rm db-tools python -m backend.db_admin status
+```
+
 ## 测试
 
 ```bash
@@ -175,6 +202,8 @@ npm test          # Python 后端测试 + Vitest 组件/逻辑测试 + 兼容逻
 npm run test:e2e  # Playwright 桌面端与移动端路由冒烟测试
 npm run build     # TypeScript 与生产构建校验
 ```
+
+`.github/workflows/ci.yml` 会在 `main`、`dev` 的 push 和 pull request 上并行执行上述后端、前端和浏览器测试，不需要仓库 Secrets。
 
 ## 演示
 
@@ -216,13 +245,14 @@ npm run build     # TypeScript 与生产构建校验
 - **T-1 官方净值**：来自天天基金/东方财富，为最近一个已公布的基金净值（通常为前一个美股交易日）
 - **T-1 净值涨跌幅**：来自东方财富历史净值数据，为官方净值相较前一天的日间涨跌
 - **T 日实时估算**：基于基金前十大持仓的实时行情，先做加权涨跌再按**已覆盖持仓权重归一化**后展示（外币持仓并入兑 CNY 汇率涨跌），与估值回测的 `normalizedChange` 口径一致；展开「持仓」标签页可查看原始加权涨跌与行情覆盖率。仅供参考，不代表基金实际净值。新增基金会优先使用后端抓取并入库的最新披露持仓；无法映射到可用行情代码的持仓会展示但不纳入估算。
-- **估值回测**：基金详情中的“回测”按报告披露可用时间切换已保存的季度前十大持仓，并在有数据时叠加对应币种的历史汇率涨跌，对比近 90 个官方净值日涨跌。回测会按时间拆分训练集和验证集，对比原始估算、线性拟合和覆盖率归一化拟合的验证误差；当前拟合结果只用于评估，不直接改写首页实时估值。
+- **估值回测**：基金详情中的“回测”按报告披露可用时间切换已保存的季度前十大持仓，并优先使用欧洲央行日度参考汇率换算外币持仓，对比近 90 个官方净值日涨跌。回测会按时间拆分训练集和验证集，对比原始估算、线性拟合和覆盖率归一化拟合的验证误差；当前拟合结果只用于评估，不直接改写首页实时估值。
 - **持仓数据**：基于基金最新季报/年报披露的前十大持仓，权重为近似值，可能因基金经理调仓而与实际有偏差。美股、港股、A 股等持仓会尽量映射到新浪行情；台股、日股、部分韩股等公开行情不足时可能缺少实时价格。
 
 ## 计算方式
 
 - **T 日实时估算**：对可获取实时行情的持仓按披露权重加权，`估算涨跌 = Σ(持仓权重 × 持仓实时涨跌幅)`；外币持仓会叠加对应实时汇率变化，未映射到行情源的持仓不参与估算。
 - **回测原始估算**：对历史净值日使用当时已公开的季度持仓及股票日 K 涨跌计算；外币持仓在已有汇率历史时按 `人民币涨跌 = (1 + 股票涨跌) × (1 + 汇率涨跌) - 1` 合并，再与同日官方净值涨跌对比。
+- **日期对齐**：回测按基金官方净值的估值日期匹配同一自然日的持仓市场收盘涨跌和 ECB 参考汇率；市场休市或某一序列缺失时不使用未来数据填补，覆盖权重不足的样本会被过滤。季度持仓按报告期结束后 45 天视为可用，避免提前使用尚未披露的信息。
 - **覆盖率归一化**：当只有部分持仓能获取历史行情时，按已覆盖权重放大，`归一化估算 = 原始估算 / 已覆盖持仓权重`；若覆盖权重不足，则该日样本会被过滤。
 - **线性拟合**：使用训练集拟合 `实际净值涨跌 = alpha + beta × 估算涨跌`，同时分别对原始估算和归一化估算拟合；验证集按 MAE、RMSE 和方向准确率对比原始估算、线性拟合和归一化线性拟合。
 - **推荐模型**：回测面板选择验证集 MAE 最低的模型作为建议模型，仅用于展示和评估估值偏差，暂不直接改写首页实时估算结果。
@@ -233,7 +263,8 @@ npm run build     # TypeScript 与生产构建校验
 - **实时行情延迟**：新浪财经行情可能存在延迟、暂停更新或字段缺失。非交易时段通常显示最近收盘价，美股盘前/盘后行情只在接口返回有效扩展交易价格时参与展示和估算。
 - **期货替代现货**：现货闭市时展示的期货价格只作为方向参考。期货合约与现货指数存在基差、汇率、利率、分红和换月影响，不能等同于现货指数涨跌。
 - **历史 K 线覆盖**：不同市场历史数据长度不一致。A 股新浪日 K 当前可获取的条数有限，因此 5年/全部区间可能不足完整 5 年；恒生指数和日经225使用对应期货历史，不是现货指数历史。
-- **回测局限**：回测会优先按历史季度切换已保存持仓并使用已有历史汇率，但公开持仓披露滞后、早期季度和汇率序列可能缺失，仍未纳入现金仓位、费用和未披露持仓；训练/验证拆分可以降低但不能消除短期样本过拟合风险。
+- **回测局限**：回测会优先按历史季度切换已保存持仓并使用已有历史汇率，但公开持仓披露滞后、早期季度可能缺失，仍未纳入现金仓位、费用和未披露持仓；训练/验证拆分可以降低但不能消除短期样本过拟合风险。
+- **历史汇率口径**：历史回测使用[欧洲央行欧元参考汇率](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html)交叉换算为 CNY。该数据通常每个欧洲工作日发布一次，适合日度回测，不代表基金结算汇率或盘中成交汇率；当天实时估算仍使用实时公开行情源。
 - **基金净值时效**：官方净值以基金公司披露为准，QDII 基金通常存在 T+1/T+2 披露延迟；节假日、境内外市场休市差异会影响“最近一个已公布净值”的日期。
 - **估算覆盖范围**：T 日估算主要基于已披露的前十大持仓和可获取行情，无法覆盖完整组合、现金、衍生品、基金申赎、费用、汇率结算价和盘中调仓。新增基金若持仓无法映射到可访问行情源，估算覆盖率会明显下降。
 - **持仓滞后**：持仓来自定期报告，披露频率低于实际调仓频率，权重会随市场涨跌和基金经理操作变化，估算结果只适合观察方向，不适合作为交易依据。

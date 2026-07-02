@@ -67,21 +67,6 @@ function combineBeijingDateTime(date: string, time: string): string {
   return normalizedDate || beijingDate();
 }
 
-function localDatetimeToBeijing(date: string, time: string, utcOffsetHours: number): string {
-  const dateMatch = date.replace(/\//g, '-').match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  const timeMatch = time.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (!dateMatch || !timeMatch) return beijingDate();
-  const utcTime = Date.UTC(
-    Number(dateMatch[1]),
-    Number(dateMatch[2]) - 1,
-    Number(dateMatch[3]),
-    Number(timeMatch[1]) - utcOffsetHours,
-    Number(timeMatch[2]),
-    Number(timeMatch[3] ?? 0),
-  );
-  return beijingDatetimeFromTimestamp(utcTime);
-}
-
 // Reject dates that differ from Beijing date by more than this many days (stale Sina data)
 function isStale(dateStr: string, referenceTimestamp: number, maxDiffDays = 2): boolean {
   const datePart = dateStr.slice(0, 10);
@@ -219,9 +204,10 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
       previousClose = price - (parseFloat(fields[2]) || 0);
       changePct = parseFloat(fields[3]) || 0;
       let hasExplicitIntlDate = false;
-      // b_KOSPI has Korea local time; convert it to Beijing time.
+      // Sina's global-index feed already reports Asia-Pacific timestamps in
+      // Beijing time, including b_KOSPI.
       if (rawSymbol === 'b_KOSPI' && fields[6] && fields[7]) {
-        date = localDatetimeToBeijing(fields[6], fields[7], 9);
+        date = combineBeijingDateTime(fields[6], fields[7]);
         hasExplicitIntlDate = true;
       } else {
         // b_TWSE may only include date; int_nikkei currently has no date/time in Sina's short quote.
@@ -546,8 +532,8 @@ export interface DataHealth {
 const dashboardSnapshotPending = new Map<string, Promise<DashboardSnapshot | null>>();
 const overviewSnapshotPending = new Map<string, Promise<OverviewSnapshot | null>>();
 
-function parseDashboardSnapshotPayload(
-  json: { quotes?: unknown; quotesText?: unknown; fxText?: unknown; marketStates?: Record<string, MarketStateData> },
+export function parseDashboardSnapshotPayload(
+  json: { schemaVersion?: unknown; quotes?: unknown; quotesText?: unknown; fxText?: unknown; marketStates?: Record<string, MarketStateData> },
   symbols: string[],
   fetchedAt: number,
 ): DashboardSnapshot {
@@ -558,7 +544,7 @@ function parseDashboardSnapshotPayload(
   ]]);
   const marketStates = new Map<string, MarketStateData>();
 
-  const structuredQuotes = asObject(json.quotes);
+  const structuredQuotes = json.schemaVersion === 1 ? asObject(json.quotes) : null;
   if (structuredQuotes) {
     for (const symbol of symbols) {
       const raw = asObject(structuredQuotes[symbol]);

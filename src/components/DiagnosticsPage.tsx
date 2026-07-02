@@ -43,6 +43,7 @@ export default function DiagnosticsPage() {
   }
 
   const background = payload?.backgroundRefresh as Record<string, unknown> | undefined;
+  const requestMetrics = payload?.requestMetrics as Record<string, unknown> | undefined;
   const issues = Array.isArray(payload?.issues) ? payload.issues as Array<Record<string, unknown>> : [];
 
   return (
@@ -74,6 +75,9 @@ export default function DiagnosticsPage() {
             <div><span>异常</span><strong>{numberValue(payload, 'issueCount')}</strong></div>
             <div><span>兜底</span><strong>{numberValue(payload, 'fallbackCount')}</strong></div>
             <div><span>刷新次数</span><strong>{numberValue(background ?? null, 'runCount')}</strong></div>
+            <div><span>进程请求</span><strong>{numberValue(requestMetrics ?? null, 'requestCount')}</strong></div>
+            <div><span>平均耗时</span><strong>{numberValue(requestMetrics ?? null, 'averageDurationMs')} ms</strong></div>
+            <div><span>最大耗时</span><strong>{numberValue(requestMetrics ?? null, 'maxDurationMs')} ms</strong></div>
           </section>
           <section className={styles.panel}>
             <h3>异常项目</h3>

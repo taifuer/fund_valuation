@@ -26,6 +26,10 @@ test('fund manager opens as a dialog and closes with Escape', async ({ page }) =
   await page.goto('/funds');
   await page.getByRole('button', { name: '管理基金', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '管理基金' })).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: '关闭基金管理' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('button', { name: '导入列表' })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog', { name: '管理基金' })).toBeHidden();
 });
