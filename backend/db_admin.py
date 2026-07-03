@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -38,6 +38,32 @@ def backup_database(source: Path, destination: Path) -> Path:
 def default_backup_path(source: Path) -> Path:
     stamp = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d-%H%M%S")
     return source.parent / "backups" / f"{source.stem}-{stamp}.db"
+
+
+def ensure_recent_backup(
+    source: Path,
+    *,
+    backup_dir: Path | None = None,
+    interval_hours: int = 24,
+    retention_days: int = 7,
+    now: datetime | None = None,
+) -> Path | None:
+    current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+    directory = backup_dir or source.parent / "backups"
+    existing = sorted(directory.glob(f"{source.stem}-*.db"), key=lambda path: path.stat().st_mtime, reverse=True) if directory.exists() else []
+    if existing:
+        latest_age = current.timestamp() - existing[0].stat().st_mtime
+        if latest_age < max(interval_hours, 1) * 60 * 60:
+            return None
+    destination = directory / f"{source.stem}-{current.strftime('%Y%m%d-%H%M%S')}.db"
+    backup_database(source, destination)
+    cutoff = current - timedelta(days=max(retention_days, 1))
+    for path in directory.glob(f"{source.stem}-*.db"):
+        if path == destination:
+            continue
+        if datetime.fromtimestamp(path.stat().st_mtime, ZoneInfo("Asia/Shanghai")) < cutoff:
+            path.unlink()
+    return destination
 
 
 def restore_database(source: Path, destination: Path, *, confirmed: bool) -> Path | None:

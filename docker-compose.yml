@@ -35,6 +35,9 @@ services:
     command: ["python", "-m", "backend.worker"]
     environment:
       FUND_VALUATION_DATA_DIR: /app/data
+      FUND_VALUATION_AUTO_BACKUP: "1"
+      FUND_VALUATION_BACKUP_INTERVAL_HOURS: "24"
+      FUND_VALUATION_BACKUP_RETENTION_DAYS: "7"
     volumes:
       - fund-data:/app/data
     depends_on:

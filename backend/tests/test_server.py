@@ -5,7 +5,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
@@ -15,6 +15,7 @@ os.environ["FUND_VALUATION_DATA_DIR"] = _TEMP_DATA.name
 
 from backend import server  # noqa: E402
 from backend.fx_history import parse_ecb_reference_rates  # noqa: E402
+from backend.data_coverage import expected_holding_periods, historical_data_coverage  # noqa: E402
 
 
 class FakeResponse:
@@ -881,6 +882,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(allowed.status_code, 200)
         self.assertIn("backgroundRefresh", allowed.get_json())
         self.assertIn("requestMetrics", allowed.get_json())
+        self.assertIn("historyCoverage", allowed.get_json())
 
     def test_health_does_not_expose_database_path_and_readiness_checks_db(self) -> None:
         client = server.app.test_client()
@@ -936,6 +938,40 @@ class ServerDataRefreshTests(unittest.TestCase):
         changes = server.read_fx_changes(["USD", "EUR"], "2026-06-30", "2026-07-01")
         self.assertAlmostEqual(changes["USD"]["2026-07-01"], 0.0)
         self.assertAlmostEqual(changes["EUR"]["2026-07-01"], (7.77 / 7.7 - 1) * 100)
+
+    def test_history_coverage_reports_missing_datasets_without_fetching_upstream(self) -> None:
+        periods = expected_holding_periods(years=3, as_of=date(2026, 7, 3))
+        coverage = historical_data_coverage(years=3, as_of=date(2026, 7, 3))
+
+        self.assertTrue(periods)
+        self.assertTrue(all(str(period["availableDate"]) <= "2026-07-03" for period in periods))
+        self.assertEqual(coverage["status"], "incomplete")
+        self.assertEqual(coverage["summary"]["fundsWithoutNav"], 17)
+        self.assertGreater(coverage["summary"]["missingHoldingPeriods"], 0)
+        self.assertEqual(coverage["summary"]["marketsWithoutHistory"], 44)
+
+    def test_missing_holding_refresh_validates_period_and_stores_rows(self) -> None:
+        gap = {"code": "017436", "year": 2025, "quarter": 4, "reportDate": "2025-12-31"}
+        rows = [{
+            "code": "017436", "reportDate": "2025-12-31", "rank": 1,
+            "stockCode": "NVDA", "symbol": "NVDA", "name": "NVIDIA",
+            "weight": 0.1, "market": "us", "sinaSymbol": "gb_nvda", "currency": "USD",
+        }]
+        with (
+            patch.object(server, "missing_holding_requests", return_value=[gap]),
+            patch.object(server, "fetch_upstream", return_value=(200, "text/plain", b"payload")),
+            patch.object(server, "parse_fund_holdings", return_value=rows),
+        ):
+            result = server.refresh_missing_fund_holdings(max_requests=1, start_offset=0)
+
+        self.assertEqual(result["stored"], 1)
+        self.assertEqual(result["unavailable"], 0)
+        with sqlite3.connect(server.DB_PATH) as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM fund_holdings WHERE code = ? AND report_date = ?",
+                ("017436", "2025-12-31"),
+            ).fetchone()[0]
+        self.assertEqual(count, 1)
 
     def test_fund_profiles_parses_basic_profile(self) -> None:
         upstream_body = """

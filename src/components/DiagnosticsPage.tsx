@@ -44,6 +44,11 @@ export default function DiagnosticsPage() {
 
   const background = payload?.backgroundRefresh as Record<string, unknown> | undefined;
   const requestMetrics = payload?.requestMetrics as Record<string, unknown> | undefined;
+  const historyCoverage = payload?.historyCoverage as Record<string, unknown> | undefined;
+  const coverageSummary = historyCoverage?.summary as Record<string, unknown> | undefined;
+  const coverageFunds = Array.isArray(historyCoverage?.funds)
+    ? historyCoverage.funds as Array<Record<string, unknown>>
+    : [];
   const issues = Array.isArray(payload?.issues) ? payload.issues as Array<Record<string, unknown>> : [];
 
   return (
@@ -78,6 +83,10 @@ export default function DiagnosticsPage() {
             <div><span>进程请求</span><strong>{numberValue(requestMetrics ?? null, 'requestCount')}</strong></div>
             <div><span>平均耗时</span><strong>{numberValue(requestMetrics ?? null, 'averageDurationMs')} ms</strong></div>
             <div><span>最大耗时</span><strong>{numberValue(requestMetrics ?? null, 'maxDurationMs')} ms</strong></div>
+            <div><span>缺净值基金</span><strong>{numberValue(coverageSummary ?? null, 'fundsWithoutNav')}</strong></div>
+            <div><span>持仓缺口</span><strong>{numberValue(coverageSummary ?? null, 'missingHoldingPeriods')}</strong></div>
+            <div><span>缺历史标的</span><strong>{numberValue(coverageSummary ?? null, 'marketsWithoutHistory')}</strong></div>
+            <div><span>汇率缺失</span><strong>{numberValue(coverageSummary ?? null, 'fxCurrenciesMissing')}</strong></div>
           </section>
           <section className={styles.panel}>
             <h3>异常项目</h3>
@@ -94,6 +103,28 @@ export default function DiagnosticsPage() {
                       <td>{String(issue.reason ?? '--')}</td>
                     </tr>
                   ))}</tbody>
+                </table>
+              </div>
+            )}
+          </section>
+          <section className={styles.panel}>
+            <h3>历史数据覆盖</h3>
+            {coverageFunds.length === 0 ? <div className={styles.empty}>暂无覆盖度数据</div> : (
+              <div className={styles.tableWrap}>
+                <table>
+                  <thead><tr><th>基金</th><th>净值截止</th><th>持仓季度</th><th>缺失报告期</th></tr></thead>
+                  <tbody>{coverageFunds.map((fund) => {
+                    const nav = fund.nav as Record<string, unknown> | undefined;
+                    const missing = Array.isArray(fund.missingHoldingPeriods) ? fund.missingHoldingPeriods.map(String) : [];
+                    return (
+                      <tr key={String(fund.code ?? '')}>
+                        <td>{String(fund.code ?? '--')}</td>
+                        <td>{String(nav?.endDate ?? '--')}</td>
+                        <td>{numberValue(fund, 'holdingPeriodCount')} / {numberValue(fund, 'expectedHoldingPeriodCount')}</td>
+                        <td>{missing.length ? `${missing.slice(0, 3).join('、')}${missing.length > 3 ? ` 等${missing.length}期` : ''}` : '完整'}</td>
+                      </tr>
+                    );
+                  })}</tbody>
                 </table>
               </div>
             )}

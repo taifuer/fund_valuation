@@ -141,9 +141,9 @@ npm run dev
 open http://localhost:5173
 ```
 
-刷新 worker 使用 SQLite 租约避免多实例重复抓取，每分钟检查任务计划：现货开盘时行情每 60 秒更新，期货每 2 分钟更新，仅加密资产交易时每 5 分钟更新，全部闭市后降为 15 分钟；基金净值闭市后降为每小时，历史数据每小时检查一次，回测每日预热一次。`FUND_VALUATION_REFRESH_INTERVAL` 用于设置历史维护周期下限，`FUND_VALUATION_SNAPSHOT_RETENTION_DAYS` 用于调整行情快照保留天数。Web 进程优先读取 worker 快照，仅快照缺失或过期时冷启动抓取上游；内置刷新默认关闭，仅兼容旧部署时可显式设置 `FUND_VALUATION_BACKGROUND_REFRESH=1`。
+刷新 worker 使用 SQLite 租约避免多实例重复抓取，每分钟检查任务计划：现货开盘时行情每 60 秒更新，期货每 2 分钟更新，仅加密资产交易时每 5 分钟更新，全部闭市后降为 15 分钟；基金净值闭市后降为每小时，历史数据每小时检查一次，回测每日预热一次。历史维护每小时最多补抓 4 个近三年季度持仓缺口，按基金成立日期过滤并轮转队列，避免集中请求上游。`FUND_VALUATION_REFRESH_INTERVAL` 用于设置历史维护周期下限，`FUND_VALUATION_SNAPSHOT_RETENTION_DAYS` 用于调整行情快照保留天数。Web 进程优先读取 worker 快照，仅快照缺失或过期时冷启动抓取上游；内置刷新默认关闭，仅兼容旧部署时可显式设置 `FUND_VALUATION_BACKGROUND_REFRESH=1`。
 
-公开状态接口 `/api/status` 只返回汇总后的刷新状态，`/api/meta` 返回当前 API 契约版本。内部诊断页位于 `/diagnostics`，对应接口 `/api/diagnostics/quotes` 会返回快照缺失、延迟、兜底、请求耗时和缓存命中统计；必须设置 `FUND_VALUATION_DIAGNOSTICS_TOKEN`，并在诊断页输入同值令牌后才能查询。每个 API 响应都包含 `X-Request-ID`、`X-Elapsed-ms` 和 `X-API-Schema-Version` 响应头，慢请求与未处理异常使用 JSON 结构化日志输出。
+公开状态接口 `/api/status` 只返回汇总后的刷新状态，`/api/meta` 返回当前 API 契约版本。内部诊断页位于 `/diagnostics`，对应接口 `/api/diagnostics/quotes` 会返回快照缺失、延迟、兜底、请求耗时、缓存命中以及基金净值、季度持仓、市场日线和汇率覆盖度；必须设置 `FUND_VALUATION_DIAGNOSTICS_TOKEN`，并在诊断页输入同值令牌后才能查询。每个 API 响应都包含 `X-Request-ID`、`X-Elapsed-ms` 和 `X-API-Schema-Version` 响应头，慢请求与未处理异常使用 JSON 结构化日志输出。
 
 历史数据回填脚本默认读取 `config/universe.json` 中配置的基金、指数和资产，写入 `data/fund_valuation.db`。常用参数：
 
@@ -188,6 +188,8 @@ FUND_VALUATION_DIAGNOSTICS_TOKEN='replace-with-a-random-token' docker compose up
 
 默认访问 `http://localhost:8080`。`/api/health` 用于进程存活检查，`/api/ready` 同时检查 SQLite 是否可用。生产环境应通过 `.env` 或部署平台注入诊断令牌，不要写入仓库。
 
+Docker Worker 默认每天创建一次经过完整性校验的 SQLite 在线备份，并保留 7 天，文件位于数据卷的 `backups/`。可通过 `FUND_VALUATION_AUTO_BACKUP`、`FUND_VALUATION_BACKUP_INTERVAL_HOURS` 和 `FUND_VALUATION_BACKUP_RETENTION_DAYS` 调整；非 Docker 本地运行默认不自动备份。
+
 容器内数据库维护可使用工具 profile：
 
 ```bash
@@ -203,7 +205,7 @@ npm run test:e2e  # Playwright 桌面端与移动端路由冒烟测试
 npm run build     # TypeScript 与生产构建校验
 ```
 
-`.github/workflows/ci.yml` 会在 `main`、`dev` 的 push 和 pull request 上并行执行上述后端、前端和浏览器测试，不需要仓库 Secrets。
+`.github/workflows/ci.yml` 会在 `main`、`dev` 的 push 和 pull request 上并行执行上述后端、前端和浏览器测试，并构建 Docker 镜像、启动临时 Compose 环境、检查健康/就绪/API/SPA 路由和数据库完整性，结束后删除临时容器与数据卷。整个过程不需要仓库 Secrets，也不会连接生产服务器。
 
 ## 演示
 

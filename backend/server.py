@@ -39,6 +39,7 @@ from .quotes import normalize_quote_text
 from .contracts import API_SCHEMA_VERSION, DASHBOARD_SCHEMA_VERSION, validate_dashboard_payload
 from .observability import REQUEST_METRICS, log_event
 from .fx_history import fx_history_summary, latest_fx_history_date, store_ecb_reference_rates
+from .data_coverage import historical_data_coverage, missing_holding_requests
 from .storage import DATA_DIR, DB_PATH, RAW_DIR, ROOT_DIR, SCHEMA_VERSION, get_conn, ensure_storage as ensure_database_storage
 
 
@@ -1777,6 +1778,56 @@ def store_fund_holdings(code: str, holdings: list[dict[str, Any]]) -> None:
             """,
             points,
         )
+
+
+def refresh_missing_fund_holdings(
+    *,
+    max_requests: int = 4,
+    years: int = 3,
+    start_offset: int | None = None,
+) -> dict[str, Any]:
+    gaps = missing_holding_requests(years=years)
+    if gaps:
+        offset = start_offset if start_offset is not None else (int(time.time() // 3600) * max(max_requests, 1))
+        offset %= len(gaps)
+        gaps_to_fetch = (gaps[offset:] + gaps[:offset])[:max(max_requests, 0)]
+    else:
+        gaps_to_fetch = []
+    attempted = 0
+    stored = 0
+    unavailable = 0
+    errors: list[str] = []
+    for gap in gaps_to_fetch:
+        code = str(gap["code"])
+        year = int(gap["year"])
+        quarter = int(gap["quarter"])
+        expected_report_date = str(gap["reportDate"])
+        attempted += 1
+        query = urlencode({"type": "jjcc", "code": code, "topline": 10, "year": year, "month": quarter})
+        status, _, body = fetch_upstream(
+            f"https://fundf10.eastmoney.com/FundArchivesDatas.aspx?{query}",
+            referer=f"https://fundf10.eastmoney.com/ccmx_{quote(code)}.html",
+            content_type="text/plain; charset=utf-8",
+            cache_key=f"fundholdings:{code}:{year}:{quarter}",
+            kind="fundholdings",
+            ttl_seconds=30 * 24 * 60 * 60,
+        )
+        if status >= 400:
+            errors.append(f"{code}:{expected_report_date}: HTTP {status}")
+            continue
+        rows = parse_fund_holdings(code, decode_body(body))
+        if not rows or str(rows[0].get("reportDate") or "") != expected_report_date:
+            unavailable += 1
+            continue
+        store_fund_holdings(code, rows)
+        stored += 1
+    return {
+        "pending": len(gaps),
+        "attempted": attempted,
+        "stored": stored,
+        "unavailable": unavailable,
+        "errors": errors,
+    }
 
 
 def read_fund_holdings_from_db(code: str) -> list[dict[str, Any]]:
@@ -3910,6 +3961,7 @@ def quote_diagnostics() -> Response:
     payload["backgroundRefresh"] = background_refresh_state_snapshot()
     payload["requestMetrics"] = REQUEST_METRICS.snapshot()
     payload["fxHistory"] = fx_history_summary()
+    payload["historyCoverage"] = historical_data_coverage()
     return json_response(payload)
 
 

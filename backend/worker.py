@@ -6,6 +6,8 @@ import socket
 import time
 import uuid
 
+from .db_admin import ensure_recent_backup
+from .storage import DB_PATH
 from .server import (
     BACKGROUND_REFRESH_INTERVAL_SECONDS,
     MAX_SINA_SYMBOLS_PER_REQUEST,
@@ -27,6 +29,7 @@ from .server import (
     refresh_ecb_fx_history,
     refresh_configured_fund_history,
     refresh_configured_market_history,
+    refresh_missing_fund_holdings,
     release_background_job,
 )
 
@@ -54,6 +57,7 @@ def main() -> None:
         "fund_purchase": 0.0,
         "history": 0.0,
         "backtest": 0.0,
+        "backup": 0.0,
         "cleanup": 0.0,
     }
 
@@ -105,6 +109,10 @@ def main() -> None:
                     try:
                         errors.extend(refresh_configured_fund_history())
                         errors.extend(refresh_configured_market_history())
+                        holding_refresh = refresh_missing_fund_holdings(max_requests=4, years=3)
+                        errors.extend(f"holding-history: {error}" for error in holding_refresh["errors"])
+                        if holding_refresh["attempted"]:
+                            tasks.append(f"holding-gaps:{holding_refresh['stored']}/{holding_refresh['attempted']}")
                         if refresh_ecb_fx_history() <= 0:
                             errors.append("fx-history: no ECB rows stored")
                         prewarm_response_cache()
@@ -119,6 +127,19 @@ def main() -> None:
                     except Exception as exc:
                         errors.append(f"backtest: {exc}")
                     due["backtest"] = current + 24 * 60 * 60
+                if acquired and current >= due["backup"]:
+                    if os.environ.get("FUND_VALUATION_AUTO_BACKUP", "0") == "1":
+                        try:
+                            backup = ensure_recent_backup(
+                                DB_PATH,
+                                interval_hours=int(os.environ.get("FUND_VALUATION_BACKUP_INTERVAL_HOURS", "24")),
+                                retention_days=int(os.environ.get("FUND_VALUATION_BACKUP_RETENTION_DAYS", "7")),
+                            )
+                            if backup:
+                                tasks.append("backup")
+                        except Exception as exc:
+                            errors.append(f"backup: {exc}")
+                    due["backup"] = current + 60 * 60
                 if acquired and current >= due["cleanup"]:
                     try:
                         prune_quote_snapshots()

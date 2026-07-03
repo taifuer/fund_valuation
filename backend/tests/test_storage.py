@@ -3,9 +3,12 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+import os
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
-from backend.db_admin import backup_database, restore_database
+from backend.db_admin import backup_database, ensure_recent_backup, restore_database
 from backend.storage import SCHEMA_VERSION, database_status, migrate_database
 
 
@@ -55,6 +58,27 @@ class StorageMigrationTests(unittest.TestCase):
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
             with self.assertRaisesRegex(RuntimeError, "newer than supported"):
                 migrate_database(path)
+
+    def test_scheduled_backup_respects_interval_and_prunes_expired_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / "database.db"
+            backups = root / "backups"
+            old_backup = backups / "database-20260601-000000.db"
+            migrate_database(database)
+            backup_database(database, old_backup)
+            current = datetime(2026, 7, 3, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+            old_timestamp = (current - timedelta(days=10)).timestamp()
+            os.utime(old_backup, (old_timestamp, old_timestamp))
+
+            created = ensure_recent_backup(database, backup_dir=backups, now=current)
+            repeated = ensure_recent_backup(database, backup_dir=backups, now=current + timedelta(hours=1))
+
+            self.assertIsNotNone(created)
+            assert created is not None
+            self.assertTrue(created.exists())
+            self.assertFalse(old_backup.exists())
+            self.assertIsNone(repeated)
 
 
 if __name__ == "__main__":
