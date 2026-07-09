@@ -61,6 +61,8 @@ class ServerDataRefreshTests(unittest.TestCase):
             server._MARKET_HISTORY_REFRESHING.clear()
         with server._FUND_NAV_REFRESH_GUARD:
             server._FUND_NAV_REFRESHING.clear()
+        with server._FUND_HISTORY_REFRESH_GUARD:
+            server._FUND_HISTORY_REFRESHING.clear()
         with server._FUND_PURCHASE_REFRESH_GUARD:
             server._FUND_PURCHASE_REFRESHING = False
         with server._UPSTREAM_HEALTH_GUARD:
@@ -1411,6 +1413,97 @@ class ServerDataRefreshTests(unittest.TestCase):
         payload = response.get_json()
         self.assertNotIn("sina-cn:sh000688", payload)
         self.assertEqual(scheduled, [("sina-cn", "sh000688")])
+
+    def test_overview_schedules_stale_fund_history_refresh(self) -> None:
+        server.store_fund_history(
+            "017436",
+            [
+                {"FSRQ": "2026-07-02", "DWJZ": "2.0000", "JZZZL": "1.00"},
+                {"FSRQ": "2026-07-01", "DWJZ": "1.9800", "JZZZL": "0.50"},
+            ],
+        )
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute(
+                "UPDATE fund_nav_history SET fetched_at = ? WHERE code = ?",
+                (server.now_ms() - server.HISTORY_AUTO_REFRESH_TTL_MS - 1, "017436"),
+            )
+        scheduled: list[tuple[list[str], int]] = []
+
+        with patch.object(
+            server,
+            "schedule_fund_history_refresh",
+            side_effect=lambda codes, target_count: scheduled.append((codes, target_count)),
+        ), patch.object(
+            server,
+            "build_dashboard_payload",
+            return_value={"schemaVersion": server.DASHBOARD_SCHEMA_VERSION, "quotes": {}, "marketStates": {}},
+        ):
+            response = server.app.test_client().get(
+                "/api/overview?symbols=sh000001&currencies=USD&fundCodes=017436",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["fundSummaries"]["017436"]["navDate"], "2026-07-02")
+        self.assertEqual(scheduled, [(["017436"], 2)])
+
+    def test_market_returns_adjusts_cn_etf_ex_rights_gap(self) -> None:
+        server.store_market_history(
+            "sina-cn",
+            "sh515070",
+            json.dumps([
+                {"day": "2026-06-09", "close": "2.461"},
+                {"day": "2026-07-03", "close": "2.584"},
+                {"day": "2026-07-06", "close": "1.281"},
+                {"day": "2026-07-09", "close": "1.379"},
+            ]),
+        )
+
+        response = server.app.test_client().get("/api/marketreturns?items=sina-cn:sh515070")
+
+        self.assertEqual(response.status_code, 200)
+        summary = response.get_json()["sina-cn:sh515070"]
+        one_month = summary["ranges"]["1m"]
+        self.assertGreater(one_month["returnPercent"], 10)
+        self.assertLess(one_month["returnPercent"], 15)
+        self.assertEqual(one_month["endClose"], 1.379)
+        self.assertAlmostEqual(one_month["endAdjustedClose"], 2.7815, places=3)
+
+    def test_market_history_returns_adjusted_cn_etf_series(self) -> None:
+        server.store_market_history(
+            "sina-cn",
+            "sz159558",
+            json.dumps([
+                {"day": "2026-07-07", "close": "4.148"},
+                {"day": "2026-07-08", "close": "4.215"},
+                {"day": "2026-07-09", "close": "1.546"},
+            ]),
+        )
+
+        response = server.app.test_client().get("/api/markethistory?source=sina-cn&symbol=sz159558")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[-1]["date"], "2026-07-09")
+        self.assertAlmostEqual(payload[-1]["close"], 4.215, places=3)
+        self.assertEqual(payload[-1]["rawClose"], 1.546)
+        self.assertTrue(payload[-1]["adjusted"])
+
+    def test_market_returns_does_not_adjust_cn_index_history(self) -> None:
+        server.store_market_history(
+            "sina-cn",
+            "sh000001",
+            json.dumps([
+                {"day": "2026-06-09", "close": "3000"},
+                {"day": "2026-07-09", "close": "1500"},
+            ]),
+        )
+
+        response = server.app.test_client().get("/api/marketreturns?items=sina-cn:sh000001")
+
+        self.assertEqual(response.status_code, 200)
+        summary = response.get_json()["sina-cn:sh000001"]
+        self.assertEqual(summary["ranges"]["1m"]["returnPercent"], -50.0)
 
     def test_sina_zero_cn_index_quote_falls_back_to_latest_history_close(self) -> None:
         server.store_market_history(

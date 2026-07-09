@@ -59,6 +59,8 @@ _MARKET_HISTORY_REFRESHING: set[str] = set()
 _MARKET_HISTORY_REFRESH_GUARD = threading.Lock()
 _FUND_NAV_REFRESHING: set[str] = set()
 _FUND_NAV_REFRESH_GUARD = threading.Lock()
+_FUND_HISTORY_REFRESHING: set[str] = set()
+_FUND_HISTORY_REFRESH_GUARD = threading.Lock()
 _FUND_PURCHASE_REFRESHING = False
 _FUND_PURCHASE_REFRESH_GUARD = threading.Lock()
 _UPSTREAM_HEALTH: dict[str, dict[str, Any]] = {}
@@ -78,6 +80,9 @@ _EASTMONEY_SESSION.trust_env = False
 FUND_CODE_RE = re.compile(r"^\d{6}$")
 SINA_SYMBOL_RE = re.compile(r"^[A-Za-z0-9_]{1,40}$")
 MARKET_HISTORY_SYMBOL_RE = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
+CN_ETF_HISTORY_SYMBOL_RE = re.compile(r"^(?:sh5\d{5}|sz159\d{3})$")
+MARKET_HISTORY_CORPORATE_ACTION_LOW_RATIO = 0.65
+MARKET_HISTORY_CORPORATE_ACTION_HIGH_RATIO = 1 / MARKET_HISTORY_CORPORATE_ACTION_LOW_RATIO
 MAX_FUND_CODES_PER_REQUEST = 50
 MAX_SINA_SYMBOLS_PER_REQUEST = 160
 MAX_MARKET_STATE_SYMBOLS_PER_REQUEST = 160
@@ -1638,6 +1643,47 @@ def auto_refresh_fund_history_if_stale(code: str, target_count: int) -> None:
     )
 
 
+def fund_history_should_refresh_for_overview(code: str) -> bool:
+    latest_date, fetched_at = latest_fund_history_meta(code)
+    return not latest_date or history_needs_auto_refresh(latest_date, fetched_at)
+
+
+def schedule_fund_history_refresh(codes: list[str], target_count: int) -> None:
+    normalized_codes = sorted(dict.fromkeys(codes))
+    if not normalized_codes:
+        return
+    refresh_key = ",".join(normalized_codes)
+    with _FUND_HISTORY_REFRESH_GUARD:
+        if refresh_key in _FUND_HISTORY_REFRESHING:
+            return
+        _FUND_HISTORY_REFRESHING.add(refresh_key)
+
+    def refresh() -> None:
+        try:
+            with app.app_context():
+                for code in normalized_codes:
+                    try:
+                        latest_date, _fetched_at = latest_fund_history_meta(code)
+                        if latest_date:
+                            auto_refresh_fund_history_if_stale(code, target_count)
+                        else:
+                            fetch_and_store_fund_history(code, target_count, refresh=True)
+                    except Exception as exc:
+                        print(f"[fundhistory-refresh] failed for {code}: {exc}", flush=True)
+                response_cache_clear_prefix("api:overview:")
+                response_cache_clear_prefix("api:fundreturns:")
+        finally:
+            with _FUND_HISTORY_REFRESH_GUARD:
+                _FUND_HISTORY_REFRESHING.discard(refresh_key)
+
+    thread = threading.Thread(
+        target=refresh,
+        name=f"fundhistory-refresh-{hashlib.sha1(refresh_key.encode()).hexdigest()[:8]}",
+        daemon=True,
+    )
+    thread.start()
+
+
 def count_fund_history_rows(code: str) -> int:
     with get_conn() as conn:
         row = conn.execute("SELECT COUNT(*) FROM fund_nav_history WHERE code = ?", (code,)).fetchone()
@@ -2773,7 +2819,44 @@ def read_purchase_status_from_db(codes: list[str], max_age_seconds: int | None) 
     return results
 
 
-def read_market_history_from_db(source: str, symbol: str) -> list[dict[str, float | str]]:
+def cn_etf_history_needs_adjustment(source: str, symbol: str) -> bool:
+    return source == "sina-cn" and CN_ETF_HISTORY_SYMBOL_RE.fullmatch(symbol) is not None
+
+
+def adjust_market_history_for_corporate_actions(rows: list[dict[str, float | str]]) -> list[dict[str, float | str]]:
+    adjusted_rows: list[dict[str, float | str]] = []
+    factor = 1.0
+    previous_raw_close: float | None = None
+    previous_adjusted_close: float | None = None
+    has_adjustment = False
+
+    for row in rows:
+        raw_close = float(row["close"])
+        if previous_raw_close and previous_raw_close > 0 and previous_adjusted_close and previous_adjusted_close > 0:
+            ratio = raw_close / previous_raw_close
+            if (
+                0 < ratio < MARKET_HISTORY_CORPORATE_ACTION_LOW_RATIO
+                or ratio > MARKET_HISTORY_CORPORATE_ACTION_HIGH_RATIO
+            ):
+                factor = previous_adjusted_close / raw_close
+                has_adjustment = True
+
+        adjusted_close = raw_close * factor
+        adjusted_row: dict[str, float | str] = {
+            "date": str(row["date"]),
+            "close": round(adjusted_close, 6),
+        }
+        if has_adjustment:
+            adjusted_row["rawClose"] = raw_close
+            adjusted_row["adjusted"] = True
+        adjusted_rows.append(adjusted_row)
+        previous_raw_close = raw_close
+        previous_adjusted_close = adjusted_close
+
+    return adjusted_rows
+
+
+def read_market_history_from_db(source: str, symbol: str, *, adjust_corporate_actions: bool = False) -> list[dict[str, float | str]]:
     with get_conn() as conn:
         rows = conn.execute(
             """
@@ -2784,7 +2867,10 @@ def read_market_history_from_db(source: str, symbol: str) -> list[dict[str, floa
             """,
             (source, symbol),
         ).fetchall()
-    return [{"date": str(date), "close": float(close)} for date, close in rows]
+    history_rows = [{"date": str(date), "close": float(close)} for date, close in rows]
+    if adjust_corporate_actions and cn_etf_history_needs_adjustment(source, symbol):
+        return adjust_market_history_for_corporate_actions(history_rows)
+    return history_rows
 
 
 def latest_market_history_meta(source: str, symbol: str) -> tuple[str | None, int]:
@@ -2877,7 +2963,8 @@ def market_history_should_refresh_for_returns(source: str, symbol: str) -> bool:
 
 
 def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, Any] | None:
-    rows = read_market_history_from_db(source, symbol)
+    rows = read_market_history_from_db(source, symbol, adjust_corporate_actions=True)
+    raw_rows = read_market_history_from_db(source, symbol)
     points = [
         (str(row["date"]), float(row["close"]))
         for row in rows
@@ -2888,6 +2975,9 @@ def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, An
 
     previous_date, previous_close = points[-2]
     latest_date, latest_close = points[-1]
+    raw_by_date = {str(row["date"]): float(row["close"]) for row in raw_rows if float(row["close"]) > 0}
+    raw_previous_close = raw_by_date.get(previous_date, previous_close)
+    raw_latest_close = raw_by_date.get(latest_date, latest_close)
     try:
         latest_day = datetime.fromisoformat(latest_date).date()
     except ValueError:
@@ -2932,8 +3022,10 @@ def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, An
             **history_risk_metrics(points, start_date, latest_date),
             "startDate": start_date,
             "endDate": latest_date,
-            "startClose": round(start_close, 4),
-            "endClose": round(latest_close, 4),
+            "startClose": round(raw_by_date.get(start_date, start_close), 4),
+            "endClose": round(raw_latest_close, 4),
+            "startAdjustedClose": round(start_close, 4),
+            "endAdjustedClose": round(latest_close, 4),
         }
 
     if not ranges:
@@ -2946,8 +3038,10 @@ def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, An
         "returnPercent": round(latest_return_percent, 2),
         "startDate": previous_date,
         "endDate": latest_date,
-        "startClose": round(previous_close, 4),
-        "endClose": round(latest_close, 4),
+        "startClose": round(raw_previous_close, 4),
+        "endClose": round(raw_latest_close, 4),
+        "startAdjustedClose": round(previous_close, 4),
+        "endAdjustedClose": round(latest_close, 4),
     }
     ytd = ranges.get("ytd")
     return {
@@ -2961,7 +3055,7 @@ def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, An
         "startDate": ytd["startDate"] if ytd else "",
         "endDate": latest_date,
         "startClose": ytd["startClose"] if ytd else 0,
-        "endClose": round(latest_close, 4),
+        "endClose": round(raw_latest_close, 4),
     }
 
 
@@ -4183,6 +4277,13 @@ def overview() -> Response:
 
     def build() -> dict[str, Any]:
         payload = build_dashboard_payload(symbols, currencies, now_arg, allow_upstream=False)
+        needs_history_refresh = [
+            code
+            for code in fund_codes
+            if fund_history_should_refresh_for_overview(code)
+        ]
+        if needs_history_refresh:
+            schedule_fund_history_refresh(needs_history_refresh, 2)
         payload["fundSummaries"] = {
             code: summary
             for code in fund_codes
@@ -4435,7 +4536,12 @@ def market_history() -> Response:
     if not refresh:
         if cached_rows:
             auto_refresh_market_history_if_stale(source, symbol)
-            return json_response(read_market_history_from_db(source, symbol) or cached_rows)
+            rows = read_market_history_from_db(
+                source,
+                symbol,
+                adjust_corporate_actions=True,
+            ) or cached_rows
+            return json_response(rows)
         return json_response(cached_rows)
 
     url, referer = market_history_url(source, symbol)
@@ -4457,10 +4563,12 @@ def market_history() -> Response:
         stored_count = store_market_history(source, symbol, decode_body(body))
     except Exception:
         if cached_rows:
-            return json_response(cached_rows)
+            return json_response(read_market_history_from_db(source, symbol, adjust_corporate_actions=True) or cached_rows)
     else:
         if stored_count == 0 and cached_rows:
-            return json_response(cached_rows)
+            return json_response(read_market_history_from_db(source, symbol, adjust_corporate_actions=True) or cached_rows)
+        if cn_etf_history_needs_adjustment(source, symbol):
+            return json_response(read_market_history_from_db(source, symbol, adjust_corporate_actions=True))
     return bytes_response(body, status=status, content_type=content_type)
 
 
