@@ -31,6 +31,7 @@ const FUND_MANAGER_KEY = 'fund_valuation:managed_funds';
 const MAX_CUSTOM_FUNDS = 50;
 const MAX_FUND_IMPORT_BYTES = 64 * 1024;
 const FUND_DISPLAY_MODE_KEY = 'fund_valuation:fund_display_mode';
+const FUND_MANAGEMENT_ENABLED = __FUND_MANAGEMENT_ENABLED__;
 
 interface FundSummary {
   fund: Fund;
@@ -245,6 +246,7 @@ export default function App() {
     setExpandedCode(expanded ? code : null);
   }, []);
   const funds = useMemo(() => {
+    if (!FUND_MANAGEMENT_ENABLED) return FUNDS;
     const hidden = new Set(managedFunds.hiddenDefaultCodes);
     const defaultFunds = FUNDS.filter((fund) => !hidden.has(fund.code));
     const defaultCodes = new Set(FUNDS.map((fund) => fund.code));
@@ -634,13 +636,15 @@ export default function App() {
                       详细
                     </button>
                   </div>
-                  <button ref={managerTriggerRef} type="button" className={styles.managerTrigger} onClick={() => setFundManagerOpen(true)}>
-                    管理基金
-                  </button>
+                  {FUND_MANAGEMENT_ENABLED && (
+                    <button ref={managerTriggerRef} type="button" className={styles.managerTrigger} onClick={() => setFundManagerOpen(true)}>
+                      管理基金
+                    </button>
+                  )}
                 </div>
               )}
             </div>
-            {!fundCollapsed && fundManagerOpen && (
+            {FUND_MANAGEMENT_ENABLED && !fundCollapsed && fundManagerOpen && (
               <div className={styles.managerOverlay} role="presentation" onClick={() => setFundManagerOpen(false)}>
                 <section ref={managerDialogRef} className={styles.fundManager} role="dialog" aria-modal="true" aria-label="管理基金" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
                   <div className={styles.managerHeader}>
@@ -698,7 +702,7 @@ export default function App() {
                   loading={false}
                   marketStates={marketStates}
                   showDetails={fundDisplayMode === 'detail'}
-                  onRemove={removeFund}
+                  onRemove={FUND_MANAGEMENT_ENABLED ? removeFund : undefined}
                   expanded={expandedCode === fund.code}
                   onExpandedChange={handleFundExpandedChange}
                 />

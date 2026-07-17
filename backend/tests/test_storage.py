@@ -8,7 +8,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from backend.db_admin import backup_database, ensure_recent_backup, restore_database
+from backend.db_admin import (
+    backup_database,
+    ensure_recent_backup,
+    optimize_database,
+    prune_raw_responses,
+    restore_database,
+)
 from backend.storage import SCHEMA_VERSION, database_status, migrate_database
 
 
@@ -79,6 +85,70 @@ class StorageMigrationTests(unittest.TestCase):
             self.assertTrue(created.exists())
             self.assertFalse(old_backup.exists())
             self.assertIsNone(repeated)
+
+    def test_optimize_prunes_only_expired_regenerable_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / "database.db"
+            raw = root / "raw"
+            migrate_database(database)
+            current = datetime(2026, 7, 17, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+            old_ms = int((current - timedelta(days=20)).timestamp() * 1000)
+            fresh_ms = int((current - timedelta(days=2)).timestamp() * 1000)
+            with sqlite3.connect(database) as conn:
+                conn.executemany(
+                    "INSERT INTO response_cache VALUES (?, ?, ?, ?, ?, ?)",
+                    [
+                        ("old", "https://example.com/old", 200, "text/plain", b"old", old_ms),
+                        ("fresh", "https://example.com/fresh", 200, "text/plain", b"fresh", fresh_ms),
+                    ],
+                )
+                conn.execute(
+                    "INSERT INTO fund_nav_history VALUES (?, ?, ?, ?, ?)",
+                    ("000001", "2026-07-01", 1.25, 0.5, old_ms),
+                )
+                conn.executemany(
+                    """
+                    INSERT INTO market_quote_snapshots(
+                      symbol, bucket_at, captured_at, quote_time, market_state, source,
+                      price, previous_close, change_percent, validation_status,
+                      validation_message, raw_line, sanitized_line
+                    ) VALUES (?, ?, ?, '', 'closed', 'test', 1, 1, 0, 'ok', '', '', '')
+                    """,
+                    [
+                        ("old", old_ms, old_ms),
+                        ("fresh", fresh_ms, fresh_ms),
+                    ],
+                )
+            result = optimize_database(database, raw_dir=raw, now=current)
+            with sqlite3.connect(database) as conn:
+                cache_keys = [row[0] for row in conn.execute("SELECT cache_key FROM response_cache")]
+                snapshot_symbols = [row[0] for row in conn.execute("SELECT symbol FROM market_quote_snapshots")]
+                nav_count = conn.execute("SELECT COUNT(*) FROM fund_nav_history").fetchone()[0]
+            self.assertEqual(result["deletedResponseCacheRows"], 1)
+            self.assertEqual(result["deletedQuoteSnapshotRows"], 1)
+            self.assertEqual(cache_keys, ["fresh"])
+            self.assertEqual(snapshot_symbols, ["fresh"])
+            self.assertEqual(nav_count, 1)
+
+    def test_raw_response_pruning_preserves_recent_and_unknown_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            raw = Path(directory)
+            old = raw / "20260701"
+            recent = raw / "20260716"
+            unknown = raw / "manual"
+            for path in (old, recent, unknown):
+                path.mkdir()
+                (path / "response.txt").write_text("data", encoding="utf-8")
+            result = prune_raw_responses(
+                raw,
+                retention_days=7,
+                now=datetime(2026, 7, 17, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+            )
+            self.assertEqual(result["removedDirectories"], 1)
+            self.assertFalse(old.exists())
+            self.assertTrue(recent.exists())
+            self.assertTrue(unknown.exists())
 
 
 if __name__ == "__main__":

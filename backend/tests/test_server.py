@@ -459,6 +459,16 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Too many fund codes", response.get_data(as_text=True))
 
+    def test_disabled_fund_management_rejects_non_configured_codes(self) -> None:
+        configured_code = server.configured_fund_codes_from_constants()[0]
+        with patch.dict(os.environ, {"FUND_VALUATION_ENABLE_FUND_MANAGEMENT": "0"}):
+            configured_response = server.app.test_client().get(f"/api/fundreturns?codes={configured_code}")
+            custom_response = server.app.test_client().get("/api/fundreturns?codes=118001")
+
+        self.assertEqual(configured_response.status_code, 200)
+        self.assertEqual(custom_response.status_code, 403)
+        self.assertIn("Fund management is disabled", custom_response.get_data(as_text=True))
+
     def test_fund_api_rate_limits_by_client(self) -> None:
         body = b'jsonpgz({"fundcode":"016664","name":"test"});'
 

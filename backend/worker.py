@@ -6,7 +6,7 @@ import socket
 import time
 import uuid
 
-from .db_admin import ensure_recent_backup
+from .db_admin import ensure_recent_backup, optimize_database, positive_int_env
 from .storage import DB_PATH
 from .server import (
     BACKGROUND_REFRESH_INTERVAL_SECONDS,
@@ -143,6 +143,12 @@ def main() -> None:
                 if acquired and current >= due["cleanup"]:
                     try:
                         prune_quote_snapshots()
+                        optimize_database(
+                            DB_PATH,
+                            response_cache_retention_days=positive_int_env("FUND_VALUATION_RESPONSE_CACHE_RETENTION_DAYS", 14),
+                            snapshot_retention_days=positive_int_env("FUND_VALUATION_SNAPSHOT_RETENTION_DAYS", 7),
+                            raw_retention_days=positive_int_env("FUND_VALUATION_RAW_RETENTION_DAYS", 7),
+                        )
                         tasks.append("cleanup")
                     except Exception as exc:
                         errors.append(f"cleanup: {exc}")

@@ -27,7 +27,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 from flask import Flask, Response, g, jsonify, request
-from werkzeug.exceptions import HTTPException, TooManyRequests
+from werkzeug.exceptions import Forbidden, HTTPException, TooManyRequests
 
 from .config import (
     configured_fund_codes as universe_fund_codes,
@@ -94,6 +94,11 @@ FUND_NAV_CACHE_TTL_SECONDS = 60
 BACKGROUND_REFRESH_INTERVAL_SECONDS = int(os.environ.get("FUND_VALUATION_REFRESH_INTERVAL", "900"))
 QUOTE_SNAPSHOT_RETENTION_DAYS = int(os.environ.get("FUND_VALUATION_SNAPSHOT_RETENTION_DAYS", "30"))
 BACKGROUND_JOB_NAME = "data-refresh"
+
+
+def fund_management_enabled() -> bool:
+    value = os.environ.get("FUND_VALUATION_ENABLE_FUND_MANAGEMENT", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
 
 RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "sina": (240, 60),
@@ -3389,6 +3394,11 @@ def require_fund_codes(name: str = "codes", *, max_codes: int = MAX_FUND_CODES_P
         raise ValueError(f"Invalid fund code: {preview}; fund codes must be 6 digits")
     if len(codes) > max_codes:
         raise ValueError(f"Too many fund codes; maximum is {max_codes}")
+    if not fund_management_enabled():
+        configured_codes = set(configured_fund_codes_from_constants())
+        unsupported = [code for code in codes if code not in configured_codes]
+        if unsupported:
+            raise Forbidden("Fund management is disabled; only configured funds are available")
     return codes
 
 

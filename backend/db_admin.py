@@ -2,12 +2,92 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .storage import DB_PATH, SCHEMA_VERSION, database_status, migrate_database
+from .storage import DB_PATH, RAW_DIR, SCHEMA_VERSION, database_status, migrate_database
+
+
+def positive_int_env(name: str, default: int) -> int:
+    try:
+        return max(int(os.environ.get(name, str(default))), 1)
+    except ValueError:
+        return default
+
+
+def prune_raw_responses(
+    raw_dir: Path = RAW_DIR,
+    *,
+    retention_days: int = 7,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+    cutoff = (current - timedelta(days=max(retention_days, 1))).date()
+    removed_directories = 0
+    removed_bytes = 0
+    if not raw_dir.exists():
+        return {"removedDirectories": 0, "removedBytes": 0}
+    for path in raw_dir.iterdir():
+        if not path.is_dir():
+            continue
+        try:
+            day = datetime.strptime(path.name, "%Y%m%d").date()
+        except ValueError:
+            continue
+        if day >= cutoff:
+            continue
+        removed_bytes += sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
+        shutil.rmtree(path)
+        removed_directories += 1
+    return {"removedDirectories": removed_directories, "removedBytes": removed_bytes}
+
+
+def optimize_database(
+    path: Path = DB_PATH,
+    *,
+    response_cache_retention_days: int = 14,
+    snapshot_retention_days: int = 7,
+    raw_retention_days: int = 7,
+    raw_dir: Path = RAW_DIR,
+    now: datetime | None = None,
+    vacuum: bool = False,
+) -> dict[str, object]:
+    current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+    response_cutoff_ms = int((current - timedelta(days=max(response_cache_retention_days, 1))).timestamp() * 1000)
+    snapshot_cutoff_ms = int((current - timedelta(days=max(snapshot_retention_days, 1))).timestamp() * 1000)
+    with sqlite3.connect(path, timeout=10.0) as conn:
+        conn.execute("PRAGMA busy_timeout = 10000")
+        deleted_cache_rows = conn.execute(
+            "DELETE FROM response_cache WHERE fetched_at < ?",
+            (response_cutoff_ms,),
+        ).rowcount
+        deleted_snapshot_rows = conn.execute(
+            "DELETE FROM market_quote_snapshots WHERE captured_at < ?",
+            (snapshot_cutoff_ms,),
+        ).rowcount
+        conn.commit()
+        conn.execute("PRAGMA optimize")
+        checkpoint = tuple(int(value) for value in conn.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone())
+        if vacuum:
+            conn.execute("VACUUM")
+        page_count = int(conn.execute("PRAGMA page_count").fetchone()[0])
+        free_pages = int(conn.execute("PRAGMA freelist_count").fetchone()[0])
+        page_size = int(conn.execute("PRAGMA page_size").fetchone()[0])
+    raw_result = prune_raw_responses(raw_dir, retention_days=raw_retention_days, now=current)
+    return {
+        "deletedResponseCacheRows": max(deleted_cache_rows, 0),
+        "deletedQuoteSnapshotRows": max(deleted_snapshot_rows, 0),
+        "raw": raw_result,
+        "checkpoint": checkpoint,
+        "pageCount": page_count,
+        "freePages": free_pages,
+        "reclaimableBytes": free_pages * page_size,
+        "vacuumed": vacuum,
+    }
 
 
 def verify_database(path: Path) -> dict[str, object]:
@@ -103,6 +183,29 @@ def parse_args() -> argparse.Namespace:
     restore_parser.add_argument("backup", type=Path)
     restore_parser.add_argument("--database", type=Path, default=DB_PATH)
     restore_parser.add_argument("--confirm", metavar="RESTORE")
+
+    optimize_parser = subparsers.add_parser("optimize", help="Prune regenerable caches and run safe SQLite maintenance")
+    optimize_parser.add_argument("--database", type=Path, default=DB_PATH)
+    optimize_parser.add_argument(
+        "--response-cache-retention-days",
+        type=int,
+        default=positive_int_env("FUND_VALUATION_RESPONSE_CACHE_RETENTION_DAYS", 14),
+    )
+    optimize_parser.add_argument(
+        "--snapshot-retention-days",
+        type=int,
+        default=positive_int_env("FUND_VALUATION_SNAPSHOT_RETENTION_DAYS", 7),
+    )
+    optimize_parser.add_argument(
+        "--raw-retention-days",
+        type=int,
+        default=positive_int_env("FUND_VALUATION_RAW_RETENTION_DAYS", 7),
+    )
+    optimize_parser.add_argument(
+        "--vacuum",
+        action="store_true",
+        help="Rebuild the database file to release free pages; stop backend and worker first",
+    )
     return parser.parse_args()
 
 
@@ -125,6 +228,17 @@ def main() -> None:
         print(f"Database restored from: {args.backup}")
         if safety_backup:
             print(f"Previous database backed up to: {safety_backup}")
+        return
+    if args.command == "optimize":
+        result = optimize_database(
+            args.database,
+            response_cache_retention_days=args.response_cache_retention_days,
+            snapshot_retention_days=args.snapshot_retention_days,
+            raw_retention_days=args.raw_retention_days,
+            raw_dir=args.database.parent / "raw",
+            vacuum=args.vacuum,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

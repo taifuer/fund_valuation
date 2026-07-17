@@ -1,22 +1,39 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "${FUND_VALUATION_LOG_MAX_SIZE:-10m}"
+    max-file: "${FUND_VALUATION_LOG_MAX_FILES:-3}"
+
 services:
   frontend:
     build:
       context: .
       target: frontend
+      args:
+        FUND_VALUATION_ENABLE_FUND_MANAGEMENT: ${FUND_VALUATION_ENABLE_FUND_MANAGEMENT:-1}
+        FUND_VALUATION_BAIDU_ANALYTICS_ID: ${FUND_VALUATION_BAIDU_ANALYTICS_ID:-}
+        FUND_VALUATION_NPM_REGISTRY: ${FUND_VALUATION_NPM_REGISTRY:-https://registry.npmjs.org}
     ports:
-      - "${FUND_VALUATION_HTTP_PORT:-8080}:80"
+      - "${FUND_VALUATION_HTTP_HOST:-0.0.0.0}:${FUND_VALUATION_HTTP_PORT:-8080}:80"
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
 
   backend:
     build:
       context: .
       target: backend
+      args:
+        FUND_VALUATION_PIP_INDEX_URL: ${FUND_VALUATION_PIP_INDEX_URL:-https://pypi.org/simple}
     environment:
       FUND_VALUATION_DATA_DIR: /app/data
       FUND_VALUATION_DIAGNOSTICS_TOKEN: ${FUND_VALUATION_DIAGNOSTICS_TOKEN:-}
+      FUND_VALUATION_ENABLE_FUND_MANAGEMENT: ${FUND_VALUATION_ENABLE_FUND_MANAGEMENT:-1}
+      FUND_VALUATION_SNAPSHOT_RETENTION_DAYS: ${FUND_VALUATION_SNAPSHOT_RETENTION_DAYS:-7}
+      FUND_VALUATION_RESPONSE_CACHE_RETENTION_DAYS: ${FUND_VALUATION_RESPONSE_CACHE_RETENTION_DAYS:-14}
+      FUND_VALUATION_RAW_RETENTION_DAYS: ${FUND_VALUATION_RAW_RETENTION_DAYS:-7}
       FUND_VALUATION_PREWARM: "0"
     volumes:
       - fund-data:/app/data
@@ -27,31 +44,43 @@ services:
       retries: 5
       start_period: 20s
     restart: unless-stopped
+    logging: *default-logging
 
   worker:
     build:
       context: .
       target: backend
+      args:
+        FUND_VALUATION_PIP_INDEX_URL: ${FUND_VALUATION_PIP_INDEX_URL:-https://pypi.org/simple}
     command: ["python", "-m", "backend.worker"]
     environment:
       FUND_VALUATION_DATA_DIR: /app/data
-      FUND_VALUATION_AUTO_BACKUP: "1"
-      FUND_VALUATION_BACKUP_INTERVAL_HOURS: "24"
-      FUND_VALUATION_BACKUP_RETENTION_DAYS: "7"
+      FUND_VALUATION_ENABLE_FUND_MANAGEMENT: ${FUND_VALUATION_ENABLE_FUND_MANAGEMENT:-1}
+      FUND_VALUATION_SNAPSHOT_RETENTION_DAYS: ${FUND_VALUATION_SNAPSHOT_RETENTION_DAYS:-7}
+      FUND_VALUATION_RESPONSE_CACHE_RETENTION_DAYS: ${FUND_VALUATION_RESPONSE_CACHE_RETENTION_DAYS:-14}
+      FUND_VALUATION_RAW_RETENTION_DAYS: ${FUND_VALUATION_RAW_RETENTION_DAYS:-7}
+      FUND_VALUATION_AUTO_BACKUP: ${FUND_VALUATION_AUTO_BACKUP:-1}
+      FUND_VALUATION_BACKUP_INTERVAL_HOURS: ${FUND_VALUATION_BACKUP_INTERVAL_HOURS:-24}
+      FUND_VALUATION_BACKUP_RETENTION_DAYS: ${FUND_VALUATION_BACKUP_RETENTION_DAYS:-7}
     volumes:
       - fund-data:/app/data
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
 
   db-tools:
     build:
       context: .
       target: backend
+      args:
+        FUND_VALUATION_PIP_INDEX_URL: ${FUND_VALUATION_PIP_INDEX_URL:-https://pypi.org/simple}
     command: ["python", "-m", "backend.db_admin", "status"]
     environment:
       FUND_VALUATION_DATA_DIR: /app/data
+      FUND_VALUATION_RESPONSE_CACHE_RETENTION_DAYS: ${FUND_VALUATION_RESPONSE_CACHE_RETENTION_DAYS:-14}
+      FUND_VALUATION_RAW_RETENTION_DAYS: ${FUND_VALUATION_RAW_RETENTION_DAYS:-7}
     volumes:
       - fund-data:/app/data
     profiles: [tools]
