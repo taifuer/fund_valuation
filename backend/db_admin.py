@@ -126,6 +126,7 @@ def ensure_recent_backup(
     backup_dir: Path | None = None,
     interval_hours: int = 24,
     retention_days: int = 7,
+    max_files: int | None = None,
     now: datetime | None = None,
 ) -> Path | None:
     current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
@@ -142,6 +143,14 @@ def ensure_recent_backup(
         if path == destination:
             continue
         if datetime.fromtimestamp(path.stat().st_mtime, ZoneInfo("Asia/Shanghai")) < cutoff:
+            path.unlink()
+    if max_files is not None:
+        retained = sorted(
+            directory.glob(f"{source.stem}-*.db"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for path in retained[max(max_files, 1):]:
             path.unlink()
     return destination
 

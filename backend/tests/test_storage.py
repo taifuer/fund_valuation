@@ -86,6 +86,32 @@ class StorageMigrationTests(unittest.TestCase):
             self.assertFalse(old_backup.exists())
             self.assertIsNone(repeated)
 
+    def test_scheduled_backup_keeps_only_newest_max_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / "database.db"
+            backups = root / "backups"
+            migrate_database(database)
+            current = datetime(2026, 7, 17, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+            for age_days in range(1, 5):
+                path = backups / f"database-202607{17 - age_days:02d}-090000.db"
+                backup_database(database, path)
+                timestamp = (current - timedelta(days=age_days)).timestamp()
+                os.utime(path, (timestamp, timestamp))
+
+            created = ensure_recent_backup(
+                database,
+                backup_dir=backups,
+                retention_days=30,
+                max_files=3,
+                now=current,
+            )
+
+            self.assertIsNotNone(created)
+            retained = sorted(backups.glob("database-*.db"), key=lambda path: path.stat().st_mtime, reverse=True)
+            self.assertEqual(len(retained), 3)
+            self.assertEqual(retained[0], created)
+
     def test_optimize_prunes_only_expired_regenerable_cache(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
