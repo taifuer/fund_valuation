@@ -378,10 +378,13 @@ export function getMarketState(sinaSymbol: string, now = new Date()): MarketStat
 
   const calendar = MARKETS[key];
   const local = zonedNow(calendar.timezone, now);
-  if (isWeekend(local.weekday)) return 'weekend';
-  if (calendar.holidays(local.date.slice(0, 4)).has(local.date)) return 'holiday';
+  const beijing = zonedNow('Asia/Shanghai', now);
+  const statusDate = local.date > beijing.date ? beijing.date : local.date;
+  const statusWeekday = local.date > beijing.date ? beijing.weekday : local.weekday;
+  if (isWeekend(statusWeekday)) return 'weekend';
+  if (calendar.holidays(statusDate.slice(0, 4)).has(statusDate)) return 'holiday';
 
-  const sessions = calendar.halfDays(local.date.slice(0, 4))[local.date] ?? calendar.sessions;
+  const sessions = calendar.halfDays(statusDate.slice(0, 4))[statusDate] ?? calendar.sessions;
   if (isInSession(sessions, local.minutes)) return 'live';
   return isBetweenSessions(sessions, local.minutes) ? 'break' : 'closed';
 }

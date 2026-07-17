@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expandedFundCodeFromPathname, pageFromPathname } from './routing';
+import { choiceFromSearch, expandedFundCodeFromPathname, pageFromPathname } from './routing';
 
 describe('routing', () => {
   it('keeps canonical page routes on refresh', () => {
@@ -13,5 +13,10 @@ describe('routing', () => {
   it('parses fund detail deep links', () => {
     expect(expandedFundCodeFromPathname('/funds/016664')).toBe('016664');
     expect(expandedFundCodeFromPathname('/funds/not-a-code')).toBeNull();
+  });
+
+  it('validates shareable filter query parameters', () => {
+    expect(choiceFromSearch('?category=etf', 'category', ['index', 'etf'] as const, 'index')).toBe('etf');
+    expect(choiceFromSearch('?category=invalid', 'category', ['index', 'etf'] as const, 'index')).toBe('index');
   });
 });

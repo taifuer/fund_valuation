@@ -29,7 +29,6 @@ const FUND_SECTION_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_section';
 const FUND_SUMMARY_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_summary';
 const FUND_MANAGER_KEY = 'fund_valuation:managed_funds';
 const MAX_CUSTOM_FUNDS = 50;
-const MAX_FUND_IMPORT_BYTES = 64 * 1024;
 const FUND_DISPLAY_MODE_KEY = 'fund_valuation:fund_display_mode';
 const FUND_MANAGEMENT_ENABLED = __FUND_MANAGEMENT_ENABLED__;
 
@@ -262,7 +261,7 @@ export default function App() {
     activePage === 'funds',
   );
   const overviewData = useOverviewData(funds, activePage === 'overview');
-  const headerFxRates = useHeaderFxRates(activePage !== 'overview');
+  const headerFxRates = useHeaderFxRates(true);
   const marketPageData = useRankingMarketData(activePage === 'ranking');
   const systemStatus = useSystemStatus();
   const activeFxRates = activePage === 'overview' && overviewData.fxRates.size > 0
@@ -283,7 +282,6 @@ export default function App() {
   const [addingFund, setAddingFund] = useState(false);
   const [fundManageMessage, setFundManageMessage] = useState('');
   const [fundManagerOpen, setFundManagerOpen] = useState(false);
-  const importInputRef = useRef<HTMLInputElement>(null);
   const managerTriggerRef = useRef<HTMLButtonElement>(null);
   const managerDialogRef = useRef<HTMLElement>(null);
   const [pageStatusMessage, setPageStatusMessage] = useState('');
@@ -410,11 +408,11 @@ export default function App() {
   }
 
   async function lookupFundName(code: string): Promise<string | null> {
-    const navs = await fetchFundNavs([code]);
+    const navs = await fetchFundNavs([code], true);
     const navName = navs.get(code)?.name?.trim();
     if (navName) return navName;
 
-    const sinaNavs = await fetchSinaFundNavs([code]);
+    const sinaNavs = await fetchSinaFundNavs([code], true);
     return sinaNavs.get(code)?.name?.trim() || null;
   }
 
@@ -500,35 +498,6 @@ export default function App() {
     setFundManageMessage(`已恢复默认 ${FUNDS.length} 只基金`);
   }
 
-  function exportFundSettings() {
-    const blob = new Blob([JSON.stringify(managedFunds, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = 'fund-watchlist.json';
-    anchor.click();
-    URL.revokeObjectURL(url);
-    setFundManageMessage('基金列表已导出');
-  }
-
-  async function importFundSettings(file: File | undefined) {
-    if (!file) return;
-    if (file.size > MAX_FUND_IMPORT_BYTES) {
-      setFundManageMessage('导入失败，基金列表文件不能超过 64 KB');
-      return;
-    }
-    try {
-      const parsed = JSON.parse(await file.text());
-      const normalized = normalizeManagedFundSettings(parsed);
-      updateManagedFunds(normalized);
-      setFundManageMessage(`已导入 ${normalized.customFunds.length} 只自定义基金`);
-    } catch {
-      setFundManageMessage('导入失败，请选择有效的基金列表 JSON');
-    } finally {
-      if (importInputRef.current) importInputRef.current.value = '';
-    }
-  }
-
   function toggleFundSection() {
     setFundCollapsed((prev) => {
       const next = !prev;
@@ -575,7 +544,7 @@ export default function App() {
       ) : activePage === 'funds' ? (
         <>
           <div className={styles.fundSection}>
-            <div className={styles.sectionHeader}>
+            <div className={`${styles.sectionHeader} ${styles.fundToolbar}`}>
               <button
                 type="button"
                 className={styles.sectionTitleButton}
@@ -591,6 +560,7 @@ export default function App() {
                   <div className={styles.sortToggle} aria-label="基金排序方式">
                     <button
                       type="button"
+                      aria-pressed={sortMode === 'estimate'}
                       className={`${styles.sortButton} ${sortMode === 'estimate' ? styles.sortButtonActive : ''}`}
                       onClick={() => setSortMode('estimate')}
                     >
@@ -598,6 +568,7 @@ export default function App() {
                     </button>
                     <button
                       type="button"
+                      aria-pressed={sortMode === 'official'}
                       className={`${styles.sortButton} ${sortMode === 'official' ? styles.sortButtonActive : ''}`}
                       onClick={() => setSortMode('official')}
                     >
@@ -607,6 +578,7 @@ export default function App() {
                   <div className={styles.sortToggle} aria-label="基金排序方向">
                     <button
                       type="button"
+                      aria-pressed={sortDirection === 'desc'}
                       className={`${styles.sortButton} ${sortDirection === 'desc' ? styles.sortButtonActive : ''}`}
                       onClick={() => setSortDirection('desc')}
                     >
@@ -614,6 +586,7 @@ export default function App() {
                     </button>
                     <button
                       type="button"
+                      aria-pressed={sortDirection === 'asc'}
                       className={`${styles.sortButton} ${sortDirection === 'asc' ? styles.sortButtonActive : ''}`}
                       onClick={() => setSortDirection('asc')}
                     >
@@ -623,6 +596,7 @@ export default function App() {
                   <div className={styles.sortToggle} aria-label="基金显示模式">
                     <button
                       type="button"
+                      aria-pressed={fundDisplayMode === 'compact'}
                       className={`${styles.sortButton} ${fundDisplayMode === 'compact' ? styles.sortButtonActive : ''}`}
                       onClick={() => updateFundDisplayMode('compact')}
                     >
@@ -630,6 +604,7 @@ export default function App() {
                     </button>
                     <button
                       type="button"
+                      aria-pressed={fundDisplayMode === 'detail'}
                       className={`${styles.sortButton} ${fundDisplayMode === 'detail' ? styles.sortButtonActive : ''}`}
                       onClick={() => updateFundDisplayMode('detail')}
                     >
@@ -672,17 +647,6 @@ export default function App() {
                   <button type="button" className={styles.managerButton} onClick={restoreDefaultFunds} disabled={addingFund}>
                     恢复默认
                   </button>
-                </div>
-                <div className={styles.managerActions}>
-                  <button type="button" className={styles.managerButton} onClick={exportFundSettings}>导出列表</button>
-                  <button type="button" className={styles.managerButton} onClick={() => importInputRef.current?.click()}>导入列表</button>
-                  <input
-                    ref={importInputRef}
-                    type="file"
-                    accept="application/json,.json"
-                    hidden
-                    onChange={(event) => void importFundSettings(event.target.files?.[0])}
-                  />
                 </div>
                 {fundManageMessage && <div className={styles.managerMessage}>{fundManageMessage}</div>}
                 </section>

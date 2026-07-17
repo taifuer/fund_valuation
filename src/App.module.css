@@ -130,7 +130,7 @@
 }
 
 .summaryName {
-  color: #94a3b8;
+  color: #64748b;
   font-size: 11px;
   line-height: 16px;
   margin-bottom: 2px;
@@ -180,7 +180,7 @@
 
 .summaryMeta {
   bottom: 3px;
-  color: #94a3b8;
+  color: #64748b;
   font-size: 10px;
   font-weight: 500;
   line-height: 14px;
@@ -195,6 +195,17 @@
   justify-content: space-between;
   gap: 12px;
   margin: 16px 0 6px;
+}
+
+.fundToolbar {
+  backdrop-filter: blur(10px);
+  background: rgba(248, 250, 252, 0.94);
+  border-bottom: 1px solid #e2e8f0;
+  margin-top: 4px;
+  padding: 8px 0;
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
 .sectionTitle {
@@ -308,8 +319,6 @@
 .managerHeader strong { color: #0f172a; display: block; font-size: 14px; }
 .managerHeader span { color: #94a3b8; display: block; font-size: 11px; margin-top: 2px; }
 .managerClose { background: transparent; border: 0; color: #64748b; cursor: pointer; font-size: 22px; line-height: 22px; }
-
-.managerActions { display: flex; gap: 6px; width: 100%; }
 
 .managerTrigger {
   background: #fff;
@@ -457,6 +466,24 @@
     flex-wrap: wrap;
   }
 
+  .fundToolbar .sortControls {
+    align-items: center;
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .fundToolbar .sortButton,
+  .fundToolbar .managerTrigger {
+    white-space: nowrap;
+  }
+
+  .fundToolbar .sortControls::-webkit-scrollbar {
+    display: none;
+  }
+
   .summaryGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -473,9 +500,6 @@
   }
 
   .fundManager { padding: 14px; }
-  .managerActions { flex-direction: column; }
-  .managerActions .managerButton { width: 100%; }
-
   .fundSearchInput,
   .managerButton,
   .managerButtonPrimary {

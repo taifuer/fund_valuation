@@ -15,6 +15,21 @@ test('mobile layout keeps page-level content within the viewport', async ({ page
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
+test('return and risk filters survive direct navigation and reload', async ({ page }) => {
+  await page.goto('/returns?category=etf&etf=sector&range=1y&sort=value&order=asc');
+  await expect(page.getByLabel('分类筛选').getByRole('button', { name: 'ETF', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('ETF类型筛选').getByRole('button', { name: '行业ETF' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('收益区间').getByRole('button', { name: '近1年' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page).toHaveURL(/sort=value&order=asc/);
+  await page.reload();
+  await expect(page.getByLabel('ETF类型筛选').getByRole('button', { name: '行业ETF' })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.goto('/risk?category=asset&range=1m&sort=winRate&order=desc');
+  await expect(page.getByLabel('分类筛选').getByRole('button', { name: '资产' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('风险区间').getByRole('button', { name: '近1月' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page).toHaveURL(/sort=winRate&order=desc/);
+});
+
 test('diagnostics route stays hidden from primary navigation and requires a token', async ({ page }) => {
   await page.goto('/diagnostics');
   await expect(page.getByRole('heading', { name: '运行诊断' })).toBeVisible();
@@ -29,7 +44,7 @@ test('fund manager opens as a dialog and closes with Escape', async ({ page }) =
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: '关闭基金管理' })).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(page.getByRole('button', { name: '导入列表' })).toBeFocused();
+  await expect(page.getByRole('button', { name: '恢复默认' })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog', { name: '管理基金' })).toBeHidden();
 });

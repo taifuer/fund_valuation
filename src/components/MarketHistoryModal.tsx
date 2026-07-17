@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { nextChartIndex } from '../chartKeyboard';
 import { fetchMarketHistory } from '../api';
 import type { IndexConfig, MarketHistoryPoint, QuoteData } from '../types';
 import styles from './MarketHistoryModal.module.css';
@@ -307,6 +308,13 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
     setSelectedIndex(index);
   };
 
+  const handleChartKeyDown = (event: React.KeyboardEvent<SVGSVGElement>) => {
+    const nextIndex = nextChartIndex(event.key, selectedIndex, visible.length);
+    if (nextIndex === null) return;
+    event.preventDefault();
+    setSelectedIndex(nextIndex);
+  };
+
   return (
     <div className={styles.backdrop} onClick={onClose}>
       <div className={styles.dialog} role="dialog" aria-modal="true" aria-label={`${item.name}历史走势`} onClick={(event) => event.stopPropagation()}>
@@ -364,7 +372,10 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
                 className={styles.chart}
                 viewBox="0 0 640 218"
                 role="img"
-                aria-label={`${item.name}历史走势`}
+                aria-label={`${item.name}历史走势，可用左右方向键选择数据点，Home 和 End 跳到首尾`}
+                tabIndex={0}
+                onKeyDown={handleChartKeyDown}
+                onBlur={() => setSelectedIndex(null)}
                 onPointerMove={handlePointerMove}
                 onPointerDown={handlePointerMove}
                 onPointerLeave={() => setSelectedIndex(null)}

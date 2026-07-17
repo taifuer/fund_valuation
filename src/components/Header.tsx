@@ -71,6 +71,7 @@ export default function Header({
           <nav className={styles.nav} aria-label="页面切换">
             <button
               type="button"
+              aria-current={activePage === 'overview' ? 'page' : undefined}
               className={`${styles.navButton} ${activePage === 'overview' ? styles.navButtonActive : ''}`}
               onClick={() => onPageChange('overview')}
             >
@@ -78,6 +79,7 @@ export default function Header({
             </button>
             <button
               type="button"
+              aria-current={activePage === 'funds' ? 'page' : undefined}
               className={`${styles.navButton} ${activePage === 'funds' ? styles.navButtonActive : ''}`}
               onClick={() => onPageChange('funds')}
             >
@@ -85,6 +87,7 @@ export default function Header({
             </button>
             <button
               type="button"
+              aria-current={activePage === 'ranking' ? 'page' : undefined}
               className={`${styles.navButton} ${activePage === 'ranking' ? styles.navButtonActive : ''}`}
               onClick={() => onPageChange('ranking')}
             >
@@ -92,6 +95,7 @@ export default function Header({
             </button>
             <button
               type="button"
+              aria-current={activePage === 'risk' ? 'page' : undefined}
               className={`${styles.navButton} ${activePage === 'risk' ? styles.navButtonActive : ''}`}
               onClick={() => onPageChange('risk')}
             >

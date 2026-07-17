@@ -7,7 +7,6 @@ import {
   fetchFundReturnSummaries,
   fetchFxRates,
   fetchMarketStates,
-  fetchOverviewSnapshot,
   fetchSinaFundNavs,
   fetchSystemStatus,
 } from '../api';
@@ -129,13 +128,16 @@ export function useHeaderFxRates(enabled = true) {
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
+    const fxSymbols = DISPLAY_FX_CURRENCIES.map((c) => `fx_s${c.toLowerCase()}cny`);
     async function load() {
-      const rates = await fetchFxRates(DISPLAY_FX_CURRENCIES);
+      const snapshot = await fetchDashboardSnapshot(fxSymbols, DISPLAY_FX_CURRENCIES);
+      const rates = snapshot?.fxRates.size
+        ? snapshot.fxRates
+        : await fetchFxRates(DISPLAY_FX_CURRENCIES);
       if (!cancelled) setFxRates(rates);
     }
 
     void load();
-    const fxSymbols = DISPLAY_FX_CURRENCIES.map((c) => `fx_s${c.toLowerCase()}cny`);
     const stopPolling = startAdaptivePolling(load, () => pickPollInterval(fxSymbols, new Map()));
     return () => {
       cancelled = true;
@@ -175,83 +177,69 @@ export function useOverviewData(funds: Fund[], enabled: boolean) {
     }
 
     let cancelled = false;
-    async function load(showLoading = false) {
+    async function loadMarket(showLoading = false) {
       if (showLoading) {
         setLoading(true);
-        setFundLoading(true);
       }
       setError(null);
-      const fundCodes = funds.map((fund) => fund.code);
       try {
-        const snapshot = await fetchOverviewSnapshot(symbols, DISPLAY_FX_CURRENCIES, fundCodes);
-        let quoteData: Map<string, QuoteData>;
-        let fxData: Map<string, FxRateData>;
-        let stateData: Map<string, MarketStateData>;
-        let summaryData: Map<string, FundNavData>;
-
-        if (snapshot && snapshot.quotes.size > 0) {
-          quoteData = snapshot.quotes;
-          fxData = snapshot.fxRates;
-          stateData = snapshot.marketStates;
-          summaryData = snapshot.fundSummaries;
-        } else {
-          const [dashboard, history] = await Promise.all([
-            fetchDashboardSnapshot(symbols, DISPLAY_FX_CURRENCIES),
-            fetchFundHistory(fundCodes),
-          ]);
-          quoteData = dashboard?.quotes ?? new Map();
-          fxData = dashboard?.fxRates ?? new Map();
-          stateData = dashboard?.marketStates ?? new Map();
-          summaryData = new Map();
-          for (const [code, hist] of history) {
-            const fund = funds.find((item) => item.code === code);
-            summaryData.set(code, {
-              code,
-              name: fund?.name ?? code,
-              navDate: hist.navDate,
-              nav: hist.nav,
-              officialChange: hist.officialChange,
-              estimatedNav: hist.nav,
-              estimatedChange: 0,
-            });
-          }
-        }
-
-        const missingCodes = fundCodes.filter((code) => !summaryData.has(code));
-        if (missingCodes.length > 0) {
-          const navs = await fetchFundNavs(missingCodes);
-          for (const [code, nav] of navs) {
-            summaryData.set(code, nav);
-          }
-        }
-
+        const snapshot = await fetchDashboardSnapshot(symbols, DISPLAY_FX_CURRENCIES);
         if (cancelled) return;
-        setQuotes((prev) => new Map([...prev, ...quoteData]));
-        setFxRates((prev) => new Map([...prev, ...fxData]));
+        if (!snapshot || snapshot.quotes.size === 0) {
+          throw new Error('概览行情快照暂不可用');
+        }
+        setQuotes((prev) => new Map([...prev, ...snapshot.quotes]));
+        setFxRates((prev) => new Map([...prev, ...snapshot.fxRates]));
         setMarketStates((prev) => {
-          const merged = new Map([...prev, ...stateData]);
+          const merged = new Map([...prev, ...snapshot.marketStates]);
           marketStatesRef.current = merged;
           return merged;
         });
-        setFundSummaries(summaryData);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : '概览数据加载失败');
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-          setFundLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     }
 
-    void load(true);
-    const stopPolling = startAdaptivePolling(
-      () => load(false),
+    async function loadFunds(showLoading = false) {
+      if (showLoading) setFundLoading(true);
+      try {
+        const history = await fetchFundHistory(funds.map((fund) => fund.code));
+        if (cancelled) return;
+        const summaries = new Map<string, FundNavData>();
+        for (const fund of funds) {
+          const hist = history.get(fund.code);
+          if (!hist) continue;
+          summaries.set(fund.code, {
+            code: fund.code,
+            name: fund.name,
+            navDate: hist.navDate,
+            nav: hist.nav,
+            officialChange: hist.officialChange,
+            estimatedNav: hist.nav,
+            estimatedChange: 0,
+          });
+        }
+        setFundSummaries(summaries);
+      } catch {
+        // Market data remains usable when fund summaries are temporarily absent.
+      } finally {
+        if (!cancelled) setFundLoading(false);
+      }
+    }
+
+    void loadMarket(true);
+    void loadFunds(true);
+    const stopMarketPolling = startAdaptivePolling(
+      () => loadMarket(false),
       () => pickPollInterval(symbols, marketStatesRef.current),
     );
+    const stopFundPolling = startAdaptivePolling(() => loadFunds(false), () => 15 * 60 * 1000);
     return () => {
       cancelled = true;
-      stopPolling();
+      stopMarketPolling();
+      stopFundPolling();
     };
   }, [enabled, fundKey, funds, symbols]);
 

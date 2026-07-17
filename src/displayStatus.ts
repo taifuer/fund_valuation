@@ -19,8 +19,20 @@ function beijingTimestamp(value: string): number | null {
   return Number.isNaN(timestamp) ? null : timestamp;
 }
 
+function fetchedAgeLimit(symbol: string): number {
+  if (symbol === 'fx_sbtcusd') return 7 * 60_000;
+  if (symbol.startsWith('hf_')) return 4 * 60_000;
+  return 3 * 60_000;
+}
+
+function quoteTimeAgeLimit(symbol: string): number {
+  if (symbol === 'fx_sbtcusd') return 10 * 60_000;
+  if (symbol.startsWith('hf_')) return 5 * 60_000;
+  return 3 * 60_000;
+}
+
 export function quoteIsFresh(quote: QuoteData, now = Date.now()): boolean {
-  if (now - quote.fetchedAt >= 90_000) return false;
+  if (now - quote.fetchedAt > fetchedAgeLimit(quote.symbol)) return false;
   if (quote.dateReliable !== false) {
     const quoteDate = quote.time.slice(0, 10);
     const beijingNow = new Date(now + 8 * 60 * 60 * 1000).toISOString();
@@ -28,11 +40,10 @@ export function quoteIsFresh(quote: QuoteData, now = Date.now()): boolean {
       return false;
     }
     const timestamp = beijingTimestamp(quote.time);
-    if (timestamp != null && Math.abs(now - timestamp) > 10 * 60 * 1000) return false;
+    if (timestamp != null && Math.abs(now - timestamp) > quoteTimeAgeLimit(quote.symbol)) return false;
   }
   if (quote.symbol !== 'fx_sbtcusd') return true;
-  const timestamp = beijingTimestamp(quote.time);
-  return timestamp != null && Math.abs(now - timestamp) <= 10 * 60 * 1000;
+  return beijingTimestamp(quote.time) != null;
 }
 
 export function closeTime(symbol: string): string | null {
@@ -66,8 +77,8 @@ export function quoteDisplayState({
   marketState: MarketState;
   futuresLive?: boolean;
 }): QuoteDisplayState {
-  if (futuresLive) return 'futuresLive';
   const fresh = quoteIsFresh(quote);
+  if (futuresLive) return fresh ? 'futuresLive' : 'stale';
   if (quote.session === 'pre' && fresh) return 'pre';
   if (quote.session === 'post' && fresh) return 'post';
   if (marketState === 'live' && fresh) return 'live';

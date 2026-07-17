@@ -119,7 +119,11 @@
     {
       "symbol": "TWSE",
       "name": "台湾加权",
-      "sinaSymbol": "b_TWSE"
+      "sinaSymbol": "b_TWSE",
+      "history": {
+        "source": "twse-official",
+        "symbol": "TWII"
+      }
     }
   ],
   "marketAssets": [
@@ -345,7 +349,11 @@
     {
       "symbol": "TWSE",
       "name": "台湾加权",
-      "sinaSymbol": "b_TWSE"
+      "sinaSymbol": "b_TWSE",
+      "history": {
+        "source": "twse-official",
+        "symbol": "TWII"
+      }
     },
     {
       "symbol": "SZ399001",

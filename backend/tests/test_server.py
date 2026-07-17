@@ -49,7 +49,9 @@ class ServerDataRefreshTests(unittest.TestCase):
                 DELETE FROM stock_daily_history;
                 DELETE FROM fx_daily_history;
                 DELETE FROM fund_estimate_backtest;
+                DELETE FROM fund_backtest_summaries;
                 DELETE FROM market_quote_snapshots;
+                DELETE FROM dashboard_snapshots;
                 DELETE FROM background_jobs;
                 """
             )
@@ -204,6 +206,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         with (
             patch.object(server, "configured_fund_codes_from_constants", return_value=["016664"]),
             patch.object(server, "latest_fund_history_meta", return_value=("2026-05-21", 0)),
+            patch.object(server, "count_fund_history_rows", return_value=101),
             patch.object(server, "auto_refresh_fund_history_if_stale") as fund_refresh,
             patch.object(server, "configured_market_return_items_from_constants", return_value=["sina-cn:sh000001"]),
             patch.object(server, "market_history_should_refresh_for_returns", return_value=True),
@@ -246,7 +249,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         upstream_body = 'var hq_str_f_118001="易方达亚洲精选股票(QDII),1.693,1.693,1.673,2026-05-21,22.6875";'.encode("gb18030")
 
         with patch.object(server, "fetch_upstream", return_value=(200, "text/plain; charset=utf-8", upstream_body)):
-            response = server.app.test_client().get("/api/sina?list=f_118001")
+            response = server.app.test_client().get("/api/sina?list=f_118001&refresh=1")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("charset=utf-8", response.content_type)
@@ -264,9 +267,15 @@ class ServerDataRefreshTests(unittest.TestCase):
                 return 200, "text/plain; charset=utf-8", fx_body
             return 200, "text/plain; charset=utf-8", quote_body
 
-        client = server.app.test_client()
-        url = "/api/dashboard?symbols=s_sh000001&currencies=USD&now=2026-05-26T10:00:00%2B08:00"
         with patch.object(server, "fetch_upstream", side_effect=fake_fetch):
+            snapshot = server.build_dashboard_payload(
+                ["s_sh000001"], ["USD"], "2026-05-26T10:00:00+08:00", allow_upstream=True
+            )
+            server.store_dashboard_snapshot(snapshot)
+
+        client = server.app.test_client()
+        url = "/api/dashboard?symbols=s_sh000001&currencies=USD"
+        with patch.object(server, "fetch_upstream", side_effect=AssertionError("request path must not fetch upstream")):
             first = client.get(url)
             second = client.get(url)
 
@@ -300,8 +309,14 @@ class ServerDataRefreshTests(unittest.TestCase):
             return 200, "text/plain; charset=utf-8", quote_body
 
         with patch.object(server, "fetch_upstream", side_effect=fake_fetch):
+            snapshot = server.build_dashboard_payload(
+                ["s_sh000001"], ["USD"], "2026-05-26T10:00:00+08:00", allow_upstream=True
+            )
+            server.store_dashboard_snapshot(snapshot)
+
+        with patch.object(server, "fetch_upstream", side_effect=AssertionError("request path must not fetch upstream")):
             response = server.app.test_client().get(
-                "/api/overview?symbols=s_sh000001&currencies=USD&fundCodes=016664&now=2026-05-26T10:00:00%2B08:00"
+                "/api/overview?symbols=s_sh000001&currencies=USD&fundCodes=016664"
             )
 
         self.assertEqual(response.status_code, 200)
@@ -331,7 +346,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             patch.object(server, "fetch_eastmoney_json", side_effect=fake_eastmoney) as eastmoney,
             patch.object(server, "expected_quote_date_for_symbol", return_value="2026-06-24"),
         ):
-            response = server.app.test_client().get("/api/sina?list=int_nikkei,b_TWSE")
+            response = server.app.test_client().get("/api/sina?list=int_nikkei,b_TWSE&refresh=1")
 
         text = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
@@ -346,7 +361,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             patch.object(server, "fetch_upstream", return_value=(200, "text/plain; charset=utf-8", sina_body)),
             patch.object(server, "fetch_eastmoney_json", return_value=None),
         ):
-            response = server.app.test_client().get("/api/sina?list=int_nikkei")
+            response = server.app.test_client().get("/api/sina?list=int_nikkei&refresh=1")
 
         text = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
@@ -369,7 +384,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             patch.object(server, "fetch_eastmoney_json", return_value=None),
             patch.object(server, "expected_quote_date_for_symbol", return_value="2026-06-24"),
         ):
-            response = server.app.test_client().get("/api/sina?list=int_nikkei")
+            response = server.app.test_client().get("/api/sina?list=int_nikkei&refresh=1")
 
         text = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
@@ -395,7 +410,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             patch.object(server, "fetch_eastmoney_json", return_value=None),
             patch.object(server, "quote_date_is_usable", return_value=True),
         ):
-            response = server.app.test_client().get("/api/sina?list=b_TWSE")
+            response = server.app.test_client().get("/api/sina?list=b_TWSE&refresh=1")
 
         text = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
@@ -410,7 +425,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             patch.object(server, "fetch_upstream", return_value=(200, "text/plain; charset=gb18030", stale_body)),
             patch.object(server, "fetch_eastmoney_json", return_value=None),
         ):
-            response = server.app.test_client().get("/api/sina?list=b_TWSE")
+            response = server.app.test_client().get("/api/sina?list=b_TWSE&refresh=1")
 
         text = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
@@ -481,7 +496,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 429)
 
-    def test_fund_nav_returns_stale_cache_and_schedules_refresh(self) -> None:
+    def test_fund_nav_returns_stale_cache_without_request_refresh(self) -> None:
         body = b'jsonpgz({"fundcode":"016664","name":"test","dwjz":"1.0000","jzrq":"2026-05-21"});'
         server.cache_put(
             "fundnav:016664",
@@ -505,7 +520,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("X-Cache"), "STALE")
         self.assertEqual(response.get_json()["016664"]["fundcode"], "016664")
-        schedule_refresh.assert_called_once_with(["016664"])
+        schedule_refresh.assert_not_called()
 
     def test_fund_nav_returns_partial_cache_without_blocking_on_missing_code(self) -> None:
         body = b'jsonpgz({"fundcode":"016664","name":"test","dwjz":"1.0000","jzrq":"2026-05-21"});'
@@ -526,7 +541,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("X-Cache"), "STALE")
         self.assertEqual(set(response.get_json()), {"016664"})
-        schedule_refresh.assert_called_once_with(["118001"])
+        schedule_refresh.assert_not_called()
 
     def test_fund_nav_uses_persisted_history_without_blocking_fetch(self) -> None:
         fetched_at = server.now_ms()
@@ -550,7 +565,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(payload["jzrq"], "2026-05-21")
         self.assertEqual(payload["dwjz"], "1.2345")
         self.assertEqual(payload["gsz"], "")
-        schedule_refresh.assert_called_once_with(["016664"])
+        schedule_refresh.assert_not_called()
 
     def test_fund_nav_does_not_repeat_recent_empty_upstream_attempt(self) -> None:
         server.cache_put(
@@ -586,7 +601,7 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         schedule_refresh.assert_called_once_with(["016664", "118001"])
 
-    def test_fund_purchase_returns_partial_stale_cache_and_refreshes_async(self) -> None:
+    def test_fund_purchase_returns_partial_stale_cache_without_request_refresh(self) -> None:
         with sqlite3.connect(server.DB_PATH) as conn:
             conn.execute(
                 """
@@ -610,7 +625,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("X-Cache"), "STALE")
         self.assertEqual(set(response.get_json()), {"016664"})
-        schedule_refresh.assert_called_once_with()
+        schedule_refresh.assert_not_called()
 
     def test_prewarm_purchase_status_skips_fresh_complete_cache(self) -> None:
         with (
@@ -647,6 +662,36 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(payload["hkHSI"]["state"], "holiday")
         self.assertEqual(payload["b_KOSPI"]["state"], "holiday")
         self.assertEqual(payload["s_sh000001"]["state"], "live")
+
+    def test_calendar_reseed_applies_holiday_corrections_to_existing_database(self) -> None:
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute(
+                """
+                INSERT INTO market_calendar(market, date, status, sessions, timezone, source, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("kr", "2026-07-17", "open", '[["09:00", "15:30"]]', "Asia/Seoul", "stale", 1),
+            )
+
+        server.ensure_market_calendar_seeded(2026)
+        state = server.market_state_for_symbol(
+            "b_KOSPI",
+            datetime.fromisoformat("2026-07-17T10:00:00+08:00"),
+        )
+
+        self.assertEqual(state["state"], "holiday")
+        self.assertEqual(state["lastTradingDay"], "2026-07-16")
+
+    def test_korea_holiday_status_uses_beijing_date_during_midnight_rollover(self) -> None:
+        server.ensure_market_calendar_seeded(2026)
+
+        state = server.market_state_for_symbol(
+            "b_KOSPI",
+            datetime.fromisoformat("2026-07-17T23:30:00+08:00"),
+        )
+
+        self.assertEqual(state["date"], "2026-07-17")
+        self.assertEqual(state["state"], "holiday")
 
     def test_market_states_uses_response_cache(self) -> None:
         client = server.app.test_client()
@@ -694,8 +739,8 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
         self.assertEqual(compute.call_count, 2)
-        compute.assert_any_call("016664", 30, refresh=False)
-        compute.assert_any_call("017436", 30, refresh=False)
+        compute.assert_any_call("016664", 30, refresh=False, use_persisted=False)
+        compute.assert_any_call("017436", 30, refresh=False, use_persisted=False)
 
     def test_market_states_marks_weekend_separately(self) -> None:
         response = server.app.test_client().get(
@@ -829,6 +874,37 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertIn("sh000001", sina.get_data(as_text=True))
         fetch.assert_not_called()
 
+    def test_dashboard_and_sina_never_fetch_upstream_without_snapshot(self) -> None:
+        with patch.object(server, "fetch_upstream", side_effect=AssertionError("request path must not fetch upstream")):
+            dashboard = server.app.test_client().get("/api/dashboard?symbols=sh000001&currencies=USD")
+            sina = server.app.test_client().get("/api/sina?list=sh000001")
+
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(dashboard.get_json()["quotes"], {})
+        self.assertEqual(sina.status_code, 200)
+        self.assertEqual(sina.get_data(as_text=True), "")
+
+    def test_twse_official_history_parser_stores_daily_closes(self) -> None:
+        payload = json.dumps({
+            "stat": "OK",
+            "data": [
+                ["2026/07/15", "44,850.69", "45,881.91", "44,850.69", "45,354.61"],
+                ["2026/07/16", "45,400.00", "46,000.00", "45,300.00", "45,900.25"],
+            ],
+        })
+
+        stored = server.store_market_history("twse-official", "TWII", payload)
+        rows = server.read_market_history_from_db("twse-official", "TWII")
+
+        self.assertEqual(stored, 2)
+        self.assertEqual(rows[-1], {"date": "2026-07-16", "close": 45900.25})
+
+    def test_twse_official_history_uses_non_redirecting_official_domain(self) -> None:
+        url, referer = server.market_history_url("twse-official", "TWII")
+
+        self.assertTrue(url.startswith("https://www.twse.com.tw/"))
+        self.assertTrue(referer.startswith("https://www.twse.com.tw/"))
+
     def test_quote_group_refresh_interval_tracks_market_activity(self) -> None:
         server.ensure_market_calendar_seeded()
         self.assertEqual(
@@ -848,6 +924,12 @@ class ServerDataRefreshTests(unittest.TestCase):
                 ["sh000001"], datetime.fromisoformat("2026-05-23T10:00:00+08:00")
             ),
             15 * 60,
+        )
+        self.assertEqual(
+            server.quote_group_refresh_interval(
+                ["sh000001"], datetime.fromisoformat("2026-05-26T09:10:00+08:00")
+            ),
+            60,
         )
         self.assertEqual(
             server.quote_group_refresh_interval(
@@ -904,7 +986,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(health.get_json(), {"ok": True})
         self.assertEqual(ready.status_code, 200)
         self.assertTrue(ready.get_json()["ready"])
-        self.assertEqual(ready.get_json()["schemaVersion"], 2)
+        self.assertEqual(ready.get_json()["schemaVersion"], server.SCHEMA_VERSION)
         self.assertNotIn("db", health.get_json())
         self.assertRegex(health.headers["X-Request-ID"], r"^[a-f0-9]{32}$")
         self.assertEqual(health.headers["X-API-Schema-Version"], "1")
@@ -960,7 +1042,10 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(coverage["status"], "incomplete")
         self.assertEqual(coverage["summary"]["fundsWithoutNav"], 17)
         self.assertGreater(coverage["summary"]["missingHoldingPeriods"], 0)
-        self.assertEqual(coverage["summary"]["marketsWithoutHistory"], 44)
+        self.assertEqual(
+            coverage["summary"]["marketsWithoutHistory"],
+            len(server.configured_market_return_items_from_constants()),
+        )
 
     def test_missing_holding_refresh_validates_period_and_stores_rows(self) -> None:
         gap = {"code": "017436", "year": 2025, "quarter": 4, "reportDate": "2025-12-31"}
@@ -997,7 +1082,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         """.encode()
 
         with patch.object(server, "fetch_upstream", return_value=(200, "text/html; charset=utf-8", upstream_body)):
-            response = server.app.test_client().get("/api/fundprofiles?codes=118001")
+            response = server.app.test_client().get("/api/fundprofiles?codes=118001&refresh=1")
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
@@ -1031,7 +1116,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {})
 
-    def test_fund_history_without_refresh_updates_stale_sqlite_rows(self) -> None:
+    def test_fund_history_without_refresh_keeps_stale_sqlite_rows(self) -> None:
         server.store_fund_history(
             "016664",
             [{"FSRQ": "2026-05-15", "DWJZ": "3.1194", "JZZZL": "-4.73"}],
@@ -1057,8 +1142,8 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
-        self.assertEqual(payload["016664"][0]["FSRQ"], "2026-05-21")
-        self.assertEqual(server.read_fund_history_from_db("016664", 1, 1)[0]["FSRQ"], "2026-05-21")
+        self.assertEqual(payload["016664"][0]["FSRQ"], "2026-05-15")
+        self.assertEqual(server.read_fund_history_from_db("016664", 1, 1)[0]["FSRQ"], "2026-05-15")
 
     def test_fund_history_refresh_fetches_latest_and_updates_sqlite(self) -> None:
         server.store_fund_history(
@@ -1366,7 +1451,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), [])
 
-    def test_market_history_without_refresh_updates_stale_sqlite_rows(self) -> None:
+    def test_market_history_without_refresh_keeps_stale_sqlite_rows(self) -> None:
         server.store_market_history("sina-us", ".INX", 'var _=([{"d":"2026-05-14","c":"7501.24"}]);')
         with sqlite3.connect(server.DB_PATH) as conn:
             conn.execute(
@@ -1384,11 +1469,11 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
-        self.assertEqual(payload[-1]["date"], "2026-05-19")
+        self.assertEqual(payload[-1]["date"], "2026-05-14")
         rows = server.read_market_history_from_db("sina-us", ".INX")
-        self.assertEqual(rows[-1]["date"], "2026-05-19")
+        self.assertEqual(rows[-1]["date"], "2026-05-14")
 
-    def test_market_returns_returns_cached_rows_and_schedules_stale_refresh(self) -> None:
+    def test_market_returns_returns_cached_rows_without_request_refresh(self) -> None:
         server.store_market_history(
             "sina-us",
             ".INX",
@@ -1412,9 +1497,9 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(summary["latest"]["endDate"], "2026-05-14")
         self.assertEqual(summary["latest"]["returnPercent"], 10.0)
         self.assertEqual(summary["ranges"]["ytd"]["returnPercent"], 10.0)
-        self.assertEqual(scheduled, [("sina-us", ".INX")])
+        self.assertEqual(scheduled, [])
 
-    def test_market_returns_schedules_missing_sqlite_rows_without_blocking(self) -> None:
+    def test_market_returns_does_not_refresh_missing_rows_on_request(self) -> None:
         scheduled: list[tuple[str, str]] = []
         with patch.object(server, "schedule_market_history_refresh", side_effect=lambda source, symbol: scheduled.append((source, symbol))):
             response = server.app.test_client().get("/api/marketreturns?items=sina-cn:sh000688")
@@ -1422,9 +1507,9 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertNotIn("sina-cn:sh000688", payload)
-        self.assertEqual(scheduled, [("sina-cn", "sh000688")])
+        self.assertEqual(scheduled, [])
 
-    def test_overview_schedules_stale_fund_history_refresh(self) -> None:
+    def test_overview_does_not_schedule_stale_fund_history_refresh(self) -> None:
         server.store_fund_history(
             "017436",
             [
@@ -1455,7 +1540,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload["fundSummaries"]["017436"]["navDate"], "2026-07-02")
-        self.assertEqual(scheduled, [(["017436"], 2)])
+        self.assertEqual(scheduled, [])
 
     def test_market_returns_adjusts_cn_etf_ex_rights_gap(self) -> None:
         server.store_market_history(

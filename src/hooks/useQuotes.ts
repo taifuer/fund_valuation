@@ -223,8 +223,8 @@ export function useQuotes(
             .map((f) => f.code)
         : [];
       const [dynamicHoldings, dynamicProfiles] = await Promise.all([
-        fetchFundHoldings(dynamicHoldingCodes),
-        fetchFundProfiles(dynamicProfileCodes),
+        fetchFundHoldings(dynamicHoldingCodes, true),
+        fetchFundProfiles(dynamicProfileCodes, true),
       ]);
       dynamicHoldingCodes.forEach((code) => dynamicHoldingsFetchedAtRef.current.set(code, now));
       dynamicProfileCodes.forEach((code) => dynamicProfilesFetchedAtRef.current.set(code, now));

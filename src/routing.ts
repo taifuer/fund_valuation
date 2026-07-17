@@ -28,3 +28,24 @@ export function canonicalPathForPage(page: PageKey): string {
 export function fundExpansionPath(code: string, expanded: boolean): string {
   return expanded ? `/funds/${code}` : '/funds';
 }
+
+export function choiceFromSearch<T extends string>(
+  search: string,
+  key: string,
+  choices: readonly T[],
+  fallback: T,
+): T {
+  const value = new URLSearchParams(search).get(key);
+  return value && choices.includes(value as T) ? value as T : fallback;
+}
+
+export function replaceSearchParams(updates: Record<string, string | null>) {
+  const params = new URLSearchParams(window.location.search);
+  for (const [key, value] of Object.entries(updates)) {
+    if (value) params.set(key, value);
+    else params.delete(key);
+  }
+  const query = params.toString();
+  const target = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
+  window.history.replaceState({}, '', target);
+}

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { nextChartIndex } from '../chartKeyboard';
 import type { FundHistoryPoint } from '../types';
 import { useFundHistory } from '../hooks/useFundHistory';
 import styles from './FundHistoryChart.module.css';
@@ -233,6 +234,13 @@ export default function FundHistoryChart({ fundCode }: Props) {
     setSelectedIndex(index);
   };
 
+  const handleChartKeyDown = (event: React.KeyboardEvent<SVGSVGElement>) => {
+    const nextIndex = nextChartIndex(event.key, selectedIndex, visible.length);
+    if (nextIndex === null) return;
+    event.preventDefault();
+    setSelectedIndex(nextIndex);
+  };
+
   return (
     <div className={styles.container} onClick={(event) => event.stopPropagation()}>
       <div className={styles.toolbar}>
@@ -280,7 +288,10 @@ export default function FundHistoryChart({ fundCode }: Props) {
               className={styles.chart}
               viewBox="0 0 640 206"
               role="img"
-              aria-label="官方历史单位净值走势"
+              aria-label="官方历史单位净值走势，可用左右方向键选择数据点，Home 和 End 跳到首尾"
+              tabIndex={0}
+              onKeyDown={handleChartKeyDown}
+              onBlur={() => setSelectedIndex(null)}
               onPointerMove={handlePointerMove}
               onPointerDown={handlePointerMove}
               onPointerLeave={() => setSelectedIndex(null)}

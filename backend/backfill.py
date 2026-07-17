@@ -22,6 +22,7 @@ from .server import (
     parse_jsonp_call,
     parse_fund_holdings,
     refresh_ecb_fx_history,
+    refresh_twse_history,
     store_fund_holdings,
     store_fund_history,
     store_market_history,
@@ -213,6 +214,15 @@ def backfill_market(
         "source = ? AND symbol = ?",
         (target.source, target.symbol),
     )
+    if target.source == "twse-official" and target.symbol == "TWII" and not cache_only:
+        stored = refresh_twse_history(60, force_refresh=not use_cache)
+        after = count_rows(
+            "market_history",
+            "source = ? AND symbol = ?",
+            (target.source, target.symbol),
+        )
+        return after - before, stored > 0
+
     cache_key = f"markethistory:{target.source}:{target.symbol}"
     if cache_only:
         text = cached_text(cache_key)

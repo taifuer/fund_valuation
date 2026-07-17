@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import signal
 import socket
+import threading
 import time
 import uuid
 
@@ -22,6 +24,7 @@ from .server import (
     prewarm_fund_nav_cache_async,
     prewarm_purchase_status_cache,
     prewarm_response_cache,
+    publish_dashboard_snapshot,
     prune_in_memory_caches,
     prune_quote_snapshots,
     quote_group_refresh_interval,
@@ -66,46 +69,35 @@ def main() -> None:
             chunk = symbols[offset:offset + MAX_SINA_SYMBOLS_PER_REQUEST]
             build_dashboard_payload(chunk, currencies if offset == 0 else [], "", allow_upstream=True)
 
-    with app.app_context():
+    maintenance_guard = threading.Lock()
+    maintenance_thread: threading.Thread | None = None
+    stop_event = threading.Event()
+
+    def request_stop(_signum: int, _frame: object) -> None:
+        stop_event.set()
+
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
+
+    def run_maintenance(flags: set[str]) -> None:
+        tasks: list[str] = []
+        errors: list[str] = []
+        started = time.monotonic()
         try:
-            while True:
-                started = time.monotonic()
-                acquired = claim_background_job(owner, lease_seconds=180)
-                tasks: list[str] = []
-                errors: list[str] = []
-                current = time.monotonic()
-                cash_symbols, continuous_symbols = quote_symbol_groups()
-                cash_interval = quote_group_refresh_interval(cash_symbols)
-                continuous_interval = quote_group_refresh_interval(continuous_symbols)
-                if acquired and current >= due["cash_quotes"]:
-                    try:
-                        refresh_quotes(cash_symbols, [])
-                        tasks.append("cash-quotes")
-                    except Exception as exc:
-                        errors.append(f"cash-quotes: {exc}")
-                    due["cash_quotes"] = current + cash_interval
-                if acquired and current >= due["continuous_quotes"]:
-                    try:
-                        refresh_quotes(continuous_symbols, ["EUR", "HKD", "JPY", "KRW", "USD"])
-                        tasks.append("continuous-quotes")
-                    except Exception as exc:
-                        errors.append(f"continuous-quotes: {exc}")
-                    due["continuous_quotes"] = current + continuous_interval
-                if acquired and current >= due["fund_nav"]:
+            with app.app_context():
+                if "fund_nav" in flags:
                     try:
                         prewarm_fund_nav_cache_async()
                         tasks.append("fund-nav")
                     except Exception as exc:
                         errors.append(f"fund-nav: {exc}")
-                    due["fund_nav"] = current + (15 * 60 if cash_interval <= 5 * 60 else 60 * 60)
-                if acquired and current >= due["fund_purchase"]:
+                if "fund_purchase" in flags:
                     try:
                         prewarm_purchase_status_cache()
                         tasks.append("fund-purchase")
                     except Exception as exc:
                         errors.append(f"fund-purchase: {exc}")
-                    due["fund_purchase"] = current + 6 * 60 * 60
-                if acquired and current >= due["history"]:
+                if "history" in flags:
                     try:
                         errors.extend(refresh_configured_fund_history())
                         errors.extend(refresh_configured_market_history())
@@ -119,29 +111,25 @@ def main() -> None:
                         tasks.append("history")
                     except Exception as exc:
                         errors.append(f"history: {exc}")
-                    due["history"] = current + max(maintenance_interval, 60 * 60)
-                if acquired and current >= due["backtest"]:
+                if "backtest" in flags:
                     try:
                         errors.extend(prewarm_fund_backtest_cache())
                         tasks.append("backtest")
                     except Exception as exc:
                         errors.append(f"backtest: {exc}")
-                    due["backtest"] = current + 24 * 60 * 60
-                if acquired and current >= due["backup"]:
-                    if os.environ.get("FUND_VALUATION_AUTO_BACKUP", "0") == "1":
-                        try:
-                            backup = ensure_recent_backup(
-                                DB_PATH,
-                                interval_hours=int(os.environ.get("FUND_VALUATION_BACKUP_INTERVAL_HOURS", "24")),
-                                retention_days=int(os.environ.get("FUND_VALUATION_BACKUP_RETENTION_DAYS", "7")),
-                                max_files=positive_int_env("FUND_VALUATION_BACKUP_MAX_FILES", 3),
-                            )
-                            if backup:
-                                tasks.append("backup")
-                        except Exception as exc:
-                            errors.append(f"backup: {exc}")
-                    due["backup"] = current + 60 * 60
-                if acquired and current >= due["cleanup"]:
+                if "backup" in flags and os.environ.get("FUND_VALUATION_AUTO_BACKUP", "0") == "1":
+                    try:
+                        backup = ensure_recent_backup(
+                            DB_PATH,
+                            interval_hours=int(os.environ.get("FUND_VALUATION_BACKUP_INTERVAL_HOURS", "24")),
+                            retention_days=int(os.environ.get("FUND_VALUATION_BACKUP_RETENTION_DAYS", "7")),
+                            max_files=positive_int_env("FUND_VALUATION_BACKUP_MAX_FILES", 3),
+                        )
+                        if backup:
+                            tasks.append("backup")
+                    except Exception as exc:
+                        errors.append(f"backup: {exc}")
+                if "cleanup" in flags:
                     try:
                         prune_quote_snapshots()
                         optimize_database(
@@ -153,7 +141,85 @@ def main() -> None:
                         tasks.append("cleanup")
                     except Exception as exc:
                         errors.append(f"cleanup: {exc}")
-                    due["cleanup"] = current + 60 * 60
+                state = background_refresh_state_snapshot()
+                updates = {
+                    "lastRunAt": now_ms(),
+                    "runCount": int(state.get("runCount", 0) or 0) + 1,
+                }
+                if errors:
+                    updates.update({"lastErrorAt": now_ms(), "lastError": "; ".join(errors[:5])[:480]})
+                else:
+                    updates.update({"lastSuccessAt": now_ms(), "lastError": ""})
+                mark_background_refresh(owner, **updates)
+        finally:
+            elapsed = time.monotonic() - started
+            if tasks:
+                print(f"Maintenance tasks {','.join(tasks)} completed in {elapsed:.1f}s", flush=True)
+            if errors:
+                print(f"Maintenance errors: {'; '.join(errors[:5])}", flush=True)
+            maintenance_guard.release()
+
+    def schedule_maintenance(flags: set[str]) -> None:
+        nonlocal maintenance_thread
+        if not flags or not maintenance_guard.acquire(blocking=False):
+            return
+        maintenance_thread = threading.Thread(
+            target=run_maintenance,
+            args=(flags,),
+            daemon=True,
+            name="fund-maintenance",
+        )
+        maintenance_thread.start()
+
+    with app.app_context():
+        try:
+            while not stop_event.is_set():
+                started = time.monotonic()
+                acquired = claim_background_job(owner, lease_seconds=180)
+                tasks: list[str] = []
+                errors: list[str] = []
+                current = time.monotonic()
+                cash_symbols, continuous_symbols = quote_symbol_groups()
+                cash_interval = quote_group_refresh_interval(cash_symbols)
+                continuous_interval = quote_group_refresh_interval(continuous_symbols)
+                quotes_refreshed = False
+                if acquired and current >= due["cash_quotes"]:
+                    try:
+                        refresh_quotes(cash_symbols, [])
+                        tasks.append("cash-quotes")
+                        quotes_refreshed = True
+                    except Exception as exc:
+                        errors.append(f"cash-quotes: {exc}")
+                    due["cash_quotes"] = current + cash_interval
+                if acquired and current >= due["continuous_quotes"]:
+                    try:
+                        refresh_quotes(continuous_symbols, ["EUR", "HKD", "JPY", "KRW", "USD"])
+                        tasks.append("continuous-quotes")
+                        quotes_refreshed = True
+                    except Exception as exc:
+                        errors.append(f"continuous-quotes: {exc}")
+                    due["continuous_quotes"] = current + continuous_interval
+                if acquired and quotes_refreshed:
+                    try:
+                        publish_dashboard_snapshot()
+                        tasks.append("dashboard-snapshot")
+                    except Exception as exc:
+                        errors.append(f"dashboard-snapshot: {exc}")
+                maintenance_flags: set[str] = set()
+                if acquired:
+                    maintenance_intervals = {
+                        "fund_nav": 15 * 60 if cash_interval <= 5 * 60 else 60 * 60,
+                        "fund_purchase": 6 * 60 * 60,
+                        "history": max(maintenance_interval, 60 * 60),
+                        "backtest": 24 * 60 * 60,
+                        "backup": 60 * 60,
+                        "cleanup": 60 * 60,
+                    }
+                    for name, interval in maintenance_intervals.items():
+                        if current >= due[name]:
+                            maintenance_flags.add(name)
+                            due[name] = current + interval
+                    schedule_maintenance(maintenance_flags)
                 prune_in_memory_caches()
                 elapsed = time.monotonic() - started
                 if acquired and tasks:
@@ -172,8 +238,10 @@ def main() -> None:
                     if not acquired:
                         print("Refresh tick skipped: another worker owns the lease", flush=True)
                 if args.once:
+                    if maintenance_thread is not None:
+                        maintenance_thread.join()
                     return
-                time.sleep(max(60 - elapsed, 1))
+                stop_event.wait(max(60 - elapsed, 1))
         except KeyboardInterrupt:
             print("Refresh worker stopped", flush=True)
         finally:

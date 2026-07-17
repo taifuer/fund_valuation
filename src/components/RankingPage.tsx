@@ -5,6 +5,7 @@ import { getMarketState } from '../marketHours';
 import { startAdaptivePolling } from '../polling';
 import { rankingStateLabel } from '../displayStatus';
 import { useFundReturnData } from '../hooks/usePageData';
+import { choiceFromSearch, replaceSearchParams } from '../routing';
 import type { FundEstimate } from '../hooks/useQuotes';
 import type { Fund, FundReturnRangeKey, IndexConfig, MarketReturnSummary, MarketStateData, QuoteData } from '../types';
 import styles from './RankingPage.module.css';
@@ -60,6 +61,12 @@ const ETF_FILTERS: Array<{ key: EtfFilterKey; label: string }> = [
   { key: 'index', label: '指数ETF' },
   { key: 'sector', label: '行业ETF' },
 ];
+
+const CATEGORY_KEYS = CATEGORIES.map((item) => item.key);
+const RANGE_KEYS = RANGES.map((item) => item.key);
+const ETF_FILTER_KEYS = ETF_FILTERS.map((item) => item.key);
+const SORT_KEYS: SortKey[] = ['return', 'value'];
+const SORT_DIRECTIONS: SortDirection[] = ['desc', 'asc'];
 
 function historyConfigs(configs: IndexConfig[]) {
   return configs
@@ -212,16 +219,26 @@ export default function RankingPage({
   marketLoading,
   onStatusMessageChange,
 }: Props) {
-  const [range, setRange] = useState<RankingRangeKey>('today');
-  const [category, setCategory] = useState<CategoryKey>('index');
-  const [etfFilter, setEtfFilter] = useState<EtfFilterKey>('all');
-  const [sortKey, setSortKey] = useState<SortKey>('return');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [range, setRange] = useState<RankingRangeKey>(() => choiceFromSearch(window.location.search, 'range', RANGE_KEYS, 'today'));
+  const [category, setCategory] = useState<CategoryKey>(() => choiceFromSearch(window.location.search, 'category', CATEGORY_KEYS, 'index'));
+  const [etfFilter, setEtfFilter] = useState<EtfFilterKey>(() => choiceFromSearch(window.location.search, 'etf', ETF_FILTER_KEYS, 'all'));
+  const [sortKey, setSortKey] = useState<SortKey>(() => choiceFromSearch(window.location.search, 'sort', SORT_KEYS, 'return'));
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => choiceFromSearch(window.location.search, 'order', SORT_DIRECTIONS, 'desc'));
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
   const [returnsLoading, setReturnsLoading] = useState(false);
   const refreshTick = useMarketReturnRefreshTick();
   const shouldLoadFunds = category === 'fund';
   const fundData = useFundReturnData(funds, shouldLoadFunds);
+
+  useEffect(() => {
+    replaceSearchParams({
+      category: category === 'index' ? null : category,
+      range: range === 'today' ? null : range,
+      etf: category === 'etf' && etfFilter !== 'all' ? etfFilter : null,
+      sort: sortKey === 'return' ? null : sortKey,
+      order: sortDirection === 'desc' ? null : sortDirection,
+    });
+  }, [category, etfFilter, range, sortDirection, sortKey]);
   const selectedMarketConfigs = useMemo(
     () => marketConfigs(category, etfFilter),
     [category, etfFilter],
@@ -304,6 +321,7 @@ export default function RankingPage({
               <button
                 key={item.key}
                 type="button"
+                aria-pressed={category === item.key}
                 className={`${styles.segmentButton} ${category === item.key ? styles.segmentButtonActive : ''}`}
                 onClick={() => setCategory(item.key)}
               >
@@ -319,6 +337,7 @@ export default function RankingPage({
                 <button
                   key={item.key}
                   type="button"
+                  aria-pressed={etfFilter === item.key}
                   className={`${styles.segmentButton} ${etfFilter === item.key ? styles.segmentButtonActive : ''}`}
                   onClick={() => setEtfFilter(item.key)}
                 >
@@ -334,6 +353,7 @@ export default function RankingPage({
               <button
                 key={item.key}
                 type="button"
+                aria-pressed={range === item.key}
                 className={`${styles.segmentButton} ${range === item.key ? styles.segmentButtonActive : ''}`}
                 onClick={() => setRange(item.key)}
               >

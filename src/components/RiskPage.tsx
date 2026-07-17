@@ -3,6 +3,7 @@ import { fetchMarketReturnSummaries } from '../api';
 import { MARKET_ASSETS, RANKING_ETFS, RANKING_INDEX_ETFS, RANKING_INDICES, RANKING_SECTOR_ETFS } from '../constants';
 import { useFundReturnData } from '../hooks/usePageData';
 import { startAdaptivePolling } from '../polling';
+import { choiceFromSearch, replaceSearchParams } from '../routing';
 import type { FundEstimate } from '../hooks/useQuotes';
 import type { Fund, FundReturnRangeKey, IndexConfig, MarketReturnSummary, MarketStateData } from '../types';
 import styles from './RankingPage.module.css';
@@ -55,6 +56,12 @@ const ETF_FILTERS: Array<{ key: EtfFilterKey; label: string }> = [
   { key: 'index', label: '指数ETF' },
   { key: 'sector', label: '行业ETF' },
 ];
+
+const CATEGORY_KEYS = CATEGORIES.map((item) => item.key);
+const RANGE_KEYS = RANGES.map((item) => item.key);
+const ETF_FILTER_KEYS = ETF_FILTERS.map((item) => item.key);
+const SORT_KEYS: SortKey[] = ['return', 'drawdown', 'ratio', 'winRate'];
+const SORT_DIRECTIONS: SortDirection[] = ['desc', 'asc'];
 
 function historyConfigs(configs: IndexConfig[]) {
   return configs
@@ -182,16 +189,26 @@ export default function RiskPage({
   marketLoading,
   onStatusMessageChange,
 }: Props) {
-  const [range, setRange] = useState<RiskRangeKey>('ytd');
-  const [category, setCategory] = useState<CategoryKey>('index');
-  const [etfFilter, setEtfFilter] = useState<EtfFilterKey>('all');
-  const [sortKey, setSortKey] = useState<SortKey>('drawdown');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [range, setRange] = useState<RiskRangeKey>(() => choiceFromSearch(window.location.search, 'range', RANGE_KEYS, 'ytd'));
+  const [category, setCategory] = useState<CategoryKey>(() => choiceFromSearch(window.location.search, 'category', CATEGORY_KEYS, 'index'));
+  const [etfFilter, setEtfFilter] = useState<EtfFilterKey>(() => choiceFromSearch(window.location.search, 'etf', ETF_FILTER_KEYS, 'all'));
+  const [sortKey, setSortKey] = useState<SortKey>(() => choiceFromSearch(window.location.search, 'sort', SORT_KEYS, 'drawdown'));
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => choiceFromSearch(window.location.search, 'order', SORT_DIRECTIONS, 'asc'));
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
   const [returnsLoading, setReturnsLoading] = useState(false);
   const refreshTick = useMarketReturnRefreshTick();
   const shouldLoadFunds = category === 'fund' || category === 'all';
   const fundData = useFundReturnData(funds, shouldLoadFunds);
+
+  useEffect(() => {
+    replaceSearchParams({
+      category: category === 'index' ? null : category,
+      range: range === 'ytd' ? null : range,
+      etf: category === 'etf' && etfFilter !== 'all' ? etfFilter : null,
+      sort: sortKey === 'drawdown' ? null : sortKey,
+      order: sortDirection === 'asc' ? null : sortDirection,
+    });
+  }, [category, etfFilter, range, sortDirection, sortKey]);
   const selectedMarketConfigs = useMemo(
     () => marketConfigs(category, etfFilter),
     [category, etfFilter],
@@ -280,6 +297,7 @@ export default function RiskPage({
               <button
                 key={item.key}
                 type="button"
+                aria-pressed={category === item.key}
                 className={`${styles.segmentButton} ${category === item.key ? styles.segmentButtonActive : ''}`}
                 onClick={() => setCategory(item.key)}
               >
@@ -295,6 +313,7 @@ export default function RiskPage({
                 <button
                   key={item.key}
                   type="button"
+                  aria-pressed={etfFilter === item.key}
                   className={`${styles.segmentButton} ${etfFilter === item.key ? styles.segmentButtonActive : ''}`}
                   onClick={() => setEtfFilter(item.key)}
                 >
@@ -310,6 +329,7 @@ export default function RiskPage({
               <button
                 key={item.key}
                 type="button"
+                aria-pressed={range === item.key}
                 className={`${styles.segmentButton} ${range === item.key ? styles.segmentButtonActive : ''}`}
                 onClick={() => setRange(item.key)}
               >

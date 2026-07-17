@@ -1,5 +1,30 @@
-import { describe, expect, it } from 'vitest';
-import { parseDashboardSnapshotPayload, parseSinaVar } from './api';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fetchDashboardSnapshot, parseDashboardSnapshotPayload, parseSinaVar } from './api';
+
+function dashboardPayload(price: number) {
+  return {
+    schemaVersion: 1,
+    quotes: {
+      s_sh000001: {
+        symbol: 's_sh000001',
+        price,
+        previousClose: 3180,
+        change: price - 3180,
+        changePercent: ((price - 3180) / 3180) * 100,
+        time: '2026-07-18 10:00:00',
+        fetchedAt: Date.now(),
+      },
+    },
+    quotesText: '',
+    fxText: '',
+    marketStates: {},
+  };
+}
+
+beforeEach(() => {
+  window.localStorage.clear();
+  vi.restoreAllMocks();
+});
 
 describe('dashboard API contract', () => {
   it('uses structured quotes only for the supported schema version', () => {
@@ -51,5 +76,22 @@ describe('dashboard API contract', () => {
     );
 
     expect(parsed?.data.time).toBe('2026-07-02 14:33:00');
+  });
+
+  it('uses browser snapshots only as an error fallback, not instead of polling', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => dashboardPayload(3200) })
+      .mockResolvedValueOnce({ ok: true, json: async () => dashboardPayload(3210) })
+      .mockRejectedValueOnce(new Error('offline'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = await fetchDashboardSnapshot(['s_sh000001'], []);
+    const second = await fetchDashboardSnapshot(['s_sh000001'], []);
+    const fallback = await fetchDashboardSnapshot(['s_sh000001'], []);
+
+    expect(first?.quotes.get('s_sh000001')?.price).toBe(3200);
+    expect(second?.quotes.get('s_sh000001')?.price).toBe(3210);
+    expect(fallback?.quotes.get('s_sh000001')?.price).toBe(3210);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

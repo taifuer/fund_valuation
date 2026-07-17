@@ -410,10 +410,11 @@ export async function fetchAllQuotes(sinaSymbols: string[]): Promise<Map<string,
 }
 
 // Fetch fund NAVs from Sina Finance (fallback for funds not in East Money)
-export async function fetchSinaFundNavs(codes: string[]): Promise<Map<string, FundNavData>> {
+export async function fetchSinaFundNavs(codes: string[], refresh = false): Promise<Map<string, FundNavData>> {
   const results = new Map<string, FundNavData>();
   const symbols = codes.map((c) => `f_${c}`);
-  const url = apiUrl(`/api/sina?list=${symbols.join(',')}`);
+  const refreshParam = refresh ? '&refresh=1' : '';
+  const url = apiUrl(`/api/sina?list=${symbols.join(',')}${refreshParam}`);
   try {
     const res = await fetch(url);
     if (!res.ok) return results;
@@ -531,6 +532,50 @@ export interface DataHealth {
 
 const dashboardSnapshotPending = new Map<string, Promise<DashboardSnapshot | null>>();
 const overviewSnapshotPending = new Map<string, Promise<OverviewSnapshot | null>>();
+const DASHBOARD_BROWSER_CACHE_TTL_MS = 2 * 60 * 1000;
+
+function dashboardStorageKey(cacheKey: string): string {
+  let hash = 5381;
+  for (let index = 0; index < cacheKey.length; index += 1) {
+    hash = ((hash << 5) + hash) ^ cacheKey.charCodeAt(index);
+  }
+  return `fund_valuation:dashboard:v1:${hash >>> 0}`;
+}
+
+function readStoredDashboard(cacheKey: string): Record<string, unknown> | null {
+  try {
+    const raw = window.localStorage.getItem(dashboardStorageKey(cacheKey));
+    if (!raw) return null;
+    const stored = asObject(JSON.parse(raw));
+    const payload = stored ? asObject(stored.payload) : null;
+    const savedAt = Number(stored?.savedAt);
+    if (!payload || !Number.isFinite(savedAt) || Date.now() - savedAt > DASHBOARD_BROWSER_CACHE_TTL_MS) {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function storeDashboard(cacheKey: string, payload: unknown) {
+  try {
+    window.localStorage.setItem(
+      dashboardStorageKey(cacheKey),
+      JSON.stringify({ savedAt: Date.now(), payload }),
+    );
+  } catch { /* storage may be unavailable or full */ }
+}
+
+async function fetchWithTimeout(url: string, timeoutMs = 4_000): Promise<Response> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 export function parseDashboardSnapshotPayload(
   json: { schemaVersion?: unknown; quotes?: unknown; quotesText?: unknown; fxText?: unknown; marketStates?: Record<string, MarketStateData> },
@@ -608,17 +653,23 @@ export async function fetchDashboardSnapshot(
   const pending = dashboardSnapshotPending.get(cacheKey);
   if (pending) return pending;
 
+  const stored = readStoredDashboard(cacheKey);
+  const storedSnapshot = stored
+    ? parseDashboardSnapshotPayload(stored, uniqueSymbols, Date.now())
+    : null;
+
   const request = (async () => {
     const params = new URLSearchParams({
       symbols: uniqueSymbols.join(','),
       currencies: uniqueCurrencies.join(','),
     });
-    const res = await fetch(apiUrl(`/api/dashboard?${params.toString()}`));
-    if (!res.ok) return null;
+    const res = await fetchWithTimeout(apiUrl(`/api/dashboard?${params.toString()}`));
+    if (!res.ok) return storedSnapshot;
     const json = await res.json();
+    storeDashboard(cacheKey, json);
     const fetchedAt = Date.now();
     return parseDashboardSnapshotPayload(json, uniqueSymbols, fetchedAt);
-  })().catch(() => null).finally(() => {
+  })().catch(() => storedSnapshot).finally(() => {
     dashboardSnapshotPending.delete(cacheKey);
   });
 
@@ -645,7 +696,7 @@ export async function fetchOverviewSnapshot(
       currencies: uniqueCurrencies.join(','),
       fundCodes: uniqueFundCodes.join(','),
     });
-    const res = await fetch(apiUrl(`/api/overview?${params.toString()}`));
+    const res = await fetchWithTimeout(apiUrl(`/api/overview?${params.toString()}`));
     if (!res.ok) return null;
     const json = await res.json();
     const fetchedAt = Date.now();
@@ -832,12 +883,13 @@ export async function fetchFundPurchaseStatuses(codes: string[]): Promise<Map<st
   return results;
 }
 
-export async function fetchFundProfiles(codes: string[]): Promise<Map<string, NonNullable<Fund['profile']>>> {
+export async function fetchFundProfiles(codes: string[], refresh = false): Promise<Map<string, NonNullable<Fund['profile']>>> {
   const results = new Map<string, NonNullable<Fund['profile']>>();
   if (codes.length === 0) return results;
 
   try {
-    const res = await fetch(apiUrl(`/api/fundprofiles?codes=${codes.join(',')}`));
+    const refreshParam = refresh ? '&refresh=1' : '';
+    const res = await fetch(apiUrl(`/api/fundprofiles?codes=${codes.join(',')}${refreshParam}`));
     if (!res.ok) return results;
     const json = await res.json();
     for (const code of codes) {
@@ -848,12 +900,13 @@ export async function fetchFundProfiles(codes: string[]): Promise<Map<string, No
   return results;
 }
 
-export async function fetchFundHoldings(codes: string[]): Promise<Map<string, Holding[]>> {
+export async function fetchFundHoldings(codes: string[], refresh = false): Promise<Map<string, Holding[]>> {
   const results = new Map<string, Holding[]>();
   if (codes.length === 0) return results;
 
   try {
-    const res = await fetch(apiUrl(`/api/fundholdings?codes=${codes.join(',')}`));
+    const refreshParam = refresh ? '&refresh=1' : '';
+    const res = await fetch(apiUrl(`/api/fundholdings?codes=${codes.join(',')}${refreshParam}`));
     if (!res.ok) return results;
     const json = await res.json();
     for (const code of codes) {
@@ -1070,9 +1123,10 @@ export async function fetchMarketStates(symbols: string[]): Promise<Map<string, 
   return results;
 }
 
-export async function fetchFundNavs(codes: string[]): Promise<Map<string, FundNavData>> {
+export async function fetchFundNavs(codes: string[], refresh = false): Promise<Map<string, FundNavData>> {
   const results = new Map<string, FundNavData>();
-  const url = apiUrl(`/api/fundnav?codes=${codes.join(',')}`);
+  const refreshParam = refresh ? '&refresh=1' : '';
+  const url = apiUrl(`/api/fundnav?codes=${codes.join(',')}${refreshParam}`);
   try {
     const res = await fetch(url);
     if (!res.ok) return results;

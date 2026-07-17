@@ -218,7 +218,7 @@ export interface SystemStatus {
 }
 
 export interface MarketHistoryConfig {
-  source: 'sina-cn' | 'sina-us' | 'sina-futures' | 'tencent-hk';
+  source: 'sina-cn' | 'sina-us' | 'sina-futures' | 'tencent-hk' | 'twse-official';
   symbol: string;
 }
 

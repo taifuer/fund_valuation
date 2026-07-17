@@ -10,7 +10,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("FUND_VALUATION_DATA_DIR", ROOT_DIR / "data"))
 DB_PATH = DATA_DIR / "fund_valuation.db"
 RAW_DIR = DATA_DIR / "raw"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 
 MIGRATIONS: dict[int, str] = {
@@ -90,6 +90,23 @@ MIGRATIONS: dict[int, str] = {
           ON stock_daily_history(fetched_at);
         CREATE INDEX IF NOT EXISTS idx_fx_daily_history_fetched
           ON fx_daily_history(fetched_at);
+    """,
+    3: """
+        CREATE TABLE IF NOT EXISTS dashboard_snapshots (
+          name TEXT PRIMARY KEY,
+          payload TEXT NOT NULL,
+          generated_at INTEGER NOT NULL
+        );
+    """,
+    4: """
+        CREATE TABLE IF NOT EXISTS fund_backtest_summaries (
+          code TEXT NOT NULL,
+          days INTEGER NOT NULL,
+          model_version TEXT NOT NULL,
+          payload TEXT NOT NULL,
+          generated_at INTEGER NOT NULL,
+          PRIMARY KEY (code, days, model_version)
+        );
     """,
 }
 
