@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import hmac
 import html
@@ -83,6 +84,7 @@ MARKET_HISTORY_SYMBOL_RE = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
 CN_ETF_HISTORY_SYMBOL_RE = re.compile(r"^(?:sh5\d{5}|sz159\d{3})$")
 MARKET_HISTORY_CORPORATE_ACTION_LOW_RATIO = 0.65
 MARKET_HISTORY_CORPORATE_ACTION_HIGH_RATIO = 1 / MARKET_HISTORY_CORPORATE_ACTION_LOW_RATIO
+MARKET_HISTORY_SOURCES = {"sina-cn", "sina-us", "sina-futures", "tencent-hk", "twse-official", "naver-korea"}
 MAX_FUND_CODES_PER_REQUEST = 50
 MAX_SINA_SYMBOLS_PER_REQUEST = 160
 MAX_MARKET_STATE_SYMBOLS_PER_REQUEST = 160
@@ -2483,6 +2485,8 @@ def store_market_history(source: str, symbol: str, text: str) -> int:
                     "date": str(row[0]).replace("/", "-"),
                     "close": str(row[4]).replace(",", ""),
                 })
+    elif source == "naver-korea":
+        rows = parse_naver_korea_history(text)
 
     points = []
     fetched_at = now_ms()
@@ -2508,6 +2512,38 @@ def store_market_history(source: str, symbol: str, text: str) -> int:
             points,
         )
     return len(points)
+
+
+def parse_naver_korea_history(text: str) -> list[dict[str, Any]]:
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        try:
+            parsed = ast.literal_eval(text.strip())
+        except (SyntaxError, ValueError):
+            return []
+    if not isinstance(parsed, list):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for row in parsed:
+        if isinstance(row, dict):
+            date = str(row.get("date") or "")
+            close = row.get("close")
+        elif isinstance(row, list) and len(row) >= 5:
+            date = str(row[0] or "")
+            close = row[4]
+        else:
+            continue
+        if re.fullmatch(r"\d{8}", date):
+            date = f"{date[:4]}-{date[4:6]}-{date[6:]}"
+        try:
+            close_value = float(close)
+        except (TypeError, ValueError):
+            continue
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) and close_value > 0:
+            rows.append({"date": date, "close": close_value})
+    return rows
 
 
 def stock_history_url(sina_symbol: str) -> tuple[str, str] | None:
@@ -2924,13 +2960,9 @@ def auto_refresh_market_history_if_stale(source: str, symbol: str) -> bool:
         return False
 
     try:
-        url, referer = market_history_url(source, symbol)
-        status, _, body = fetch_upstream(
-            url,
-            referer=referer,
-            content_type="application/json; charset=utf-8",
-            cache_key=f"markethistory:{source}:{symbol}",
-            kind="markethistory",
+        status, _, body = fetch_market_history_payload(
+            source,
+            symbol,
             ttl_seconds=300,
             force_refresh=True,
         )
@@ -2948,13 +2980,9 @@ def ensure_market_history_for_returns(source: str, symbol: str) -> None:
         return
 
     try:
-        url, referer = market_history_url(source, symbol)
-        status, _, body = fetch_upstream(
-            url,
-            referer=referer,
-            content_type="application/json; charset=utf-8",
-            cache_key=f"markethistory:{source}:{symbol}",
-            kind="markethistory",
+        status, _, body = fetch_market_history_payload(
+            source,
+            symbol,
             ttl_seconds=300,
             force_refresh=now_ms() - fetched_at > HISTORY_AUTO_REFRESH_TTL_MS,
         )
@@ -4705,7 +4733,96 @@ def market_history_url(source: str, symbol: str) -> tuple[str, str]:
             f"https://www.twse.com.tw/rwd/en/TAIEX/MI_5MINS_HIST?date={month}&response=json",
             "https://www.twse.com.tw/en/indices/taiex/mi-5min-hist.html",
         )
+    if source == "naver-korea" and symbol == "KOSPI":
+        current = datetime.now(ZoneInfo("Asia/Shanghai"))
+        start = f"{current.year - 10}0101"
+        end = current.strftime("%Y%m%d")
+        query = urlencode({
+            "symbol": symbol,
+            "requestType": 1,
+            "startTime": start,
+            "endTime": end,
+            "timeframe": "day",
+        })
+        return (
+            f"https://api.finance.naver.com/siseJson.naver?{query}",
+            "https://finance.naver.com/sise/sise_index.naver?code=KOSPI",
+        )
     raise ValueError("Unsupported source")
+
+
+def eastmoney_kospi_history_text(ttl_seconds: int, *, force_refresh: bool) -> str | None:
+    query = urlencode({
+        "secid": "100.KS11",
+        "fields1": "f1,f2,f3,f4,f5,f6",
+        "fields2": "f51,f52,f53,f54,f55,f56",
+        "klt": "101",
+        "fqt": "0",
+        "end": "20500101",
+        "lmt": "3000",
+    })
+    payload = fetch_eastmoney_json(
+        f"https://push2his.eastmoney.com/api/qt/stock/kline/get?{query}",
+        cache_key="markethistory-fallback:eastmoney:100.KS11",
+        kind="markethistory-fallback",
+        ttl_seconds=0 if force_refresh else ttl_seconds,
+    )
+    data = payload.get("data") if isinstance(payload, dict) else None
+    klines = data.get("klines") if isinstance(data, dict) else None
+    if not isinstance(klines, list):
+        return None
+    rows: list[dict[str, Any]] = []
+    for raw in klines:
+        fields = str(raw).split(",")
+        if len(fields) < 3 or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", fields[0]):
+            continue
+        try:
+            close = float(fields[2])
+        except (TypeError, ValueError):
+            continue
+        if close > 0:
+            rows.append({"date": fields[0], "close": close})
+    return json.dumps(rows, ensure_ascii=False) if rows else None
+
+
+def fetch_market_history_payload(
+    source: str,
+    symbol: str,
+    *,
+    ttl_seconds: int,
+    force_refresh: bool = False,
+) -> tuple[int, str, bytes]:
+    url, referer = market_history_url(source, symbol)
+    try:
+        status, content_type, body = fetch_upstream(
+            url,
+            referer=referer,
+            content_type="application/json; charset=utf-8",
+            cache_key=f"markethistory:{source}:{symbol}",
+            kind="markethistory",
+            ttl_seconds=ttl_seconds,
+            force_refresh=force_refresh,
+        )
+    except Exception:
+        if source != "naver-korea":
+            raise
+        status, content_type, body = 599, "application/json; charset=utf-8", b""
+
+    if source != "naver-korea" or (status < 400 and parse_naver_korea_history(decode_body(body))):
+        return status, content_type, body
+
+    fallback = eastmoney_kospi_history_text(ttl_seconds, force_refresh=force_refresh)
+    if not fallback:
+        return status, content_type, body
+    fallback_body = fallback.encode("utf-8")
+    cache_put(
+        f"markethistory:{source}:{symbol}",
+        "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=100.KS11",
+        200,
+        "application/json; charset=utf-8",
+        fallback_body,
+    )
+    return 200, "application/json; charset=utf-8", fallback_body
 
 
 def refresh_twse_history(months: int = 1, *, force_refresh: bool = False) -> int:
@@ -4736,7 +4853,7 @@ def market_history() -> Response:
     enforce_rate_limit("markethistory")
     source = require_arg("source")
     symbol = require_arg("symbol")
-    if source not in {"sina-cn", "sina-us", "sina-futures", "tencent-hk", "twse-official"}:
+    if source not in MARKET_HISTORY_SOURCES:
         raise ValueError("Unsupported source")
     if not MARKET_HISTORY_SYMBOL_RE.fullmatch(symbol):
         raise ValueError("Invalid symbol")
@@ -4753,13 +4870,9 @@ def market_history() -> Response:
             ) or cached_rows)
         return json_response(cached_rows)
 
-    url, referer = market_history_url(source, symbol)
-    status, content_type, body = fetch_upstream(
-        url,
-        referer=referer,
-        content_type="application/json; charset=utf-8",
-        cache_key=f"markethistory:{source}:{symbol}",
-        kind="markethistory",
+    status, content_type, body = fetch_market_history_payload(
+        source,
+        symbol,
         ttl_seconds=300,
         force_refresh=refresh,
     )
@@ -4776,6 +4889,8 @@ def market_history() -> Response:
     else:
         if stored_count == 0 and cached_rows:
             return json_response(read_market_history_from_db(source, symbol, adjust_corporate_actions=True) or cached_rows)
+        if source == "naver-korea":
+            return json_response(read_market_history_from_db(source, symbol))
         if cn_etf_history_needs_adjustment(source, symbol):
             return json_response(read_market_history_from_db(source, symbol, adjust_corporate_actions=True))
     return bytes_response(body, status=status, content_type=content_type)
@@ -4791,7 +4906,7 @@ def market_returns() -> Response:
         if len(pieces) != 2:
             continue
         source, symbol = pieces
-        if source not in {"sina-cn", "sina-us", "sina-futures", "tencent-hk", "twse-official"}:
+        if source not in MARKET_HISTORY_SOURCES:
             continue
         if not MARKET_HISTORY_SYMBOL_RE.fullmatch(symbol):
             continue

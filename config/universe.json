@@ -114,7 +114,11 @@
     {
       "symbol": "KOSPI",
       "name": "韩国KOSPI",
-      "sinaSymbol": "b_KOSPI"
+      "sinaSymbol": "b_KOSPI",
+      "history": {
+        "source": "naver-korea",
+        "symbol": "KOSPI"
+      }
     },
     {
       "symbol": "TWSE",
@@ -339,12 +343,20 @@
       "futures": {
         "sinaSymbol": "hf_NK",
         "label": "日经225期货"
+      },
+      "history": {
+        "source": "sina-futures",
+        "symbol": "NK"
       }
     },
     {
       "symbol": "KOSPI",
       "name": "韩国KOSPI",
-      "sinaSymbol": "b_KOSPI"
+      "sinaSymbol": "b_KOSPI",
+      "history": {
+        "source": "naver-korea",
+        "symbol": "KOSPI"
+      }
     },
     {
       "symbol": "TWSE",

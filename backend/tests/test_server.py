@@ -905,6 +905,91 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertTrue(url.startswith("https://www.twse.com.tw/"))
         self.assertTrue(referer.startswith("https://www.twse.com.tw/"))
 
+    def test_naver_kospi_history_parser_stores_daily_closes(self) -> None:
+        payload = """
+        [['날짜', '시가', '고가', '저가', '종가', '거래량', '외국인소진율'],
+         ['20260102', 4224.53, 4313.55, 4216.68, 4309.63, 406339, 0.0],
+         ['20260720', 6643.58, 6814.86, 6472.80, 6516.27, 345825, 0.0]]
+        """
+
+        stored = server.store_market_history("naver-korea", "KOSPI", payload)
+        rows = server.read_market_history_from_db("naver-korea", "KOSPI")
+
+        self.assertEqual(stored, 2)
+        self.assertEqual(rows[-1], {"date": "2026-07-20", "close": 6516.27})
+
+        history = server.app.test_client().get(
+            "/api/markethistory?source=naver-korea&symbol=KOSPI"
+        )
+        returns = server.app.test_client().get(
+            "/api/marketreturns?items=naver-korea:KOSPI"
+        )
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual(history.get_json()[-1]["close"], 6516.27)
+        self.assertEqual(returns.status_code, 200)
+        self.assertIn("ytd", returns.get_json()["naver-korea:KOSPI"]["ranges"])
+
+    def test_naver_kospi_history_url_requests_ten_years(self) -> None:
+        url, referer = server.market_history_url("naver-korea", "KOSPI")
+
+        self.assertTrue(url.startswith("https://api.finance.naver.com/siseJson.naver?"))
+        self.assertIn("symbol=KOSPI", url)
+        self.assertIn("timeframe=day", url)
+        self.assertTrue(referer.startswith("https://finance.naver.com/"))
+
+    def test_naver_kospi_history_falls_back_to_eastmoney(self) -> None:
+        fallback = json.dumps([
+            {"date": "2026-07-17", "close": 6820.60},
+            {"date": "2026-07-20", "close": 6516.27},
+        ])
+        with (
+            patch.object(server, "fetch_upstream", return_value=(200, "text/plain", b"invalid")),
+            patch.object(server, "eastmoney_kospi_history_text", return_value=fallback) as eastmoney,
+        ):
+            status, _content_type, body = server.fetch_market_history_payload(
+                "naver-korea",
+                "KOSPI",
+                ttl_seconds=300,
+                force_refresh=True,
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(server.parse_naver_korea_history(server.decode_body(body))[-1]["close"], 6516.27)
+        eastmoney.assert_called_once_with(300, force_refresh=True)
+
+    def test_naver_kospi_refresh_returns_standard_json(self) -> None:
+        payload = (
+            "[['날짜', '시가', '고가', '저가', '종가', '거래량', '외국인소진율'],"
+            "['20260720', 6643.58, 6814.86, 6472.80, 6516.27, 345825, 0.0]]"
+        ).encode()
+        with patch.object(
+            server,
+            "fetch_market_history_payload",
+            return_value=(200, "text/plain; charset=utf-8", payload),
+        ):
+            response = server.app.test_client().get(
+                "/api/markethistory?source=naver-korea&symbol=KOSPI&refresh=1"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), [{"date": "2026-07-20", "close": 6516.27}])
+
+    def test_eastmoney_kospi_fallback_normalizes_kline_rows(self) -> None:
+        payload = {
+            "data": {
+                "klines": [
+                    "2026-07-17,6900.00,6820.60,7000.00,6800.00,123456",
+                    "2026-07-20,6643.58,6516.27,6814.86,6472.80,345825",
+                ]
+            }
+        }
+        with patch.object(server, "fetch_eastmoney_json", return_value=payload):
+            text = server.eastmoney_kospi_history_text(300, force_refresh=False)
+
+        self.assertIsNotNone(text)
+        assert text is not None
+        self.assertEqual(server.parse_naver_korea_history(text)[-1]["close"], 6516.27)
+
     def test_quote_group_refresh_interval_tracks_market_activity(self) -> None:
         server.ensure_market_calendar_seeded()
         self.assertEqual(

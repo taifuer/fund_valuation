@@ -17,8 +17,8 @@ from .server import (
     cache_any,
     decode_body,
     ensure_storage,
+    fetch_market_history_payload,
     fetch_upstream,
-    market_history_url,
     parse_jsonp_call,
     parse_fund_holdings,
     refresh_ecb_fx_history,
@@ -229,13 +229,9 @@ def backfill_market(
         if text is None:
             return 0, False
     else:
-        url, referer = market_history_url(target.source, target.symbol)
-        status, _, body = fetch_upstream(
-            url,
-            referer=referer,
-            content_type="application/json; charset=utf-8",
-            cache_key=cache_key,
-            kind="markethistory",
+        status, _, body = fetch_market_history_payload(
+            target.source,
+            target.symbol,
             ttl_seconds=0 if use_cache else 300,
             force_refresh=not use_cache,
         )

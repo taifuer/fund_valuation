@@ -14,7 +14,7 @@ _GUARD = threading.Lock()
 FUND_CODE_RE = re.compile(r"^\d{6}$")
 SINA_SYMBOL_RE = re.compile(r"^[A-Za-z0-9_]{1,40}$")
 HISTORY_SYMBOL_RE = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
-HISTORY_SOURCES = {"sina-cn", "sina-us", "sina-futures", "tencent-hk", "twse-official"}
+HISTORY_SOURCES = {"sina-cn", "sina-us", "sina-futures", "tencent-hk", "twse-official", "naver-korea"}
 
 
 def load_universe() -> dict[str, Any]:
