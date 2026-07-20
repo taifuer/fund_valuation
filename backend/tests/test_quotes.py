@@ -48,6 +48,19 @@ class QuoteNormalizationTests(unittest.TestCase):
 
         self.assertIsNone(record)
 
+    def test_dated_nikkei_previous_close_survives_long_weekend(self) -> None:
+        record = normalize_quote_line(
+            "int_nikkei",
+            'var hq_str_int_nikkei="日经225,64140.90,-2694.64,-4.03,2026-07-17,14:30:01";',
+            captured_at("2026-07-20T09:30:00"),
+        )
+
+        self.assertIsNotNone(record)
+        assert record is not None
+        self.assertEqual(record["price"], 64140.9)
+        self.assertEqual(record["time"], "2026-07-17 14:30:01")
+        self.assertFalse(record["dateReliable"])
+
     def test_implausible_index_change_is_rejected(self) -> None:
         record = normalize_quote_line(
             "s_sh000001",

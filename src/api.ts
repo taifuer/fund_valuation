@@ -223,10 +223,10 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
         }
       }
       if (!date || isStale(date, fetchedAt)) {
-        if (rawSymbol === 'int_nikkei') return null;
         if (hasExplicitIntlDate) {
           dateReliable = false;
         } else {
+          if (rawSymbol === 'int_nikkei') return null;
           date = beijingDatetimeFromTimestamp(fetchedAt);
           dateReliable = false;
         }

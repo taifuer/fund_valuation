@@ -78,6 +78,19 @@ describe('dashboard API contract', () => {
     expect(parsed?.data.time).toBe('2026-07-02 14:33:00');
   });
 
+  it('keeps a dated Nikkei close across a long weekend', () => {
+    const parsed = parseSinaVar(
+      'var hq_str_int_nikkei="日经225,64140.90,-2694.64,-4.03,2026-07-17,14:30:01";',
+      new Date('2026-07-20T09:30:00+08:00').getTime(),
+    );
+
+    expect(parsed?.data).toMatchObject({
+      price: 64140.9,
+      time: '2026-07-17 14:30:01',
+      dateReliable: false,
+    });
+  });
+
   it('uses browser snapshots only as an error fallback, not instead of polling', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => dashboardPayload(3200) })

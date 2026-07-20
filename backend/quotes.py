@@ -154,8 +154,6 @@ def normalize_quote_line(symbol: str, line: str, captured_at: int) -> dict[str, 
         date_reliable = False
     elif stale_date(quote_time, captured_at):
         date_reliable = False
-        if symbol == "int_nikkei":
-            return None
         if not (symbol.startswith("int_") or symbol.startswith("b_")):
             quote_time = beijing_datetime(captured_at)
     return {
