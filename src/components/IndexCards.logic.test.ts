@@ -22,4 +22,24 @@ describe('futures quote selection', () => {
       now,
     })).toBe(false);
   });
+
+  it('keeps a live future between two-minute worker refreshes', () => {
+    expect(shouldUseFuturesQuote({
+      spot: { price: 70000, fetchedAt: now, time: '2026-06-27 04:00:00', dateReliable: true },
+      futures: { price: 70020, fetchedAt: now - 2 * 60_000 },
+      spotState: 'closed',
+      futuresState: 'live',
+      now,
+    })).toBe(true);
+  });
+
+  it('rejects a future after the backend snapshot freshness window', () => {
+    expect(shouldUseFuturesQuote({
+      spot: { price: 70000, fetchedAt: now, time: '2026-06-27 04:00:00', dateReliable: true },
+      futures: { price: 70020, fetchedAt: now - 3 * 60_000 },
+      spotState: 'closed',
+      futuresState: 'live',
+      now,
+    })).toBe(false);
+  });
 });

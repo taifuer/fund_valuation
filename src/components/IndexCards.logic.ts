@@ -5,6 +5,8 @@ export interface FuturesQuoteLike {
   time?: string;
 }
 
+export const FUTURES_QUOTE_FRESH_MS = 3 * 60_000;
+
 export function futuresPriceComparable(spot?: FuturesQuoteLike, futures?: FuturesQuoteLike): boolean {
   if (!spot || !futures || spot.price <= 0 || futures.price <= 0) return false;
   const ratio = futures.price / spot.price;
@@ -17,7 +19,7 @@ export function shouldUseFuturesQuote({
   spotState,
   futuresState,
   now = Date.now(),
-  freshMs = 90_000,
+  freshMs = FUTURES_QUOTE_FRESH_MS,
 }: {
   spot?: FuturesQuoteLike;
   futures?: FuturesQuoteLike;
