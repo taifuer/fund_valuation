@@ -27,6 +27,20 @@ function stateClassName(state: QuoteDisplayState): string {
   return styles.stateClosed;
 }
 
+export function formatHoldingPeriod(holdings: Holding[]): string {
+  const reportDates = holdings
+    .map((holding) => holding.reportDate ?? '')
+    .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+    .sort();
+  const reportDate = reportDates[reportDates.length - 1];
+  if (!reportDate) return '持仓数据：参考配置（暂无有效季度披露日期）';
+
+  const [year, month, day] = reportDate.split('-').map(Number);
+  const quarter = Math.ceil(month / 3);
+  const quarterLabel = ['', '一', '二', '三', '四'][quarter];
+  return `持仓数据：${year}年第${quarterLabel}季度（截至${year}年${month}月${day}日）`;
+}
+
 export default function HoldingsTable({
   holdings,
   quotes,
@@ -40,6 +54,7 @@ export default function HoldingsTable({
 }: Props) {
   const quoteMap = new Map(quotes.map((q) => [q.symbol, q]));
   const coveragePct = totalConfiguredWeight > 0 ? (quoteCoverage / totalConfiguredWeight) * 100 : 0;
+  const holdingPeriod = formatHoldingPeriod(holdings);
 
   return (
     <div className={styles.container} onClick={(e) => e.stopPropagation()}>
@@ -124,11 +139,14 @@ export default function HoldingsTable({
           （覆盖 {coveragePct.toFixed(0)}%；原始加权 {computedChange >= 0 ? '+' : ''}{computedChange.toFixed(2)}%；外币持仓已并入兑 CNY 汇率）
         </span>
       </div>
-      {missingQuoteCount > 0 && (
-        <div className={styles.note}>
-          当前有 {missingQuoteCount} 项持仓未获取到行情，T日持仓估算未包含这些持仓的实时涨跌。
-        </div>
-      )}
+      <div className={styles.notes}>
+        <div>{holdingPeriod}</div>
+        {missingQuoteCount > 0 && (
+          <div>
+            当前有 {missingQuoteCount} 项持仓未获取到行情，T日持仓估算未包含这些持仓的实时涨跌。
+          </div>
+        )}
+      </div>
     </div>
   );
 }
