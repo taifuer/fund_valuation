@@ -7,8 +7,6 @@ import {
   fetchSinaFundNavs,
   fetchFundHistory,
   fetchFundHoldings,
-  fetchFundProfiles,
-  fetchFundPurchaseStatuses,
   fetchFundReturnSummaries,
   fetchFxRates,
   fetchMarketStates,
@@ -57,7 +55,6 @@ export interface FundEstimate {
 
 interface SlowFundData {
   navs: Map<string, FundNavData>;
-  purchaseStatuses: Map<string, FundPurchaseData>;
   returnSummaries: Map<string, FundReturnSummary>;
 }
 
@@ -139,7 +136,6 @@ function fundCacheKey(funds: Fund[]): string {
 
 export function useQuotes(
   funds: Fund[] = FUNDS,
-  loadFundDetails = false,
   loadFundReturns = false,
   enabled = true,
 ) {
@@ -153,15 +149,12 @@ export function useQuotes(
   const [fundError, setFundError] = useState<string | null>(null);
   const slowFundDataRef = useRef<SlowFundData>({
     navs: new Map(),
-    purchaseStatuses: new Map(),
     returnSummaries: new Map(),
   });
   const fundNavFetchedAtRef = useRef(0);
-  const fundPurchaseFetchedAtRef = useRef(0);
   const fundReturnFetchedAtRef = useRef(0);
   const effectiveFundsRef = useRef<Fund[] | null>(null);
   const dynamicHoldingsFetchedAtRef = useRef<Map<string, number>>(new Map());
-  const dynamicProfilesFetchedAtRef = useRef<Map<string, number>>(new Map());
   const fundCacheKeyRef = useRef('');
   // Mirror of marketStates state for use inside polling timers (which close
   // over the ref, not the state, so they see the latest value without restart).
@@ -186,15 +179,12 @@ export function useQuotes(
     if (fundsChanged) {
       slowFundDataRef.current = {
         navs: new Map(),
-        purchaseStatuses: new Map(),
         returnSummaries: new Map(),
       };
       fundNavFetchedAtRef.current = 0;
-      fundPurchaseFetchedAtRef.current = 0;
       fundReturnFetchedAtRef.current = 0;
       effectiveFundsRef.current = null;
       dynamicHoldingsFetchedAtRef.current = new Map();
-      dynamicProfilesFetchedAtRef.current = new Map();
       fundCacheKeyRef.current = currentFundKey;
     }
     const indexSymbols = INDICES.map((i) => i.sinaSymbol);
@@ -214,25 +204,14 @@ export function useQuotes(
       const holdingCodes = cachedFunds
         .filter((f) => now - (dynamicHoldingsFetchedAtRef.current.get(f.code) ?? 0) > SLOW_DATA_TTL_MS)
         .map((f) => f.code);
-      const dynamicProfileCodes = loadFundDetails
-        ? cachedFunds
-            .filter((f) => !f.profile)
-            .filter((f) => now - (dynamicProfilesFetchedAtRef.current.get(f.code) ?? 0) > SLOW_DATA_TTL_MS)
-            .map((f) => f.code)
-        : [];
-      const [dynamicHoldings, dynamicProfiles] = await Promise.all([
-        // SQLite is the source of truth for the latest validated quarterly
-        // holdings. Built-in holdings remain only as an offline fallback.
-        fetchFundHoldings(holdingCodes),
-        fetchFundProfiles(dynamicProfileCodes, true),
-      ]);
+      // SQLite is the source of truth for the latest validated quarterly
+      // holdings. Built-in holdings remain only as an offline fallback.
+      const dynamicHoldings = await fetchFundHoldings(holdingCodes);
       holdingCodes.forEach((code) => dynamicHoldingsFetchedAtRef.current.set(code, now));
-      dynamicProfileCodes.forEach((code) => dynamicProfilesFetchedAtRef.current.set(code, now));
       const effectiveFunds = cachedFunds.map((fund) => {
-        const profile = fund.profile ?? dynamicProfiles.get(fund.code);
         const holdings = dynamicHoldings.get(fund.code) ?? [];
-        if (holdings.length > 0 || (profile && !fund.profile)) {
-          return { ...fund, holdings: holdings.length > 0 ? holdings : fund.holdings, profile };
+        if (holdings.length > 0) {
+          return { ...fund, holdings };
         }
         return fund;
       });
@@ -251,29 +230,19 @@ export function useQuotes(
         now - fundNavFetchedAtRef.current > SLOW_DATA_TTL_MS ||
         missingNavCodes.length > 0
       );
-      const shouldFetchPurchase = (
-        loadFundDetails &&
-        (
-          force ||
-          fundPurchaseFetchedAtRef.current === 0 ||
-          now - fundPurchaseFetchedAtRef.current > SLOW_DATA_TTL_MS
-        )
-      );
-      const shouldLoadReturns = loadFundDetails || loadFundReturns;
       const shouldFetchReturns = (
-        shouldLoadReturns &&
+        loadFundReturns &&
         (
           force ||
           fundReturnFetchedAtRef.current === 0 ||
           now - fundReturnFetchedAtRef.current > SLOW_DATA_TTL_MS
         )
       );
-      if (!shouldFetchNavs && !shouldFetchPurchase && !shouldFetchReturns) return current;
+      if (!shouldFetchNavs && !shouldFetchReturns) return current;
 
-      const [navsData, historyData, purchaseStatuses, returnSummaries] = await Promise.all([
+      const [navsData, historyData, returnSummaries] = await Promise.all([
         shouldFetchNavs ? fetchFundNavs(fundCodes) : Promise.resolve(new Map(current.navs)),
         shouldFetchNavs ? fetchFundHistory(fundCodes) : Promise.resolve(new Map<string, { navDate: string; nav: number; officialChange: number }>()),
-        shouldFetchPurchase ? fetchFundPurchaseStatuses(fundCodes) : Promise.resolve(new Map(current.purchaseStatuses)),
         shouldFetchReturns ? fetchFundReturnSummaries(fundCodes) : Promise.resolve(new Map(current.returnSummaries)),
       ]);
 
@@ -314,11 +283,9 @@ export function useQuotes(
 
       slowFundDataRef.current = {
         navs: new Map([...current.navs, ...navsData]),
-        purchaseStatuses: new Map([...current.purchaseStatuses, ...purchaseStatuses]),
         returnSummaries: new Map([...current.returnSummaries, ...returnSummaries]),
       };
       if (shouldFetchNavs) fundNavFetchedAtRef.current = Date.now();
-      if (shouldFetchPurchase) fundPurchaseFetchedAtRef.current = Date.now();
       if (shouldFetchReturns) fundReturnFetchedAtRef.current = Date.now();
       return slowFundDataRef.current;
     }
@@ -511,7 +478,7 @@ export function useQuotes(
             fundName: fund.name,
             fund,
             officialNAV,
-            purchaseStatus: slowFundData.purchaseStatuses.get(fund.code) ?? null,
+            purchaseStatus: null,
             rangeReturns: slowFundData.returnSummaries.get(fund.code) ?? null,
             computedChangeLocal,
             estimatedNAVLocal,
@@ -562,7 +529,7 @@ export function useQuotes(
       window.clearTimeout(fundTimer0);
       stopPolling();
     };
-  }, [enabled, funds, loadFundDetails, loadFundReturns]);
+  }, [enabled, funds, loadFundReturns]);
 
   return {
     quotes,

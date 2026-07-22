@@ -16,6 +16,8 @@ interface Props {
   quoteCoverage: number;
   totalConfiguredWeight: number;
   missingQuoteCount: number;
+  staleQuoteCount: number;
+  missingFxCount: number;
   currencyChanges: Record<string, number>;
   marketStates?: Map<string, MarketStateData>;
 }
@@ -49,6 +51,8 @@ export default function HoldingsTable({
   quoteCoverage,
   totalConfiguredWeight,
   missingQuoteCount,
+  staleQuoteCount,
+  missingFxCount,
   currencyChanges,
   marketStates = new Map(),
 }: Props) {
@@ -145,6 +149,12 @@ export default function HoldingsTable({
           <div>
             当前有 {missingQuoteCount} 项持仓未获取到行情，T日持仓估算未包含这些持仓的实时涨跌。
           </div>
+        )}
+        {staleQuoteCount > 0 && (
+          <div>{staleQuoteCount} 项行情不晚于最新已出净值日，已从本次估算中剔除。</div>
+        )}
+        {missingFxCount > 0 && (
+          <div>{missingFxCount} 项外币持仓缺少汇率，暂按汇率变动 0 计算。</div>
         )}
       </div>
     </div>

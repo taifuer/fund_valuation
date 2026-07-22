@@ -64,6 +64,8 @@ _FUND_HISTORY_REFRESHING: set[str] = set()
 _FUND_HISTORY_REFRESH_GUARD = threading.Lock()
 _FUND_PURCHASE_REFRESHING = False
 _FUND_PURCHASE_REFRESH_GUARD = threading.Lock()
+_FUND_PROFILE_REFRESHING: set[str] = set()
+_FUND_PROFILE_REFRESH_GUARD = threading.Lock()
 _UPSTREAM_HEALTH: dict[str, dict[str, Any]] = {}
 _UPSTREAM_HEALTH_GUARD = threading.Lock()
 _BACKGROUND_REFRESH_STATE: dict[str, Any] = {
@@ -90,7 +92,9 @@ MAX_SINA_SYMBOLS_PER_REQUEST = 160
 MAX_MARKET_STATE_SYMBOLS_PER_REQUEST = 160
 MAX_FUND_HISTORY_REFRESH_ROWS = 3000
 FUND_HISTORY_AUTO_REFRESH_ROWS = 80
+FUND_HISTORY_UPSTREAM_PAGE_SIZE = 80
 HISTORY_AUTO_REFRESH_TTL_MS = 30 * 60 * 1000
+FUND_PROFILE_REFRESH_TTL_SECONDS = 7 * 24 * 60 * 60
 FUND_HOLDINGS_REFRESH_INTERVAL_SECONDS = 24 * 60 * 60
 FUND_HOLDINGS_REFRESH_TTL_SECONDS = FUND_HOLDINGS_REFRESH_INTERVAL_SECONDS
 FUND_HOLDINGS_REQUEST_DELAY_SECONDS = 0.25
@@ -1561,13 +1565,137 @@ def parse_fund_profile(text: str) -> dict[str, str] | None:
     }
 
 
+def store_fund_profile(code: str, profile: dict[str, str]) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO fund_profiles(
+              code, inception_date, asset_scale, scale_date,
+              management_fee, custodian_fee, sales_service_fee, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(code) DO UPDATE SET
+              inception_date = excluded.inception_date,
+              asset_scale = excluded.asset_scale,
+              scale_date = excluded.scale_date,
+              management_fee = excluded.management_fee,
+              custodian_fee = excluded.custodian_fee,
+              sales_service_fee = excluded.sales_service_fee,
+              fetched_at = excluded.fetched_at
+            """,
+            (
+                code,
+                profile.get("inceptionDate", ""),
+                profile.get("assetScale", ""),
+                profile.get("scaleDate", ""),
+                profile.get("managementFee", ""),
+                profile.get("custodianFee", ""),
+                profile.get("salesServiceFee", ""),
+                now_ms(),
+            ),
+        )
+
+
+def read_fund_profiles_from_db(
+    codes: list[str],
+    max_age_seconds: int | None = None,
+) -> dict[str, dict[str, Any]]:
+    if not codes:
+        return {}
+    placeholders = ",".join("?" for _ in codes)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT code, inception_date, asset_scale, scale_date,
+                   management_fee, custodian_fee, sales_service_fee, fetched_at
+            FROM fund_profiles
+            WHERE code IN ({placeholders})
+            """,
+            tuple(codes),
+        ).fetchall()
+    min_fetched_at = now_ms() - max_age_seconds * 1000 if max_age_seconds is not None else None
+    results: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        code, inception_date, asset_scale, scale_date, management_fee, custodian_fee, sales_service_fee, fetched_at = row
+        if min_fetched_at is not None and int(fetched_at) < min_fetched_at:
+            continue
+        results[str(code)] = {
+            "inceptionDate": str(inception_date),
+            "assetScale": str(asset_scale),
+            "scaleDate": str(scale_date),
+            "managementFee": str(management_fee),
+            "custodianFee": str(custodian_fee),
+            "salesServiceFee": str(sales_service_fee),
+            "fetchedAt": int(fetched_at),
+        }
+    return results
+
+
+def fetch_and_store_fund_profile(code: str, *, force_refresh: bool = False) -> dict[str, Any] | None:
+    status, _, body = fetch_upstream(
+        f"https://fundf10.eastmoney.com/jbgk_{quote(code)}.html",
+        referer="https://fundf10.eastmoney.com/",
+        content_type="text/html; charset=utf-8",
+        cache_key=f"fundprofile:{code}",
+        kind="fundprofile",
+        ttl_seconds=FUND_PROFILE_REFRESH_TTL_SECONDS,
+        force_refresh=force_refresh,
+    )
+    if status >= 400:
+        return None
+    profile = parse_fund_profile(decode_body(body))
+    if not profile or not profile.get("inceptionDate"):
+        return None
+    store_fund_profile(code, profile)
+    return read_fund_profiles_from_db([code]).get(code)
+
+
+def refresh_fund_profiles(
+    codes: list[str] | None = None,
+    *,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    fund_codes = sorted(dict.fromkeys(codes or configured_fund_codes_from_constants()))
+    fresh = {} if force_refresh else read_fund_profiles_from_db(fund_codes, FUND_PROFILE_REFRESH_TTL_SECONDS)
+    pending = [code for code in fund_codes if code not in fresh]
+    updated = 0
+    errors: list[str] = []
+    for code in pending:
+        try:
+            updated += int(fetch_and_store_fund_profile(code, force_refresh=force_refresh) is not None)
+        except Exception as exc:
+            errors.append(f"{code}: {exc}")
+    return {"checked": len(fund_codes), "updated": updated, "errors": errors}
+
+
+def schedule_fund_profile_refresh(codes: list[str], *, force_refresh: bool = False) -> None:
+    normalized_codes = sorted(dict.fromkeys(codes))
+    with _FUND_PROFILE_REFRESH_GUARD:
+        pending = [code for code in normalized_codes if code not in _FUND_PROFILE_REFRESHING]
+        _FUND_PROFILE_REFRESHING.update(pending)
+    if not pending:
+        return
+
+    def refresh() -> None:
+        try:
+            with app.app_context():
+                result = refresh_fund_profiles(pending, force_refresh=force_refresh)
+                if result["errors"]:
+                    print(f"[fundprofile-refresh] {'; '.join(result['errors'][:5])}", flush=True)
+        finally:
+            with _FUND_PROFILE_REFRESH_GUARD:
+                _FUND_PROFILE_REFRESHING.difference_update(pending)
+
+    threading.Thread(target=refresh, name="fundprofile-refresh", daemon=True).start()
+
+
 def fetch_fund_history_page(code: str, page_index: int, page_size: int, *, refresh: bool) -> tuple[list[dict[str, Any]], int | None]:
+    upstream_page_size = min(max(page_size, 2), FUND_HISTORY_UPSTREAM_PAGE_SIZE)
     query = urlencode(
         {
             "callback": "jQuery",
             "fundCode": code,
             "pageIndex": page_index,
-            "pageSize": page_size,
+            "pageSize": upstream_page_size,
             "_": int(time.time() * 1000),
         }
     )
@@ -1576,7 +1704,7 @@ def fetch_fund_history_page(code: str, page_index: int, page_size: int, *, refre
         url,
         referer="https://fund.eastmoney.com/",
         content_type="text/plain; charset=utf-8",
-        cache_key=f"fundhistory:{code}:{page_index}:{page_size}",
+        cache_key=f"fundhistory:{code}:{page_index}:{upstream_page_size}",
         kind="fundhistory",
         ttl_seconds=120,
         force_refresh=refresh,
@@ -1586,13 +1714,13 @@ def fetch_fund_history_page(code: str, page_index: int, page_size: int, *, refre
         if rows:
             return rows, total_count
 
-    legacy_query = urlencode({"type": "lsjz", "code": code, "page": page_index, "per": page_size})
+    legacy_query = urlencode({"type": "lsjz", "code": code, "page": page_index, "per": upstream_page_size})
     legacy_url = f"https://fundf10.eastmoney.com/F10DataApi.aspx?{legacy_query}"
     status, _, body = fetch_upstream(
         legacy_url,
         referer=f"https://fundf10.eastmoney.com/jjjz_{quote(code)}.html",
         content_type="text/plain; charset=utf-8",
-        cache_key=f"fundhistory-legacy:{code}:{page_index}:{page_size}",
+        cache_key=f"fundhistory-legacy:{code}:{page_index}:{upstream_page_size}",
         kind="fundhistory",
         ttl_seconds=120,
         force_refresh=refresh,
@@ -1991,6 +2119,7 @@ def refresh_latest_fund_holdings(
     unavailable = 0
     errors: list[str] = []
     latest_reports: dict[str, str] = {}
+    changed_codes: list[str] = []
     for code in fund_codes:
         rows, error = fetched.get(code, ([], "missing result"))
         if error:
@@ -2009,6 +2138,8 @@ def refresh_latest_fund_holdings(
         store_fund_holdings(code, rows)
         stored += 1
         updated += int(changed)
+        if changed:
+            changed_codes.append(code)
         latest_reports[code] = report_date
 
     return {
@@ -2018,6 +2149,7 @@ def refresh_latest_fund_holdings(
         "unavailable": unavailable,
         "errors": errors,
         "latestReports": latest_reports,
+        "changedCodes": changed_codes,
     }
 
 
@@ -4741,33 +4873,21 @@ def fund_returns() -> Response:
 def fund_profiles() -> Response:
     enforce_rate_limit("fundprofiles")
     codes = require_fund_codes()
-    results: dict[str, Any] = {}
     refresh = should_refresh()
     if refresh:
         enforce_rate_limit("fundprofiles_refresh")
-    for code in codes:
-        url = f"https://fundf10.eastmoney.com/jbgk_{quote(code)}.html"
-        cache_key = f"fundprofile:{code}"
-        cached = cache_any(cache_key) if not refresh else None
-        if cached:
-            status, _, body = cached
-        elif refresh:
-            status, _, body = fetch_upstream(
-                url,
-                referer="https://fundf10.eastmoney.com/",
-                content_type="text/html; charset=utf-8",
-                cache_key=cache_key,
-                kind="fundprofile",
-                ttl_seconds=6 * 60 * 60,
-                force_refresh=True,
-            )
-        else:
-            continue
-        if status >= 400:
-            continue
-        profile = parse_fund_profile(decode_body(body))
-        if profile and profile.get("inceptionDate"):
-            results[code] = profile
+        refresh_fund_profiles(codes, force_refresh=True)
+    results = read_fund_profiles_from_db(codes)
+    missing = [code for code in codes if code not in results]
+    if missing and not refresh:
+        # A detail request for a newly added fund may be the first time its
+        # profile is needed. Fetch only those missing records synchronously;
+        # configured funds are normally prewarmed by the worker.
+        refresh_fund_profiles(missing)
+        results.update(read_fund_profiles_from_db(missing))
+    stale = set(codes) - set(read_fund_profiles_from_db(codes, FUND_PROFILE_REFRESH_TTL_SECONDS))
+    if stale and not refresh:
+        schedule_fund_profile_refresh(sorted(stale))
     return json_response(results)
 
 

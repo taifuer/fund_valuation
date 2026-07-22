@@ -45,7 +45,7 @@ export interface FundNavData {
   name: string;
   navDate: string; // 净值日期
   nav: number; // 单位净值
-  officialChange: number; // T-1 官方涨跌幅 (%)
+  officialChange: number; // 最新已披露官方净值的日涨跌幅 (%)
   estimatedNav: number; // 实时估算净值
   estimatedChange: number; // 平台估算涨跌幅 (%)
 }

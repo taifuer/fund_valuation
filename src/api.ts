@@ -851,7 +851,7 @@ export async function fetchFundHistory(
       const rawRows = json[code];
       if (!Array.isArray(rawRows) || rawRows.length < 2) continue;
       const rows = rawRows as FundHistoryRow[];
-      // rows[0] = latest (T-1), rows[1] = previous (T-2)
+      // rows[0] = latest disclosed NAV, rows[1] = its previous NAV.
       const nav = parseFloat(rows[0].DWJZ) || 0;
       const prevNav = parseFloat(rows[1].DWJZ) || nav;
       const officialChange = prevNav ? ((nav - prevNav) / prevNav) * 100 : 0;

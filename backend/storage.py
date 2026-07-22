@@ -10,7 +10,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("FUND_VALUATION_DATA_DIR", ROOT_DIR / "data"))
 DB_PATH = DATA_DIR / "fund_valuation.db"
 RAW_DIR = DATA_DIR / "raw"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 MIGRATIONS: dict[int, str] = {
@@ -107,6 +107,20 @@ MIGRATIONS: dict[int, str] = {
           generated_at INTEGER NOT NULL,
           PRIMARY KEY (code, days, model_version)
         );
+    """,
+    5: """
+        CREATE TABLE IF NOT EXISTS fund_profiles (
+          code TEXT PRIMARY KEY,
+          inception_date TEXT NOT NULL,
+          asset_scale TEXT NOT NULL,
+          scale_date TEXT NOT NULL,
+          management_fee TEXT NOT NULL,
+          custodian_fee TEXT NOT NULL,
+          sales_service_fee TEXT NOT NULL,
+          fetched_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_fund_profiles_fetched
+          ON fund_profiles(fetched_at);
     """,
 }
 

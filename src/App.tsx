@@ -23,13 +23,11 @@ const DiagnosticsPage = lazy(() => import('./components/DiagnosticsPage'));
 
 type SortMode = 'estimate' | 'official';
 type SortDirection = 'desc' | 'asc';
-type FundDisplayMode = 'compact' | 'detail';
 
 const FUND_SECTION_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_section';
 const FUND_SUMMARY_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_summary';
 const FUND_MANAGER_KEY = 'fund_valuation:managed_funds';
 const MAX_CUSTOM_FUNDS = 50;
-const FUND_DISPLAY_MODE_KEY = 'fund_valuation:fund_display_mode';
 const FUND_MANAGEMENT_ENABLED = __FUND_MANAGEMENT_ENABLED__;
 
 interface FundSummary {
@@ -62,20 +60,6 @@ function readCollapsedFlag(key: string): boolean {
 function writeCollapsedFlag(key: string, value: boolean) {
   try {
     window.localStorage.setItem(key, value ? '1' : '0');
-  } catch { /* skip */ }
-}
-
-function readFundDisplayMode(): FundDisplayMode {
-  try {
-    return window.localStorage.getItem(FUND_DISPLAY_MODE_KEY) === 'detail' ? 'detail' : 'compact';
-  } catch {
-    return 'compact';
-  }
-}
-
-function writeFundDisplayMode(value: FundDisplayMode) {
-  try {
-    window.localStorage.setItem(FUND_DISPLAY_MODE_KEY, value);
   } catch { /* skip */ }
 }
 
@@ -183,7 +167,7 @@ function FundSummaryCards({
           >
             <span className={styles.toggleIcon}>{collapsed ? '+' : '-'}</span>
             <span>基金</span>
-            <span className={styles.count}>· {funds.length} · T-1 净值 ·</span>
+            <span className={styles.count}>· {funds.length} · 最新净值 ·</span>
           </button>
           <div className={styles.summaryTitle}>
             <button type="button" className={styles.summaryAction} onClick={onOpenFunds}>
@@ -229,7 +213,6 @@ function FundSummaryCards({
 
 export default function App() {
   const [managedFunds, setManagedFunds] = useState<ManagedFundSettings>(() => readManagedFundSettings());
-  const [fundDisplayMode, setFundDisplayMode] = useState<FundDisplayMode>(() => readFundDisplayMode());
   const [activePage, setActivePage] = useState<PageKey>(() => pageFromPathname(window.location.pathname));
   // The URL is the single source of truth for the expanded fund card.
   const [expandedCode, setExpandedCode] = useState<string | null>(() => {
@@ -256,7 +239,6 @@ export default function App() {
   }, [managedFunds]);
   const { quotes, fundEstimates, fxRates, marketStates, fundLoading, error } = useQuotes(
     funds,
-    fundDisplayMode === 'detail',
     false,
     activePage === 'funds',
   );
@@ -333,7 +315,7 @@ export default function App() {
     return sorted.map((estimate, i) => ({ estimate, rank: i + 1 }));
   }, [fundEstimates, sortMode, sortDirection]);
 
-  const sortLabel = sortMode === 'official' ? '按 T-1 已出净值排序' : '按实时估算涨跌排序';
+  const sortLabel = sortMode === 'official' ? '按最新已出净值排序' : '按实时估算涨跌排序';
   const overviewFundSummaries = useMemo(() => {
     const items = funds.map((fund) => ({ fund, nav: overviewData.fundSummaries.get(fund.code) ?? null }));
     return items.sort((a, b) => {
@@ -514,11 +496,6 @@ export default function App() {
     });
   }
 
-  function updateFundDisplayMode(value: FundDisplayMode) {
-    setFundDisplayMode(value);
-    writeFundDisplayMode(value);
-  }
-
   return (
     <div className={styles.app}>
       <Header
@@ -572,7 +549,7 @@ export default function App() {
                       className={`${styles.sortButton} ${sortMode === 'official' ? styles.sortButtonActive : ''}`}
                       onClick={() => setSortMode('official')}
                     >
-                      T-1 净值
+                      最新净值
                     </button>
                   </div>
                   <div className={styles.sortToggle} aria-label="基金排序方向">
@@ -591,24 +568,6 @@ export default function App() {
                       onClick={() => setSortDirection('asc')}
                     >
                       低到高
-                    </button>
-                  </div>
-                  <div className={styles.sortToggle} aria-label="基金显示模式">
-                    <button
-                      type="button"
-                      aria-pressed={fundDisplayMode === 'compact'}
-                      className={`${styles.sortButton} ${fundDisplayMode === 'compact' ? styles.sortButtonActive : ''}`}
-                      onClick={() => updateFundDisplayMode('compact')}
-                    >
-                      简洁
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={fundDisplayMode === 'detail'}
-                      className={`${styles.sortButton} ${fundDisplayMode === 'detail' ? styles.sortButtonActive : ''}`}
-                      onClick={() => updateFundDisplayMode('detail')}
-                    >
-                      详细
                     </button>
                   </div>
                   {FUND_MANAGEMENT_ENABLED && (
@@ -665,7 +624,6 @@ export default function App() {
                   rank={est.rank}
                   loading={false}
                   marketStates={marketStates}
-                  showDetails={fundDisplayMode === 'detail'}
                   onRemove={FUND_MANAGEMENT_ENABLED ? removeFund : undefined}
                   expanded={expandedCode === fund.code}
                   onExpandedChange={handleFundExpandedChange}

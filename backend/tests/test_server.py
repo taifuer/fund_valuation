@@ -44,6 +44,7 @@ class ServerDataRefreshTests(unittest.TestCase):
                 DELETE FROM fund_nav_history;
                 DELETE FROM fund_holdings;
                 DELETE FROM fund_purchase_status;
+                DELETE FROM fund_profiles;
                 DELETE FROM market_history;
                 DELETE FROM market_calendar;
                 DELETE FROM stock_daily_history;
@@ -63,6 +64,8 @@ class ServerDataRefreshTests(unittest.TestCase):
             server._MARKET_HISTORY_REFRESHING.clear()
         with server._FUND_NAV_REFRESH_GUARD:
             server._FUND_NAV_REFRESHING.clear()
+        with server._FUND_PROFILE_REFRESH_GUARD:
+            server._FUND_PROFILE_REFRESHING.clear()
         with server._FUND_HISTORY_REFRESH_GUARD:
             server._FUND_HISTORY_REFRESHING.clear()
         with server._FUND_PURCHASE_REFRESH_GUARD:
@@ -1228,6 +1231,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(result["checked"], 2)
         self.assertEqual(result["stored"], 1)
         self.assertEqual(result["updated"], 1)
+        self.assertEqual(result["changedCodes"], ["017436"])
         self.assertEqual(result["unavailable"], 1)
         self.assertEqual(result["errors"], [])
         self.assertEqual(server.read_fund_holdings_from_db("017436")[0]["reportDate"], "2026-06-30")
@@ -1302,6 +1306,32 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(payload["118001"]["managementFee"], "1.20%")
         self.assertEqual(payload["118001"]["custodianFee"], "0.20%")
         self.assertEqual(payload["118001"]["salesServiceFee"], "0.00%")
+
+        stored = server.read_fund_profiles_from_db(["118001"])["118001"]
+        self.assertEqual(stored["scaleDate"], "2026-03-31")
+
+    def test_fund_profiles_uses_persisted_profile_without_upstream_request(self) -> None:
+        server.store_fund_profile("017436", {
+            "inceptionDate": "2023-03-14",
+            "assetScale": "47.06亿元",
+            "scaleDate": "2026-06-30",
+            "managementFee": "1.20%",
+            "custodianFee": "0.20%",
+            "salesServiceFee": "0.00%",
+        })
+
+        with patch.object(server, "fetch_upstream", side_effect=AssertionError("unexpected upstream fetch")):
+            response = server.app.test_client().get("/api/fundprofiles?codes=017436")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()["017436"]
+        self.assertEqual(payload["assetScale"], "47.06亿元")
+        self.assertEqual(payload["scaleDate"], "2026-06-30")
+
+        with patch.object(server, "fetch_and_store_fund_profile", side_effect=AssertionError("unexpected refresh")):
+            result = server.refresh_fund_profiles(["017436"])
+        self.assertEqual(result["updated"], 0)
+        self.assertEqual(result["errors"], [])
 
     def test_fund_history_without_refresh_reads_sqlite(self) -> None:
         server.store_fund_history(
@@ -1435,6 +1465,32 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(len(payload["118001"]), 5)
         self.assertEqual(payload["118001"][0]["FSRQ"], "2026-05-21")
         self.assertEqual(server.read_fund_history_from_db("118001", 10, 1)[-1]["FSRQ"], "2026-05-15")
+
+    def test_fund_history_large_refresh_caps_upstream_page_size(self) -> None:
+        upstream_body = (
+            'jQuery({"Data":{"TotalCount":1,"LSJZList":['
+            '{"FSRQ":"2026-07-21","DWJZ":"2.2390","JZZZL":"1.85"}'
+            ']}});'
+        ).encode()
+
+        def fake_fetch_upstream(url: str, **kwargs: object) -> tuple[int, str, bytes]:
+            self.assertIn(f"pageSize={server.FUND_HISTORY_UPSTREAM_PAGE_SIZE}", url)
+            self.assertEqual(
+                kwargs.get("cache_key"),
+                f"fundhistory:017436:1:{server.FUND_HISTORY_UPSTREAM_PAGE_SIZE}",
+            )
+            return 200, "text/plain; charset=utf-8", upstream_body
+
+        with patch.object(server, "fetch_upstream", side_effect=fake_fetch_upstream) as fetch:
+            server.fetch_and_store_fund_history(
+                "017436",
+                server.MAX_FUND_HISTORY_REFRESH_ROWS,
+                refresh=True,
+            )
+
+        fetch.assert_called_once()
+        latest = server.read_fund_history_from_db("017436", 1, 1)[0]
+        self.assertEqual(latest["FSRQ"], "2026-07-21")
 
     def test_fund_history_refresh_falls_back_to_sqlite_on_upstream_error(self) -> None:
         server.store_fund_history(

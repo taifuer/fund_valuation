@@ -1,9 +1,6 @@
 import { lazy, memo, Suspense, useState } from 'react';
 import type {
   Fund,
-  FundRangeReturn,
-  FundReturnRangeKey,
-  FundReturnSummary,
   MarketStateData,
   QuoteData,
 } from '../types';
@@ -14,6 +11,7 @@ import styles from './FundCard.module.css';
 const HoldingsTable = lazy(() => import('./HoldingsTable'));
 const FundNavTable = lazy(() => import('./FundNavTable'));
 const FundHistoryChart = lazy(() => import('./FundHistoryChart'));
+const FundProfilePanel = lazy(() => import('./FundProfilePanel'));
 
 // Module-level empty Map so the default prop keeps a stable reference (a fresh
 // `new Map()` default would defeat React.memo).
@@ -25,7 +23,6 @@ interface Props {
   rank: number;
   loading: boolean;
   marketStates?: Map<string, MarketStateData>;
-  showDetails?: boolean;
   onRemove?: (fund: Fund) => void;
   /** When provided, expansion is controlled by the parent and URL state. */
   expanded?: boolean;
@@ -38,35 +35,12 @@ const RANK_STYLE: Record<number, string> = {
   3: 'bronze',
 };
 
-const FUND_RETURN_RANGES: FundReturnRangeKey[] = ['1w', '1m', '3m', '6m', '1y', '3y', 'ytd'];
-
 // Format YYYY-MM-DD → MM/DD
 function formatDate(yyyymmdd: string): string {
   if (!yyyymmdd) return '';
   const m = yyyymmdd.match(/^\d{4}-(\d{2})-(\d{2})$/);
   if (m) return `${m[1]}/${m[2]}`;
   return yyyymmdd;
-}
-
-function formatChineseDate(yyyymmdd: string): string {
-  if (!yyyymmdd) return '';
-  const m = yyyymmdd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!m) return yyyymmdd;
-  return `${Number(m[1])}年${Number(m[2])}月${Number(m[3])}日`;
-}
-
-function formatPurchaseAmount(raw: string): string {
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) return '--';
-  if (value >= 10_000_000_000) return '不限';
-  if (value >= 10_000) return `${Number((value / 10_000).toFixed(2))}万元`;
-  return `${Number(value.toFixed(2))}元`;
-}
-
-function purchaseStatusClass(status: string): string {
-  if (status.includes('暂停')) return 'purchaseStopped';
-  if (status.includes('限') || status.includes('封闭')) return 'purchaseLimited';
-  return 'purchaseOpen';
 }
 
 function quoteTimeCandidate(
@@ -92,50 +66,19 @@ function estimateTimeLabel(
   return candidates[0]?.label ?? null;
 }
 
-function FundReturnBar({
-  summary,
-  ranges,
-}: {
-  summary: FundReturnSummary | null;
-  ranges: FundReturnRangeKey[];
-}) {
-  const items = ranges
-    .map((key) => summary?.ranges[key])
-    .filter((item): item is FundRangeReturn => item != null);
-
-  if (items.length === 0) return null;
-
-  return (
-    <div className={styles.returnBar}>
-      {items.map((item) => {
-        const up = item.returnPercent >= 0;
-        return (
-          <span key={item.key} className={styles.returnItem}>
-            <em>{item.label}</em>
-            <strong className={up ? styles.returnUp : styles.returnDown}>
-              {up ? '+' : ''}{item.returnPercent.toFixed(2)}%
-            </strong>
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
 const FundCard = memo(function FundCard({
   fund,
   estimate,
   rank,
   loading,
   marketStates = EMPTY_MARKET_STATES,
-  showDetails = false,
   onRemove,
   expanded: controlledExpanded,
   onExpandedChange,
 }: Props) {
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = controlledExpanded ?? internalExpanded;
-  const [activeTab, setActiveTab] = useState<'holdings' | 'nav' | 'trend'>('holdings');
+  const [activeTab, setActiveTab] = useState<'holdings' | 'nav' | 'trend' | 'profile'>('holdings');
   function toggleExpanded() {
     const next = !expanded;
     if (controlledExpanded == null) setInternalExpanded(next);
@@ -184,13 +127,8 @@ const FundCard = memo(function FundCard({
 
   const {
     officialNAV,
-    purchaseStatus,
-    rangeReturns,
-    estimatedNAVLocal,
     computedChange,
-    normalizedChangeLocal,
     normalizedChange,
-    normalizedNAVLocal,
     normalizedNAV,
     quoteCoverage,
     totalConfiguredWeight,
@@ -203,7 +141,6 @@ const FundCard = memo(function FundCard({
   // Headline direction uses the coverage-normalized change (the displayed
   // estimate), so up/down tinting matches the number the user reads.
   const up = normalizedChange >= 0;
-  const localUp = normalizedChangeLocal >= 0;
   const estBoxCls = up ? styles.estimateBox : styles.estimateBoxDown;
   const tagCls = estimateState === 'LIVE'
     ? styles.estLiveTagUp
@@ -213,8 +150,6 @@ const FundCard = memo(function FundCard({
       ? styles.estLiveTagPartial
       : styles.estLiveTagClosed;
   const timeLabel = estimateTimeLabel(estimate.holdingsQuotes, estimateState === 'CLOSED', marketStates);
-  const profile = fund.profile;
-
   return (
     <div
       className={cardClassName}
@@ -237,90 +172,37 @@ const FundCard = memo(function FundCard({
         </div>
 
         <div className={styles.dualNav}>
-          {/* T-1: Official NAV */}
+          {/* Latest disclosed official NAV. QDII publication may lag by more than one day. */}
           <div className={styles.navBox}>
-            <div className={styles.navBoxLabel}>T-1 已出净值</div>
-            <div className={styles.navBoxValue}>{officialNAV.nav.toFixed(4)}</div>
-            <div className={styles.navBoxDate}>
-              {formatDate(officialNAV.navDate)}
-              {officialNAV.officialChange !== 0 && (
-                <span className={`${styles.navBoxChange} ${officialNAV.officialChange >= 0 ? styles.up : styles.down}`}>
-                  {' '}{officialNAV.officialChange >= 0 ? '+' : ''}{officialNAV.officialChange.toFixed(2)}%
-                </span>
-              )}
+            <div className={styles.navBoxLabel}>最新已出净值</div>
+            <div className={styles.navDataRow}>
+              <span className={styles.navBoxValue}>{officialNAV.nav.toFixed(4)}</span>
+              <span className={`${styles.navBoxChange} ${officialNAV.officialChange >= 0 ? styles.up : styles.down}`}>
+                {officialNAV.officialChange >= 0 ? '+' : ''}{officialNAV.officialChange.toFixed(2)}%
+              </span>
+              <span className={styles.navDataTime}>{formatDate(officialNAV.navDate)}</span>
             </div>
           </div>
 
           {/* T-day: Live estimate */}
           <div className={`${styles.navBox} ${estBoxCls}`}>
             <div className={styles.navBoxLabel}>
-              T日 持仓估算
+              T日估算 · 含汇率
               <span className={`${styles.estLiveTag} ${tagCls}`}>{estimateState}</span>
             </div>
-            <div className={`${styles.navBoxValue} ${up ? styles.up : styles.down}`}>
-              {normalizedNAVLocal !== null ? normalizedNAVLocal.toFixed(4) : '--'}
-              {normalizedNAV !== null && (
-                <span className={`${styles.fxNavValue} ${up ? styles.up : styles.down}`}>
-                  （{normalizedNAV.toFixed(4)}）
-                </span>
-              )}
-            </div>
-            <div className={styles.estimateMetaRow}>
-              <div className={`${styles.navBoxChange} ${localUp ? styles.up : styles.down}`}>
-                {normalizedNAVLocal !== null
-                  ? `${localUp ? '+' : ''}${normalizedChangeLocal.toFixed(2)}%`
+            <div className={styles.navDataRow}>
+              <span className={`${styles.navBoxValue} ${up ? styles.up : styles.down}`}>
+                {normalizedNAV !== null ? normalizedNAV.toFixed(4) : '--'}
+              </span>
+              <span className={`${styles.navBoxChange} ${up ? styles.up : styles.down}`}>
+                {normalizedNAV !== null
+                  ? `${up ? '+' : ''}${normalizedChange.toFixed(2)}%`
                   : '数据不足'}
-                {normalizedNAV !== null && (
-                  <span className={`${styles.fxChange} ${up ? styles.up : styles.down}`}>
-                    （含汇率 {up ? '+' : ''}{normalizedChange.toFixed(2)}%）
-                  </span>
-                )}
-              </div>
-              {timeLabel && (
-                <span className={styles.estimateTime}>{timeLabel}</span>
-              )}
+              </span>
+              <span className={styles.navDataTime}>{timeLabel ?? ''}</span>
             </div>
-            {normalizedNAVLocal !== null && staleQuoteCount > 0 && (
-              <div className={styles.estimateCoverage}>
-                {staleQuoteCount} 项持仓行情不晚于已出净值日，已剔除以防重复计入
-              </div>
-            )}
-            {normalizedNAVLocal !== null && missingFxCount > 0 && (
-              <div className={styles.estimateCoverage}>
-                {missingFxCount} 项外币持仓汇率缺失，按 0 计入
-              </div>
-            )}
           </div>
         </div>
-        {showDetails && (profile || purchaseStatus) && (
-          <div className={styles.fundProfile}>
-            {profile && (
-              <>
-                <span className={styles.profilePill}>
-                  <em>成立</em>{formatChineseDate(profile.inceptionDate)}
-                </span>
-                <span className={styles.profilePill}>
-                  <em>规模</em>{profile.assetScale}<small>截至 {formatChineseDate(profile.scaleDate)}</small>
-                </span>
-                <span className={styles.profilePill}>
-                  <em>费率</em>管理 {profile.managementFee}<small>托管 {profile.custodianFee} / 销售 {profile.salesServiceFee}</small>
-                </span>
-              </>
-            )}
-            {purchaseStatus && (
-              <>
-                <span className={`${styles.profilePill} ${styles[purchaseStatusClass(purchaseStatus.purchaseStatus)]}`}>
-                  <em>申购</em>{purchaseStatus.purchaseStatus}
-                </span>
-                <span className={styles.profilePill}>
-                  <em>限额</em>{formatPurchaseAmount(purchaseStatus.dailyLimit)}
-                  <small>起购 {formatPurchaseAmount(purchaseStatus.minPurchase)}</small>
-                </span>
-              </>
-            )}
-          </div>
-        )}
-        {showDetails && <FundReturnBar summary={rangeReturns} ranges={FUND_RETURN_RANGES} />}
       </div>
 
       {onRemove && (
@@ -361,6 +243,13 @@ const FundCard = memo(function FundCard({
             >
               走势
             </button>
+            <button
+              type="button"
+              className={`${styles.tabButton} ${activeTab === 'profile' ? styles.tabButtonActive : ''}`}
+              onClick={() => setActiveTab('profile')}
+            >
+              资料
+            </button>
           </div>
           <Suspense fallback={<div className={styles.tabLoading}>详情加载中...</div>}>
             {activeTab === 'holdings' && (
@@ -372,6 +261,8 @@ const FundCard = memo(function FundCard({
                 quoteCoverage={quoteCoverage}
                 totalConfiguredWeight={totalConfiguredWeight}
                 missingQuoteCount={missingQuoteCount}
+                staleQuoteCount={staleQuoteCount}
+                missingFxCount={missingFxCount}
                 currencyChanges={currencyChanges}
                 marketStates={marketStates}
               />
@@ -381,6 +272,9 @@ const FundCard = memo(function FundCard({
             )}
             {activeTab === 'trend' && (
               <FundHistoryChart fundCode={fund.code} />
+            )}
+            {activeTab === 'profile' && (
+              <FundProfilePanel fundCode={fund.code} fallbackProfile={fund.profile} />
             )}
           </Suspense>
         </div>

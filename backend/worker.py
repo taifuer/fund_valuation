@@ -31,6 +31,7 @@ from .server import (
     quote_symbol_groups,
     refresh_configured_fund_history,
     refresh_configured_market_history,
+    refresh_fund_profiles,
     refresh_latest_fund_holdings,
     release_background_job,
 )
@@ -57,6 +58,7 @@ def main() -> None:
         "continuous_quotes": 0.0,
         "fund_nav": 0.0,
         "fund_holdings": 0.0,
+        "fund_profiles": 0.0,
         "fund_purchase": 0.0,
         "history": 0.0,
         "backup": 0.0,
@@ -101,8 +103,19 @@ def main() -> None:
                         result = refresh_latest_fund_holdings()
                         tasks.append(f"fund-holdings:{result['updated']}/{result['checked']}")
                         errors.extend(f"fund-holdings: {error}" for error in result["errors"])
+                        if result.get("changedCodes"):
+                            profile_result = refresh_fund_profiles(result["changedCodes"], force_refresh=True)
+                            tasks.append(f"fund-profiles:{profile_result['updated']}/{profile_result['checked']}")
+                            errors.extend(f"fund-profiles: {error}" for error in profile_result["errors"])
                     except Exception as exc:
                         errors.append(f"fund-holdings: {exc}")
+                if "fund_profiles" in flags:
+                    try:
+                        result = refresh_fund_profiles()
+                        tasks.append(f"fund-profiles:{result['updated']}/{result['checked']}")
+                        errors.extend(f"fund-profiles: {error}" for error in result["errors"])
+                    except Exception as exc:
+                        errors.append(f"fund-profiles: {exc}")
                 if "history" in flags:
                     try:
                         errors.extend(refresh_configured_fund_history())
@@ -204,6 +217,7 @@ def main() -> None:
                     maintenance_intervals = {
                         "fund_nav": 15 * 60 if cash_interval <= 5 * 60 else 60 * 60,
                         "fund_holdings": FUND_HOLDINGS_REFRESH_INTERVAL_SECONDS,
+                        "fund_profiles": 7 * 24 * 60 * 60,
                         "fund_purchase": 6 * 60 * 60,
                         "history": max(maintenance_interval, 60 * 60),
                         "backup": 60 * 60,
