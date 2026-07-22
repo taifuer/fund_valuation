@@ -34,8 +34,7 @@ export interface FundEstimate {
   computedChange: number;
   estimatedNAV: number | null;
   /** Coverage-normalized change = computedChange / quoteCoverage. This is the
-   *  estimate the UI displays as the headline, matching the backend backtest's
-   *  `normalizedChange` (predicted / covered_weight). Without normalization a
+   *  estimate the UI displays as the headline. Without normalization a
    *  fund whose top-10 covers only ~73% would systematically understate moves
    *  by ~1/0.73. */
   normalizedChangeLocal: number;
@@ -212,8 +211,7 @@ export function useQuotes(
     async function resolveEffectiveFunds(): Promise<Fund[]> {
       const now = Date.now();
       const cachedFunds = effectiveFundsRef.current ?? funds;
-      const dynamicHoldingCodes = cachedFunds
-        .filter((f) => f.holdings.length === 0)
+      const holdingCodes = cachedFunds
         .filter((f) => now - (dynamicHoldingsFetchedAtRef.current.get(f.code) ?? 0) > SLOW_DATA_TTL_MS)
         .map((f) => f.code);
       const dynamicProfileCodes = loadFundDetails
@@ -223,18 +221,20 @@ export function useQuotes(
             .map((f) => f.code)
         : [];
       const [dynamicHoldings, dynamicProfiles] = await Promise.all([
-        fetchFundHoldings(dynamicHoldingCodes, true),
+        // SQLite is the source of truth for the latest validated quarterly
+        // holdings. Built-in holdings remain only as an offline fallback.
+        fetchFundHoldings(holdingCodes),
         fetchFundProfiles(dynamicProfileCodes, true),
       ]);
-      dynamicHoldingCodes.forEach((code) => dynamicHoldingsFetchedAtRef.current.set(code, now));
+      holdingCodes.forEach((code) => dynamicHoldingsFetchedAtRef.current.set(code, now));
       dynamicProfileCodes.forEach((code) => dynamicProfilesFetchedAtRef.current.set(code, now));
       const effectiveFunds = cachedFunds.map((fund) => {
         const profile = fund.profile ?? dynamicProfiles.get(fund.code);
-        if (fund.holdings.length > 0) return profile && !fund.profile ? { ...fund, profile } : fund;
         const holdings = dynamicHoldings.get(fund.code) ?? [];
-        return holdings.length > 0 || (profile && !fund.profile)
-          ? { ...fund, holdings: holdings.length > 0 ? holdings : fund.holdings, profile }
-          : fund;
+        if (holdings.length > 0 || (profile && !fund.profile)) {
+          return { ...fund, holdings: holdings.length > 0 ? holdings : fund.holdings, profile };
+        }
+        return fund;
       });
       effectiveFundsRef.current = effectiveFunds;
       return effectiveFunds;
@@ -461,8 +461,7 @@ export function useQuotes(
           // Normalize by covered weight so a partial-holdings estimate scales
           // to the full fund. coveredWeight here counts only holdings that
           // contributed a fresh (after-navDate) quote, so the projection is
-          // over the genuinely-informative portion. Mirrors the backend
-          // backtest's normalizedChange = predicted / covered_weight.
+          // over the genuinely-informative portion.
           const coveredWeightLocal = fund.holdings.reduce((sum, h) => {
             return fundQuotes.has(h.sinaSymbol) && quoteIsAfterNav(h) ? sum + h.weight : sum;
           }, 0);

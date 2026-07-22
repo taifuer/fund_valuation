@@ -91,6 +91,10 @@ MAX_MARKET_STATE_SYMBOLS_PER_REQUEST = 160
 MAX_FUND_HISTORY_REFRESH_ROWS = 3000
 FUND_HISTORY_AUTO_REFRESH_ROWS = 80
 HISTORY_AUTO_REFRESH_TTL_MS = 30 * 60 * 1000
+FUND_HOLDINGS_REFRESH_INTERVAL_SECONDS = 24 * 60 * 60
+FUND_HOLDINGS_REFRESH_TTL_SECONDS = FUND_HOLDINGS_REFRESH_INTERVAL_SECONDS
+FUND_HOLDINGS_REQUEST_DELAY_SECONDS = 0.25
+FUND_HOLDINGS_MAX_AGE_DAYS = 550
 MARKET_RETURNS_CACHE_TTL_SECONDS = 30 * 60
 FUND_NAV_CACHE_TTL_SECONDS = 60
 BACKGROUND_REFRESH_INTERVAL_SECONDS = int(os.environ.get("FUND_VALUATION_REFRESH_INTERVAL", "900"))
@@ -1794,7 +1798,7 @@ def store_fund_holdings(code: str, holdings: list[dict[str, Any]]) -> None:
     if not holdings:
         return
     report_date = str(holdings[0].get("reportDate") or "")
-    if not report_date:
+    if not valid_fund_holding_report_date(report_date):
         return
     fetched_at = now_ms()
     points = []
@@ -1831,6 +1835,23 @@ def store_fund_holdings(code: str, holdings: list[dict[str, Any]]) -> None:
             """,
             points,
         )
+
+
+def valid_fund_holding_report_date(value: str) -> bool:
+    try:
+        parsed = datetime.fromisoformat(value).date()
+    except ValueError:
+        return False
+    return (parsed.month, parsed.day) in {(3, 31), (6, 30), (9, 30), (12, 31)}
+
+
+def current_fund_holding_report_date(value: str, *, as_of: date | None = None) -> bool:
+    if not valid_fund_holding_report_date(value):
+        return False
+    report_date = datetime.fromisoformat(value).date()
+    current_date = as_of or datetime.now(ZoneInfo("Asia/Shanghai")).date()
+    age_days = (current_date - report_date).days
+    return 0 <= age_days <= FUND_HOLDINGS_MAX_AGE_DAYS
 
 
 def refresh_missing_fund_holdings(
@@ -1885,10 +1906,11 @@ def refresh_missing_fund_holdings(
 
 def read_fund_holdings_from_db(code: str) -> list[dict[str, Any]]:
     with get_conn() as conn:
-        latest = conn.execute(
-            "SELECT report_date FROM fund_holdings WHERE code = ? ORDER BY report_date DESC LIMIT 1",
+        report_dates = conn.execute(
+            "SELECT DISTINCT report_date FROM fund_holdings WHERE code = ? ORDER BY report_date DESC",
             (code,),
-        ).fetchone()
+        ).fetchall()
+        latest = next((row[0] for row in report_dates if current_fund_holding_report_date(str(row[0]))), "")
         if not latest:
             return []
         rows = conn.execute(
@@ -1898,7 +1920,7 @@ def read_fund_holdings_from_db(code: str) -> list[dict[str, Any]]:
             WHERE code = ? AND report_date = ?
             ORDER BY rank ASC
             """,
-            (code, latest[0]),
+            (code, latest),
         ).fetchall()
     return [
         {
@@ -1918,6 +1940,87 @@ def read_fund_holdings_from_db(code: str) -> list[dict[str, Any]]:
     ]
 
 
+def fund_holdings_signature(rows: list[dict[str, Any]]) -> tuple[tuple[str, float], ...]:
+    return tuple(
+        (str(item.get("stockCode") or item.get("symbol") or ""), round(float(item.get("weight") or 0), 8))
+        for item in rows
+    )
+
+
+def refresh_latest_fund_holdings(
+    codes: list[str] | None = None,
+    *,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    fund_codes = sorted(dict.fromkeys(codes or configured_fund_codes_from_constants()))
+    if not fund_codes:
+        return {"checked": 0, "stored": 0, "updated": 0, "unavailable": 0, "errors": []}
+
+    def fetch_one(code: str) -> tuple[str, list[dict[str, Any]], str]:
+        query = urlencode({"type": "jjcc", "code": code, "topline": 10, "year": "", "month": ""})
+        for attempt in range(2):
+            try:
+                status, _, body = fetch_upstream(
+                    f"https://fundf10.eastmoney.com/FundArchivesDatas.aspx?{query}",
+                    referer=f"https://fundf10.eastmoney.com/ccmx_{quote(code)}.html",
+                    content_type="text/plain; charset=utf-8",
+                    cache_key=f"fundholdings:{code}",
+                    kind="fundholdings",
+                    ttl_seconds=FUND_HOLDINGS_REFRESH_TTL_SECONDS,
+                    force_refresh=force_refresh,
+                )
+                break
+            except Exception as exc:
+                if attempt == 0 and "514" in str(exc):
+                    time.sleep(2)
+                    continue
+                return code, [], str(exc)
+            finally:
+                time.sleep(FUND_HOLDINGS_REQUEST_DELAY_SECONDS)
+        if status >= 400:
+            return code, [], f"HTTP {status}"
+        return code, parse_fund_holdings(code, decode_body(body)), ""
+
+    fetched: dict[str, tuple[list[dict[str, Any]], str]] = {}
+    for code in fund_codes:
+        fetched_code, rows, error = fetch_one(code)
+        fetched[fetched_code] = (rows, error)
+
+    stored = 0
+    updated = 0
+    unavailable = 0
+    errors: list[str] = []
+    latest_reports: dict[str, str] = {}
+    for code in fund_codes:
+        rows, error = fetched.get(code, ([], "missing result"))
+        if error:
+            errors.append(f"{code}: {error}")
+            continue
+        report_date = str(rows[0].get("reportDate") or "") if rows else ""
+        if not rows or not current_fund_holding_report_date(report_date):
+            unavailable += 1
+            continue
+        existing = read_fund_holdings_from_db(code)
+        existing_date = str(existing[0].get("reportDate") or "") if existing else ""
+        if existing_date and report_date < existing_date:
+            unavailable += 1
+            continue
+        changed = report_date != existing_date or fund_holdings_signature(rows) != fund_holdings_signature(existing)
+        store_fund_holdings(code, rows)
+        stored += 1
+        updated += int(changed)
+        latest_reports[code] = report_date
+
+    return {
+        "checked": len(fund_codes),
+        "stored": stored,
+        "updated": updated,
+        "unavailable": unavailable,
+        "errors": errors,
+        "latestReports": latest_reports,
+    }
+
+
 def read_fund_holding_snapshots(code: str) -> list[tuple[str, list[dict[str, Any]]]]:
     with get_conn() as conn:
         report_dates = [
@@ -1926,6 +2029,7 @@ def read_fund_holding_snapshots(code: str) -> list[tuple[str, list[dict[str, Any
                 "SELECT DISTINCT report_date FROM fund_holdings WHERE code = ? ORDER BY report_date ASC",
                 (code,),
             ).fetchall()
+            if valid_fund_holding_report_date(str(row[0]))
         ]
     snapshots: list[tuple[str, list[dict[str, Any]]]] = []
     for report_date in report_dates:
@@ -2050,7 +2154,7 @@ def configured_sina_symbols_from_constants() -> list[str]:
 def configured_quote_symbols() -> list[str]:
     symbols = configured_sina_symbols_from_constants()
     for code in configured_fund_codes_from_constants():
-        for holding in read_fund_holdings_for_backtest(code):
+        for holding in read_fund_holdings_from_db(code):
             symbol = str(holding.get("sinaSymbol") or "")
             if SINA_SYMBOL_RE.fullmatch(symbol):
                 symbols.append(symbol)
@@ -3981,9 +4085,10 @@ def run_background_refresh_once(owner: str = "manual") -> bool:
     except Exception as exc:
         errors.append(f"fundnav: {exc}")
     try:
-        errors.extend(prewarm_fund_backtest_cache())
+        holdings_result = refresh_latest_fund_holdings()
+        errors.extend(f"fund-holdings: {error}" for error in holdings_result["errors"])
     except Exception as exc:
-        errors.append(f"backtest: {exc}")
+        errors.append(f"fund-holdings: {exc}")
     try:
         symbols = configured_sina_symbols_from_constants()
         if symbols:
@@ -4577,9 +4682,12 @@ def fund_holdings() -> Response:
             continue
 
         parsed_rows = parse_fund_holdings(code, decode_body(body))
-        if parsed_rows:
+        report_date = str(parsed_rows[0].get("reportDate") or "") if parsed_rows else ""
+        if parsed_rows and current_fund_holding_report_date(report_date):
             store_fund_holdings(code, parsed_rows)
-            results[code] = read_fund_holdings_from_db(code) or parsed_rows
+            persisted_rows = read_fund_holdings_from_db(code)
+            if persisted_rows:
+                results[code] = persisted_rows
         elif cached_rows:
             results[code] = cached_rows
     return json_response(results)

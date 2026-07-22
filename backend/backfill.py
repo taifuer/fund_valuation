@@ -268,7 +268,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fund-limit", type=int, help="Limit fund count, useful for smoke checks")
     parser.add_argument("--market-limit", type=int, help="Limit market count, useful for smoke checks")
     parser.add_argument("--holdings-years", type=int, default=0, help="Also backfill quarterly holdings for N years")
-    parser.add_argument("--fx-years", type=int, default=0, help="Backfill N years of ECB reference rates; default is incremental")
+    parser.add_argument("--fx-years", type=int, default=0, help="Optionally backfill N years of ECB reference rates")
     parser.add_argument("--skip-fx", action="store_true", help="Skip ECB historical exchange rates")
     return parser.parse_args()
 
@@ -320,10 +320,8 @@ def main() -> None:
             )
 
     fx_rows = 0
-    if not args.skip_fx and not args.cache_only:
-        fx_start = None
-        if args.fx_years > 0:
-            fx_start = (datetime.now(ZoneInfo("Asia/Shanghai")).date() - timedelta(days=args.fx_years * 366)).isoformat()
+    if not args.skip_fx and not args.cache_only and args.fx_years > 0:
+        fx_start = (datetime.now(ZoneInfo("Asia/Shanghai")).date() - timedelta(days=args.fx_years * 366)).isoformat()
         fx_rows = refresh_ecb_fx_history(start_date=fx_start, force_refresh=not args.use_cache)
         print(f"[fx] ECB reference rates: {fx_rows} rows stored", flush=True)
 

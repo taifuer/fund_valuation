@@ -12,6 +12,7 @@ from .db_admin import ensure_recent_backup, optimize_database, positive_int_env
 from .storage import DB_PATH
 from .server import (
     BACKGROUND_REFRESH_INTERVAL_SECONDS,
+    FUND_HOLDINGS_REFRESH_INTERVAL_SECONDS,
     MAX_SINA_SYMBOLS_PER_REQUEST,
     app,
     background_refresh_state_snapshot,
@@ -20,7 +21,6 @@ from .server import (
     ensure_storage,
     mark_background_refresh,
     now_ms,
-    prewarm_fund_backtest_cache,
     prewarm_fund_nav_cache_async,
     prewarm_purchase_status_cache,
     prewarm_response_cache,
@@ -29,10 +29,9 @@ from .server import (
     prune_quote_snapshots,
     quote_group_refresh_interval,
     quote_symbol_groups,
-    refresh_ecb_fx_history,
     refresh_configured_fund_history,
     refresh_configured_market_history,
-    refresh_missing_fund_holdings,
+    refresh_latest_fund_holdings,
     release_background_job,
 )
 
@@ -57,9 +56,9 @@ def main() -> None:
         "cash_quotes": 0.0,
         "continuous_quotes": 0.0,
         "fund_nav": 0.0,
+        "fund_holdings": 0.0,
         "fund_purchase": 0.0,
         "history": 0.0,
-        "backtest": 0.0,
         "backup": 0.0,
         "cleanup": 0.0,
     }
@@ -97,26 +96,21 @@ def main() -> None:
                         tasks.append("fund-purchase")
                     except Exception as exc:
                         errors.append(f"fund-purchase: {exc}")
+                if "fund_holdings" in flags:
+                    try:
+                        result = refresh_latest_fund_holdings()
+                        tasks.append(f"fund-holdings:{result['updated']}/{result['checked']}")
+                        errors.extend(f"fund-holdings: {error}" for error in result["errors"])
+                    except Exception as exc:
+                        errors.append(f"fund-holdings: {exc}")
                 if "history" in flags:
                     try:
                         errors.extend(refresh_configured_fund_history())
                         errors.extend(refresh_configured_market_history())
-                        holding_refresh = refresh_missing_fund_holdings(max_requests=4, years=3)
-                        errors.extend(f"holding-history: {error}" for error in holding_refresh["errors"])
-                        if holding_refresh["attempted"]:
-                            tasks.append(f"holding-gaps:{holding_refresh['stored']}/{holding_refresh['attempted']}")
-                        if refresh_ecb_fx_history() <= 0:
-                            errors.append("fx-history: no ECB rows stored")
                         prewarm_response_cache()
                         tasks.append("history")
                     except Exception as exc:
                         errors.append(f"history: {exc}")
-                if "backtest" in flags:
-                    try:
-                        errors.extend(prewarm_fund_backtest_cache())
-                        tasks.append("backtest")
-                    except Exception as exc:
-                        errors.append(f"backtest: {exc}")
                 if "backup" in flags and os.environ.get("FUND_VALUATION_AUTO_BACKUP", "0") == "1":
                     try:
                         backup = ensure_recent_backup(
@@ -209,9 +203,9 @@ def main() -> None:
                 if acquired:
                     maintenance_intervals = {
                         "fund_nav": 15 * 60 if cash_interval <= 5 * 60 else 60 * 60,
+                        "fund_holdings": FUND_HOLDINGS_REFRESH_INTERVAL_SECONDS,
                         "fund_purchase": 6 * 60 * 60,
                         "history": max(maintenance_interval, 60 * 60),
-                        "backtest": 24 * 60 * 60,
                         "backup": 60 * 60,
                         "cleanup": 60 * 60,
                     }

@@ -1,8 +1,6 @@
-import { lazy, memo, Suspense, useEffect, useState } from 'react';
-import { fetchFundBacktest } from '../api';
+import { lazy, memo, Suspense, useState } from 'react';
 import type {
   Fund,
-  FundBacktestSummary,
   FundRangeReturn,
   FundReturnRangeKey,
   FundReturnSummary,
@@ -16,7 +14,6 @@ import styles from './FundCard.module.css';
 const HoldingsTable = lazy(() => import('./HoldingsTable'));
 const FundNavTable = lazy(() => import('./FundNavTable'));
 const FundHistoryChart = lazy(() => import('./FundHistoryChart'));
-const FundBacktestPanel = lazy(() => import('./FundBacktestPanel'));
 
 // Module-level empty Map so the default prop keeps a stable reference (a fresh
 // `new Map()` default would defeat React.memo).
@@ -125,60 +122,6 @@ function FundReturnBar({
   );
 }
 
-function formatBacktestMetric(value: number | null, suffix = ''): string {
-  return value == null ? '--' : `${value.toFixed(2)}${suffix}`;
-}
-
-function backtestModelLabel(model: FundBacktestSummary['recommendedModel']): string {
-  if (model === 'linear') return '线性';
-  if (model === 'normalizedLinear') return '归一化';
-  return '原始';
-}
-
-function BacktestSummaryStrip({ fundCode }: { fundCode: string }) {
-  const [data, setData] = useState<FundBacktestSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setData(null);
-    fetchFundBacktest(fundCode, 90, false)
-      .then((result) => {
-        if (!cancelled) setData(result);
-      })
-      .catch(() => {
-        if (!cancelled) setData(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [fundCode]);
-
-  if (loading) {
-    return <div className={styles.backtestSummaryMuted}>回测摘要加载中...</div>;
-  }
-
-  if (!data) {
-    return <div className={styles.backtestSummaryMuted}>暂无回测摘要</div>;
-  }
-
-  return (
-    <div className={styles.backtestSummary}>
-      <span className={styles.backtestSummaryTitle}>估值回测</span>
-      <span>模型 {backtestModelLabel(data.recommendedModel)}</span>
-      <span>误差 {formatBacktestMetric(data.expectedError, '%')}</span>
-      <span>方向 {formatBacktestMetric(data.validation.selected.directionAccuracy, '%')}</span>
-      <span>覆盖 {data.coverageAvg.toFixed(1)}%</span>
-      <span>{formatDate(data.startDate)}-{formatDate(data.endDate)}</span>
-    </div>
-  );
-}
-
 const FundCard = memo(function FundCard({
   fund,
   estimate,
@@ -192,7 +135,7 @@ const FundCard = memo(function FundCard({
 }: Props) {
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = controlledExpanded ?? internalExpanded;
-  const [activeTab, setActiveTab] = useState<'holdings' | 'nav' | 'trend' | 'backtest'>('holdings');
+  const [activeTab, setActiveTab] = useState<'holdings' | 'nav' | 'trend'>('holdings');
   function toggleExpanded() {
     const next = !expanded;
     if (controlledExpanded == null) setInternalExpanded(next);
@@ -396,7 +339,6 @@ const FundCard = memo(function FundCard({
 
       {expanded && (
         <div className={styles.expanded} onClick={(event) => event.stopPropagation()}>
-          <BacktestSummaryStrip fundCode={fund.code} />
           <div className={styles.tabs}>
             <button
               type="button"
@@ -419,13 +361,6 @@ const FundCard = memo(function FundCard({
             >
               走势
             </button>
-            <button
-              type="button"
-              className={`${styles.tabButton} ${activeTab === 'backtest' ? styles.tabButtonActive : ''}`}
-              onClick={() => setActiveTab('backtest')}
-            >
-              回测
-            </button>
           </div>
           <Suspense fallback={<div className={styles.tabLoading}>详情加载中...</div>}>
             {activeTab === 'holdings' && (
@@ -446,9 +381,6 @@ const FundCard = memo(function FundCard({
             )}
             {activeTab === 'trend' && (
               <FundHistoryChart fundCode={fund.code} />
-            )}
-            {activeTab === 'backtest' && (
-              <FundBacktestPanel fundCode={fund.code} />
             )}
           </Suspense>
         </div>

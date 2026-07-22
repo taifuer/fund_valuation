@@ -213,7 +213,11 @@ class ServerDataRefreshTests(unittest.TestCase):
             patch.object(server, "schedule_market_history_refresh") as market_refresh,
             patch.object(server, "prewarm_response_cache") as prewarm,
             patch.object(server, "prewarm_fund_nav_cache_async") as nav_prewarm,
-            patch.object(server, "prewarm_fund_backtest_cache", return_value=[]) as backtest_prewarm,
+            patch.object(
+                server,
+                "refresh_latest_fund_holdings",
+                return_value={"checked": 1, "updated": 0, "errors": []},
+            ) as holdings_refresh,
             patch.object(server, "configured_sina_symbols_from_constants", return_value=[]),
         ):
             self.assertTrue(server.run_background_refresh_once())
@@ -222,7 +226,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         market_refresh.assert_called_once_with("sina-cn", "sh000001")
         prewarm.assert_called_once()
         nav_prewarm.assert_called_once()
-        backtest_prewarm.assert_called_once()
+        holdings_refresh.assert_called_once()
         self.assertGreater(server.background_refresh_state_snapshot()["runCount"], 0)
 
     def test_background_job_lease_allows_only_one_owner(self) -> None:
@@ -1155,6 +1159,127 @@ class ServerDataRefreshTests(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(count, 1)
 
+    def test_store_fund_holdings_rejects_non_quarter_report_date(self) -> None:
+        server.store_fund_holdings(
+            "017091",
+            [{
+                "code": "017091", "reportDate": "2023-09-07", "rank": 1,
+                "stockCode": "NVDA", "symbol": "NVDA", "name": "NVIDIA",
+                "weight": 0.1, "market": "us", "sinaSymbol": "gb_nvda", "currency": "USD",
+            }],
+        )
+
+        self.assertEqual(server.read_fund_holdings_from_db("017091"), [])
+
+    def test_read_fund_holdings_ignores_legacy_non_quarter_rows(self) -> None:
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute(
+                """
+                INSERT INTO fund_holdings(
+                  code, report_date, rank, stock_code, stock_name, weight,
+                  market, sina_symbol, currency, fetched_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("017091", "2023-09-07", 1, "NVDA", "NVIDIA", 0.1, "us", "gb_nvda", "USD", 1),
+            )
+
+        self.assertEqual(server.read_fund_holdings_from_db("017091"), [])
+        self.assertEqual(server.read_fund_holding_snapshots("017091"), [])
+
+    def test_current_fund_holdings_ignore_stale_but_valid_reports(self) -> None:
+        server.store_fund_holdings(
+            "501312",
+            [{
+                "code": "501312", "reportDate": "2023-09-30", "rank": 1,
+                "stockCode": "513580", "symbol": "513580", "name": "华宝中证韩国芯片ETF",
+                "weight": 0.9, "market": "cn", "sinaSymbol": "sh513580", "currency": "CNY",
+            }],
+        )
+
+        self.assertEqual(server.read_fund_holdings_from_db("501312"), [])
+        snapshots = server.read_fund_holding_snapshots("501312")
+        self.assertEqual(snapshots[0][0], "2023-09-30")
+
+    def test_latest_holding_refresh_updates_only_valid_quarterly_reports(self) -> None:
+        valid_rows = [{
+            "code": "017436", "reportDate": "2026-06-30", "rank": 1,
+            "stockCode": "NVDA", "symbol": "NVDA", "name": "NVIDIA",
+            "weight": 0.12, "market": "us", "sinaSymbol": "gb_nvda", "currency": "USD",
+        }]
+        invalid_rows = [{
+            "code": "017091", "reportDate": "2023-09-07", "rank": 1,
+            "stockCode": "MSFT", "symbol": "MSFT", "name": "Microsoft",
+            "weight": 0.1, "market": "us", "sinaSymbol": "gb_msft", "currency": "USD",
+        }]
+
+        with (
+            patch.object(server, "fetch_upstream", return_value=(200, "text/plain", b"payload")) as fetch,
+            patch.object(
+                server,
+                "parse_fund_holdings",
+                side_effect=lambda code, _text: valid_rows if code == "017436" else invalid_rows,
+            ),
+        ):
+            result = server.refresh_latest_fund_holdings(
+                ["017436", "017091"],
+                force_refresh=True,
+            )
+
+        self.assertEqual(result["checked"], 2)
+        self.assertEqual(result["stored"], 1)
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual(result["unavailable"], 1)
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(server.read_fund_holdings_from_db("017436")[0]["reportDate"], "2026-06-30")
+        self.assertEqual(server.read_fund_holdings_from_db("017091"), [])
+        self.assertEqual(fetch.call_count, 2)
+        for call in fetch.call_args_list:
+            self.assertEqual(call.kwargs["ttl_seconds"], server.FUND_HOLDINGS_REFRESH_TTL_SECONDS)
+            self.assertIs(call.kwargs["force_refresh"], True)
+
+    def test_latest_holding_refresh_does_not_replace_newer_report(self) -> None:
+        latest_rows = [{
+            "code": "017436", "reportDate": "2026-06-30", "rank": 1,
+            "stockCode": "NVDA", "symbol": "NVDA", "name": "NVIDIA",
+            "weight": 0.12, "market": "us", "sinaSymbol": "gb_nvda", "currency": "USD",
+        }]
+        server.store_fund_holdings("017436", latest_rows)
+        older_rows = [{**latest_rows[0], "reportDate": "2026-03-31", "weight": 0.08}]
+
+        with (
+            patch.object(server, "fetch_upstream", return_value=(200, "text/plain", b"payload")),
+            patch.object(server, "parse_fund_holdings", return_value=older_rows),
+        ):
+            result = server.refresh_latest_fund_holdings(["017436"])
+
+        self.assertEqual(result["stored"], 0)
+        self.assertEqual(result["updated"], 0)
+        self.assertEqual(result["unavailable"], 1)
+        self.assertEqual(server.read_fund_holdings_from_db("017436")[0]["reportDate"], "2026-06-30")
+
+    def test_latest_holding_refresh_retries_frequency_cap(self) -> None:
+        rows = [{
+            "code": "017436", "reportDate": "2026-06-30", "rank": 1,
+            "stockCode": "NVDA", "symbol": "NVDA", "name": "NVIDIA",
+            "weight": 0.12, "market": "us", "sinaSymbol": "gb_nvda", "currency": "USD",
+        }]
+        with (
+            patch.object(
+                server,
+                "fetch_upstream",
+                side_effect=[RuntimeError("HTTP Error 514: Frequency Capped"), (200, "text/plain", b"payload")],
+            ) as fetch,
+            patch.object(server, "parse_fund_holdings", return_value=rows),
+            patch.object(server.time, "sleep") as sleep,
+        ):
+            result = server.refresh_latest_fund_holdings(["017436"])
+
+        self.assertEqual(result["stored"], 1)
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(fetch.call_count, 2)
+        sleep.assert_any_call(2)
+        sleep.assert_any_call(server.FUND_HOLDINGS_REQUEST_DELAY_SECONDS)
+
     def test_fund_profiles_parses_basic_profile(self) -> None:
         upstream_body = """
         <table class="info w790">
@@ -1695,6 +1820,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         text = server.sanitize_sina_quote_text(
             'var hq_str_s_sz399006="创业板指,0.00,0.00,0.00,0,0";',
             ["s_sz399006"],
+            now=datetime.fromisoformat("2026-06-25T10:00:00+08:00"),
         )
 
         self.assertIn('hq_str_s_sz399006="创业板指,4371.9900,120.5600,2.84', text)
