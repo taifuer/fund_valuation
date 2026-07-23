@@ -187,7 +187,7 @@ const FundCard = memo(function FundCard({
           {/* T-day: Live estimate */}
           <div className={`${styles.navBox} ${estBoxCls}`}>
             <div className={styles.navBoxLabel}>
-              T日估算 · 含汇率
+              T日估算 <span className={styles.fxIncludedLabel}>· 含汇率</span>
               <span className={`${styles.estLiveTag} ${tagCls}`}>{estimateState}</span>
             </div>
             <div className={styles.navDataRow}>

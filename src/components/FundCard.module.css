@@ -139,6 +139,7 @@
   font-size: 10px;
   color: #94a3b8;
   margin-bottom: 2px;
+  white-space: nowrap;
 }
 
 .navBoxValue {
@@ -178,6 +179,15 @@
   .navBoxValue { font-size: 15px; }
   .navBoxChange { font-size: 11px; }
   .navDataTime { font-size: 9px; }
+  .estLiveTag {
+    margin-left: 2px;
+    padding-left: 3px;
+    padding-right: 3px;
+  }
+}
+
+@media (max-width: 380px) {
+  .fxIncludedLabel { display: none; }
 }
 
 /* Live estimate box distinct style */
