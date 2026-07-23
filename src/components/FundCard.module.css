@@ -124,40 +124,59 @@
 
 /* Dual NAV row */
 .dualNav {
-  display: flex;
+  display: grid;
   gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .navBox {
-  flex: 1;
-  padding: 8px 12px;
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 12px;
   border-radius: 6px;
   background: #f8fafc;
 }
 
-.navBoxLabel {
-  font-size: 10px;
+.primaryNavBox {
+  order: 0;
+}
+
+.secondaryNavBox {
+  order: 1;
+}
+
+.secondaryNavBox .navBoxValue {
+  color: #64748b;
+}
+
+.secondaryNavBox .navBoxChange {
+  opacity: 0.72;
+}
+
+.navKindLabel {
   color: #94a3b8;
-  margin-bottom: 2px;
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 600;
+  min-width: 44px;
   white-space: nowrap;
 }
 
+.estimateKindLabel {
+  min-width: auto;
+}
+
 .navBoxValue {
+  flex: 0 0 auto;
   font-size: 16px;
   font-weight: 700;
   color: #334155;
 }
 
-.navDataRow {
-  align-items: baseline;
-  display: grid;
-  gap: 6px;
-  grid-template-columns: auto auto minmax(0, 1fr);
-  margin-top: 1px;
-  min-width: 0;
-}
-
 .navBoxChange {
+  flex: 0 0 auto;
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
@@ -167,27 +186,65 @@
   color: #94a3b8;
   font-size: 10px;
   font-weight: 500;
-  min-width: 0;
-  overflow: hidden;
+  margin-left: auto;
   text-align: right;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 @media (max-width: 480px) {
-  .navDataRow { gap: 4px; }
+  .dualNav {
+    gap: 2px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .navBox {
+    gap: 6px;
+    min-height: 34px;
+    padding-bottom: 7px;
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 7px;
+  }
+  .estimateNavBox {
+    gap: 4px;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .estimateKindLabel { font-size: 9px; }
+  .secondaryNavBox {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    gap: 6px;
+    min-height: 20px;
+    padding: 2px 8px;
+  }
+  .secondaryNavBox .navKindLabel {
+    font-size: 9px;
+  }
+  .secondaryNavBox .navBoxValue {
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .secondaryNavBox .navBoxChange {
+    font-size: 10px;
+    opacity: 0.72;
+  }
+  .secondaryNavBox.estimateNavBox {
+    gap: 3px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .secondaryNavBox .estimateKindLabel {
+    font-size: 8px;
+  }
   .navBoxValue { font-size: 15px; }
   .navBoxChange { font-size: 11px; }
   .navDataTime { font-size: 9px; }
-  .estLiveTag {
-    margin-left: 2px;
+  .estimateNavBox .estLiveTag {
     padding-left: 3px;
     padding-right: 3px;
   }
-}
-
-@media (max-width: 380px) {
-  .fxIncludedLabel { display: none; }
 }
 
 /* Live estimate box distinct style */
@@ -206,8 +263,8 @@
   font-weight: 700;
   padding: 1px 6px;
   border-radius: 4px;
-  margin-left: 6px;
   vertical-align: middle;
+  white-space: nowrap;
 }
 .estLiveTagUp {
   background: #16a34a;

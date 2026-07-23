@@ -205,7 +205,18 @@ assert.equal(
     futuresState: 'live',
     now,
   }),
-  false,
+  true,
+);
+assert.equal(
+  shouldUseFuturesQuote({
+    spot: { price: 30406, fetchedAt: now, dateReliable: true },
+    futures: { price: 30723, fetchedAt: now - 360_000 },
+    spotState: 'closed',
+    futuresState: 'live',
+    wasUsingFutures: true,
+    now,
+  }),
+  true,
 );
 assert.equal(globalFutureReferencePrice('30719.750', '0.000', 30762.807), 30719.75);
 assert.equal(globalFutureReferencePrice('23776.000', '23761.000', 23813.95), 23776);

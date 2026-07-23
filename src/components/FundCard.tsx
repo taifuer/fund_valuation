@@ -21,6 +21,7 @@ interface Props {
   fund: Fund;
   estimate?: FundEstimate;
   rank: number;
+  sortMode: 'estimate' | 'official';
   loading: boolean;
   marketStates?: Map<string, MarketStateData>;
   onRemove?: (fund: Fund) => void;
@@ -70,6 +71,7 @@ const FundCard = memo(function FundCard({
   fund,
   estimate,
   rank,
+  sortMode,
   loading,
   marketStates = EMPTY_MARKET_STATES,
   onRemove,
@@ -142,6 +144,9 @@ const FundCard = memo(function FundCard({
   // estimate), so up/down tinting matches the number the user reads.
   const up = normalizedChange >= 0;
   const estBoxCls = up ? styles.estimateBox : styles.estimateBoxDown;
+  const officialUp = officialNAV.officialChange >= 0;
+  const officialBoxCls = officialUp ? styles.estimateBox : styles.estimateBoxDown;
+  const estimateIsPrimary = sortMode === 'estimate';
   const tagCls = estimateState === 'LIVE'
     ? styles.estLiveTagUp
     : estimateState === 'PRE' || estimateState === 'POST'
@@ -149,6 +154,13 @@ const FundCard = memo(function FundCard({
     : estimateState === 'PARTIAL'
       ? styles.estLiveTagPartial
       : styles.estLiveTagClosed;
+  const estimateStateLabel = {
+    LIVE: '实时',
+    PRE: '盘前',
+    POST: '盘后',
+    PARTIAL: '部分',
+    CLOSED: '收盘',
+  }[estimateState];
   const timeLabel = estimateTimeLabel(estimate.holdingsQuotes, estimateState === 'CLOSED', marketStates);
   return (
     <div
@@ -172,35 +184,39 @@ const FundCard = memo(function FundCard({
         </div>
 
         <div className={styles.dualNav}>
-          {/* Latest disclosed official NAV. QDII publication may lag by more than one day. */}
-          <div className={styles.navBox}>
-            <div className={styles.navBoxLabel}>最新已出净值</div>
-            <div className={styles.navDataRow}>
-              <span className={styles.navBoxValue}>{officialNAV.nav.toFixed(4)}</span>
-              <span className={`${styles.navBoxChange} ${officialNAV.officialChange >= 0 ? styles.up : styles.down}`}>
-                {officialNAV.officialChange >= 0 ? '+' : ''}{officialNAV.officialChange.toFixed(2)}%
-              </span>
-              <span className={styles.navDataTime}>{formatDate(officialNAV.navDate)}</span>
-            </div>
+          {/* T-day: Live estimate */}
+          <div
+            className={`${styles.navBox} ${styles.estimateNavBox} ${estimateIsPrimary ? `${styles.primaryNavBox} ${estBoxCls}` : styles.secondaryNavBox}`}
+            role="group"
+            aria-label={`T日估算（含汇率），状态${estimateStateLabel}`}
+          >
+            <span className={`${styles.navKindLabel} ${styles.estimateKindLabel}`}>T日估算</span>
+            <span className={`${styles.navBoxValue} ${up ? styles.up : styles.down}`}>
+              {normalizedNAV !== null ? normalizedNAV.toFixed(4) : '--'}
+            </span>
+            <span className={`${styles.navBoxChange} ${up ? styles.up : styles.down}`}>
+              {normalizedNAV !== null
+                ? `${up ? '+' : ''}${normalizedChange.toFixed(2)}%`
+                : '数据不足'}
+            </span>
+            <span className={`${styles.estLiveTag} ${tagCls}`}>{estimateStateLabel}</span>
+            <span className={styles.navDataTime}>{timeLabel ?? ''}</span>
           </div>
 
-          {/* T-day: Live estimate */}
-          <div className={`${styles.navBox} ${estBoxCls}`}>
-            <div className={styles.navBoxLabel}>
-              T日估算 <span className={styles.fxIncludedLabel}>· 含汇率</span>
-              <span className={`${styles.estLiveTag} ${tagCls}`}>{estimateState}</span>
-            </div>
-            <div className={styles.navDataRow}>
-              <span className={`${styles.navBoxValue} ${up ? styles.up : styles.down}`}>
-                {normalizedNAV !== null ? normalizedNAV.toFixed(4) : '--'}
-              </span>
-              <span className={`${styles.navBoxChange} ${up ? styles.up : styles.down}`}>
-                {normalizedNAV !== null
-                  ? `${up ? '+' : ''}${normalizedChange.toFixed(2)}%`
-                  : '数据不足'}
-              </span>
-              <span className={styles.navDataTime}>{timeLabel ?? ''}</span>
-            </div>
+          {/* Latest disclosed official NAV. QDII publication may lag by more than one day. */}
+          <div
+            className={`${styles.navBox} ${styles.officialNavBox} ${estimateIsPrimary ? styles.secondaryNavBox : `${styles.primaryNavBox} ${officialBoxCls}`}`}
+            role="group"
+            aria-label="最新已出净值"
+          >
+            <span className={styles.navKindLabel}>已出净值</span>
+            <span className={`${styles.navBoxValue} ${!estimateIsPrimary ? (officialUp ? styles.up : styles.down) : ''}`}>
+              {officialNAV.nav.toFixed(4)}
+            </span>
+            <span className={`${styles.navBoxChange} ${officialUp ? styles.up : styles.down}`}>
+              {officialUp ? '+' : ''}{officialNAV.officialChange.toFixed(2)}%
+            </span>
+            <span className={styles.navDataTime}>{formatDate(officialNAV.navDate)}</span>
           </div>
         </div>
       </div>

@@ -315,7 +315,7 @@ export default function App() {
     return sorted.map((estimate, i) => ({ estimate, rank: i + 1 }));
   }, [fundEstimates, sortMode, sortDirection]);
 
-  const sortLabel = sortMode === 'official' ? '按最新已出净值排序' : '按实时估算涨跌排序';
+  const sortLabel = sortMode === 'official' ? '按最新净值涨跌排序' : '按实时估算（含汇率）涨跌排序';
   const overviewFundSummaries = useMemo(() => {
     const items = funds.map((fund) => ({ fund, nav: overviewData.fundSummaries.get(fund.code) ?? null }));
     return items.sort((a, b) => {
@@ -622,6 +622,7 @@ export default function App() {
                   fund={fund}
                   estimate={est.estimate}
                   rank={est.rank}
+                  sortMode={sortMode}
                   loading={false}
                   marketStates={marketStates}
                   onRemove={FUND_MANAGEMENT_ENABLED ? removeFund : undefined}

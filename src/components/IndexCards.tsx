@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, memo } from 'react';
+import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import type { QuoteData, IndexConfig, MarketReturnSummary, MarketStateData } from '../types';
 import { INDICES, MARKET_ASSETS, ETF_ASSETS } from '../constants';
 import { fetchMarketReturnSummaries } from '../api';
@@ -68,15 +68,7 @@ function Card({
   loading: boolean;
   onOpenHistory?: (quote: QuoteData) => void;
 }) {
-  if (loading) {
-    return (
-      <div className={`${styles.card} ${idx.history ? styles.cardClickable : ''}`}>
-        <div className={styles.label}>{idx.name}</div>
-        <div className={styles.skeleton} style={{ height: 24, width: 90, margin: '4px auto' }} />
-        <div className={styles.skeleton} style={{ height: 14, width: 60, margin: '3px auto 0' }} />
-      </div>
-    );
-  }
+  const wasUsingFuturesRef = useRef(false);
   const state = quoteMarketState(idx.sinaSymbol, marketStates);
   const futuresState = idx.futures
     ? quoteMarketState(idx.futures.sinaSymbol, marketStates)
@@ -86,7 +78,21 @@ function Card({
     futures: futuresData,
     spotState: state,
     futuresState,
+    wasUsingFutures: wasUsingFuturesRef.current,
   });
+  useEffect(() => {
+    wasUsingFuturesRef.current = useFutures;
+  }, [useFutures]);
+
+  if (loading) {
+    return (
+      <div className={`${styles.card} ${idx.history ? styles.cardClickable : ''}`}>
+        <div className={styles.label}>{idx.name}</div>
+        <div className={styles.skeleton} style={{ height: 24, width: 90, margin: '4px auto' }} />
+        <div className={styles.skeleton} style={{ height: 14, width: 60, margin: '3px auto 0' }} />
+      </div>
+    );
+  }
   const displayData = useFutures && futuresData ? futuresData : data;
   if (!displayData) {
     return (

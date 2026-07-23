@@ -26,7 +26,7 @@ interface Props {
   systemStatus?: SystemStatus | null;
 }
 
-const FX_ORDER = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
+const FX_ORDER = ['USD', 'EUR'];
 
 export default function Header({
   fxRates,

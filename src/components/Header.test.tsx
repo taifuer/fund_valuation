@@ -27,4 +27,33 @@ describe('Header', () => {
     render(<Header fxRates={new Map()} activePage="overview" onPageChange={vi.fn()} />);
     expect(screen.getByLabelText('数据状态暂不可用')).toHaveClass(/liveOffline/);
   });
+
+  it('shows only USD and EUR in the global exchange-rate summary', () => {
+    const rate = (currency: string) => ({
+      currency,
+      pair: `${currency}/CNY`,
+      rate: 7,
+      changePercent: 0,
+      date: '2026-07-23',
+      fetchedAt: 1,
+    });
+    render(
+      <Header
+        fxRates={new Map([
+          ['USD', rate('USD')],
+          ['EUR', rate('EUR')],
+          ['JPY', rate('JPY')],
+          ['KRW', rate('KRW')],
+          ['HKD', rate('HKD')],
+        ])}
+        activePage="overview"
+        onPageChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('USD/CNY')).toBeInTheDocument();
+    expect(screen.getByText('EUR/CNY')).toBeInTheDocument();
+    expect(screen.queryByText('JPY/CNY')).not.toBeInTheDocument();
+    expect(screen.queryByText('KRW/CNY')).not.toBeInTheDocument();
+    expect(screen.queryByText('HKD/CNY')).not.toBeInTheDocument();
+  });
 });
