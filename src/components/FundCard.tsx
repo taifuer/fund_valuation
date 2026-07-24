@@ -163,27 +163,28 @@ const FundCard = memo(function FundCard({
   }[estimateState];
   const timeLabel = estimateTimeLabel(estimate.holdingsQuotes, estimateState === 'CLOSED', marketStates);
   return (
-    <div
-      className={cardClassName}
-      role="button"
-      tabIndex={0}
-      aria-expanded={expanded}
-      aria-label={`${fund.name} ${fund.code}，${expanded ? '收起详情' : '展开详情'}`}
-      onClick={toggleExpanded}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
-          event.preventDefault();
-          toggleExpanded();
-        }
-      }}
-    >
-      {rankNode}
-      <div className={styles.main}>
-        <div className={styles.topRow}>
-          <span className={styles.name}>{fund.name}<span className={styles.code}>{fund.code}</span></span>
-        </div>
+    <div className={cardClassName}>
+      <div
+        className={styles.cardToggle}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        aria-label={`${fund.name} ${fund.code}，${expanded ? '收起详情' : '展开详情'}`}
+        onClick={toggleExpanded}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+            event.preventDefault();
+            toggleExpanded();
+          }
+        }}
+      >
+        {rankNode}
+        <div className={styles.main}>
+          <div className={styles.topRow}>
+            <span className={styles.name}>{fund.name}<span className={styles.code}>{fund.code}</span></span>
+          </div>
 
-        <div className={styles.dualNav}>
+          <div className={styles.dualNav}>
           {/* T-day: Live estimate */}
           <div
             className={`${styles.navBox} ${styles.estimateNavBox} ${estimateIsPrimary ? `${styles.primaryNavBox} ${estBoxCls}` : styles.secondaryNavBox}`}
@@ -218,6 +219,7 @@ const FundCard = memo(function FundCard({
             </span>
             <span className={styles.navDataTime}>{formatDate(officialNAV.navDate)}</span>
           </div>
+          </div>
         </div>
       </div>
 
@@ -236,7 +238,7 @@ const FundCard = memo(function FundCard({
       )}
 
       {expanded && (
-        <div className={styles.expanded} onClick={(event) => event.stopPropagation()}>
+        <div className={styles.expanded}>
           <div className={styles.tabs}>
             <button
               type="button"

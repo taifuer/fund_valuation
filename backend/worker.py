@@ -32,6 +32,7 @@ from .server import (
     refresh_configured_fund_history,
     refresh_configured_market_history,
     refresh_fund_profiles,
+    refresh_fund_valuation_histories,
     refresh_latest_fund_holdings,
     release_background_job,
 )
@@ -61,6 +62,7 @@ def main() -> None:
         "fund_profiles": 0.0,
         "fund_purchase": 0.0,
         "history": 0.0,
+        "valuation_history": 0.0,
         "backup": 0.0,
         "cleanup": 0.0,
     }
@@ -124,6 +126,16 @@ def main() -> None:
                         tasks.append("history")
                     except Exception as exc:
                         errors.append(f"history: {exc}")
+                if "valuation_history" in flags:
+                    try:
+                        result = refresh_fund_valuation_histories()
+                        tasks.append(
+                            f"valuation-history:{result['updated']}/{result['checked']}"
+                            f" failed:{result['failed']}"
+                        )
+                        errors.extend(f"valuation-history: {error}" for error in result["errors"])
+                    except Exception as exc:
+                        errors.append(f"valuation-history: {exc}")
                 if "backup" in flags and os.environ.get("FUND_VALUATION_AUTO_BACKUP", "0") == "1":
                     try:
                         backup = ensure_recent_backup(
@@ -220,6 +232,7 @@ def main() -> None:
                         "fund_profiles": 7 * 24 * 60 * 60,
                         "fund_purchase": 6 * 60 * 60,
                         "history": max(maintenance_interval, 60 * 60),
+                        "valuation_history": 24 * 60 * 60,
                         "backup": 60 * 60,
                         "cleanup": 60 * 60,
                     }

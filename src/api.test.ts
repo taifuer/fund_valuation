@@ -91,6 +91,21 @@ describe('dashboard API contract', () => {
     });
   });
 
+  it('parses the direct Hang Seng TECH spot quote', () => {
+    const parsed = parseSinaVar(
+      'var hq_str_hkHSTECH="HSTECH,恒生科技指数,4698.480,4698.480,4720.000,4590.000,4629.510,-68.970,-1.468,0,0,0,0,0,0,0,0,2026/07/24,16:08";',
+      new Date('2026-07-24T16:09:00+08:00').getTime(),
+    );
+
+    expect(parsed?.data).toMatchObject({
+      symbol: 'hkHSTECH',
+      price: 4629.51,
+      previousClose: 4698.48,
+      changePercent: -1.47,
+      time: '2026-07-24 16:08:00',
+    });
+  });
+
   it('uses browser snapshots only as an error fallback, not instead of polling', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => dashboardPayload(3200) })

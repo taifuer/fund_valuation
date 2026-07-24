@@ -50,6 +50,12 @@ export interface FundNavData {
   estimatedChange: number; // 平台估算涨跌幅 (%)
 }
 
+export interface FundValuationBasis {
+  navDate: string;
+  holdingPrices: Record<string, { date: string; close: number }>;
+  fxRates: Record<string, { date: string; rate: number }>;
+}
+
 export interface FundPurchaseData {
   code: string;
   name: string;
@@ -154,7 +160,7 @@ export interface SystemStatus {
 }
 
 export interface MarketHistoryConfig {
-  source: 'sina-cn' | 'sina-us' | 'sina-futures' | 'tencent-hk' | 'twse-official';
+  source: 'sina-cn' | 'sina-us' | 'sina-futures' | 'tencent-hk' | 'twse-official' | 'naver-korea';
   symbol: string;
 }
 

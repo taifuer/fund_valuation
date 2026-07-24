@@ -7,11 +7,13 @@ import {
   fetchSinaFundNavs,
   fetchFundHistory,
   fetchFundHoldings,
+  fetchFundValuationBases,
   fetchFundReturnSummaries,
   fetchFxRates,
   fetchMarketStates,
 } from '../api';
 import { INDICES, MARKET_ASSETS, ETF_ASSETS, FUNDS } from '../constants';
+import { changeSinceBasis, combineHoldingAndFxChange } from '../fundEstimate';
 import { getMarketState, marketLocalDate, quoteIsAfterNavClose, pickPollInterval } from '../marketHours';
 import { startAdaptivePolling } from '../polling';
 
@@ -349,6 +351,11 @@ export function useQuotes(
           loadSlowFundData(effectiveFunds, showLoading),
         ]);
 
+        const valuationBases = await fetchFundValuationBases(effectiveFunds.flatMap((fund) => {
+          const navDate = slowFundData.navs.get(fund.code)?.navDate;
+          return navDate ? [{ code: fund.code, navDate, holdings: fund.holdings }] : [];
+        }));
+
         if (cancelled) return;
         setQuotes((prev) => new Map([...prev, ...quotesData]));
         setFxRates((prev) => new Map([...prev, ...fxRates]));
@@ -363,6 +370,7 @@ export function useQuotes(
 
         const estimates: FundEstimate[] = effectiveFunds.map((fund) => {
           const officialNAV = slowFundData.navs.get(fund.code) ?? null;
+          const valuationBasis = valuationBases.get(fund.code);
           const hasConfiguredHoldings = fund.holdings.length > 0;
           const rawHoldingsQuotes = fund.holdings
             .map((h) => quotesData.get(h.sinaSymbol))
@@ -406,7 +414,13 @@ export function useQuotes(
                   const q = fundQuotes.get(h.sinaSymbol);
                   if (!q) return sum;
                   if (!quoteIsAfterNav(h)) { staleQuoteCount += 1; return sum; }
-                  return sum + fundQuoteChangePercent(q, now) * h.weight;
+                  const basisClose = valuationBasis?.holdingPrices[h.sinaSymbol]?.close;
+                  const quoteChange = changeSinceBasis(
+                    q.price,
+                    fundQuoteChangePercent(q, now),
+                    basisClose,
+                  );
+                  return sum + quoteChange * h.weight;
                 }, 0)
               : 0;
 
@@ -418,9 +432,17 @@ export function useQuotes(
                   if (!quoteIsAfterNav(h)) return sum; // counted in staleQuoteCount above
                   const fxRate = fundFxRates.get(h.currency);
                   if (!fxRate && h.currency !== 'CNY') missingFxCount += 1;
-                  const fxChange = fxRate?.changePercent ?? 0;
-                  const quoteChange = fundQuoteChangePercent(q, now);
-                  const rmbChange = ((1 + quoteChange / 100) * (1 + fxChange / 100) - 1) * 100;
+                  const basisClose = valuationBasis?.holdingPrices[h.sinaSymbol]?.close;
+                  const quoteChange = changeSinceBasis(
+                    q.price,
+                    fundQuoteChangePercent(q, now),
+                    basisClose,
+                  );
+                  const basisFxRate = valuationBasis?.fxRates[h.currency]?.rate;
+                  const fxChange = h.currency === 'CNY'
+                    ? 0
+                    : changeSinceBasis(fxRate?.rate ?? 0, fxRate?.changePercent ?? 0, basisFxRate);
+                  const rmbChange = combineHoldingAndFxChange(quoteChange, fxChange);
                   return sum + rmbChange * h.weight;
                 }, 0)
               : 0;

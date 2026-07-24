@@ -22,4 +22,17 @@ describe('market universe configuration', () => {
 
     expect(missing).toEqual([]);
   });
+
+  it('keeps Hang Seng TECH in rankings without adding it to overview', () => {
+    const overview = universe.indices as Array<IndexConfig & { name?: string; sinaSymbol?: string }>;
+    const ranking = universe.rankingIndices as Array<IndexConfig & { name?: string; sinaSymbol?: string }>;
+    const item = ranking.find((candidate) => candidate.symbol === 'HSTECH');
+
+    expect(overview.some((candidate) => candidate.symbol === 'HSTECH')).toBe(false);
+    expect(item).toMatchObject({
+      name: '恒生科技',
+      sinaSymbol: 'hkHSTECH',
+      history: { source: 'tencent-hk', symbol: 'hkHSTECH' },
+    });
+  });
 });

@@ -243,12 +243,14 @@ export default function App() {
     activePage === 'funds',
   );
   const overviewData = useOverviewData(funds, activePage === 'overview');
-  const headerFxRates = useHeaderFxRates(true);
+  const headerFxRates = useHeaderFxRates(activePage !== 'overview' && activePage !== 'funds');
   const marketPageData = useRankingMarketData(activePage === 'ranking');
   const systemStatus = useSystemStatus();
-  const activeFxRates = activePage === 'overview' && overviewData.fxRates.size > 0
+  const activeFxRates = activePage === 'overview'
     ? overviewData.fxRates
-    : headerFxRates.size > 0 ? headerFxRates : fxRates;
+    : activePage === 'funds'
+      ? fxRates
+      : headerFxRates;
   const activeError = activePage === 'overview'
     ? overviewData.error
     : activePage === 'funds'
@@ -552,24 +554,15 @@ export default function App() {
                       最新净值
                     </button>
                   </div>
-                  <div className={styles.sortToggle} aria-label="基金排序方向">
-                    <button
-                      type="button"
-                      aria-pressed={sortDirection === 'desc'}
-                      className={`${styles.sortButton} ${sortDirection === 'desc' ? styles.sortButtonActive : ''}`}
-                      onClick={() => setSortDirection('desc')}
-                    >
-                      高到低
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={sortDirection === 'asc'}
-                      className={`${styles.sortButton} ${sortDirection === 'asc' ? styles.sortButtonActive : ''}`}
-                      onClick={() => setSortDirection('asc')}
-                    >
-                      低到高
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className={styles.sortDirectionButton}
+                    aria-label={sortDirection === 'desc' ? '当前高到低，点击改为低到高' : '当前低到高，点击改为高到低'}
+                    title={sortDirection === 'desc' ? '高到低' : '低到高'}
+                    onClick={() => setSortDirection((direction) => direction === 'desc' ? 'asc' : 'desc')}
+                  >
+                    {sortDirection === 'desc' ? '↓' : '↑'}
+                  </button>
                   {FUND_MANAGEMENT_ENABLED && (
                     <button ref={managerTriggerRef} type="button" className={styles.managerTrigger} onClick={() => setFundManagerOpen(true)}>
                       管理基金

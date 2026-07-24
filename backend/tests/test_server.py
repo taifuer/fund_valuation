@@ -205,6 +205,56 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(payload["marketHistory"]["missing"], 1)
         self.assertIn("backgroundRefresh", payload)
 
+    def test_fund_valuation_basis_reads_latest_values_on_or_before_nav_date(self) -> None:
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.executemany(
+                """
+                INSERT INTO stock_daily_history(sina_symbol, date, close, change_percent, fetched_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    ("gb_aapl", "2026-07-20", 200, 1, 1),
+                    ("gb_aapl", "2026-07-21", 204, 2, 2),
+                    ("gb_aapl", "2026-07-22", 210, 3, 3),
+                ],
+            )
+            conn.executemany(
+                """
+                INSERT INTO fx_daily_history(currency, date, rate, change_percent, fetched_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    ("USD", "2026-07-20", 6.80, 0, 1),
+                    ("USD", "2026-07-21", 6.82, 0.3, 2),
+                    ("USD", "2026-07-22", 6.84, 0.3, 3),
+                ],
+            )
+
+        response = server.app.test_client().post("/api/fundvaluationbasis", json={
+            "funds": [{
+                "code": "017436",
+                "navDate": "2026-07-21",
+                "symbols": ["gb_aapl"],
+                "currencies": ["USD"],
+            }],
+        })
+
+        self.assertEqual(response.status_code, 200)
+        basis = response.get_json()["017436"]
+        self.assertEqual(basis["holdingPrices"]["gb_aapl"], {"date": "2026-07-21", "close": 204.0})
+        self.assertEqual(basis["fxRates"]["USD"], {"date": "2026-07-21", "rate": 6.82})
+
+    def test_fund_valuation_basis_rejects_unvalidated_symbols(self) -> None:
+        response = server.app.test_client().post("/api/fundvaluationbasis", json={
+            "funds": [{
+                "code": "017436",
+                "navDate": "2026-07-21",
+                "symbols": ["../../etc/passwd"],
+                "currencies": ["USD"],
+            }],
+        })
+        self.assertEqual(response.status_code, 400)
+
     def test_background_refresh_schedules_configured_work(self) -> None:
         with (
             patch.object(server, "configured_fund_codes_from_constants", return_value=["016664"]),
@@ -1098,6 +1148,19 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertGreater(len(holdings), 0)
         self.assertRegex(holdings[0]["sinaSymbol"], r"^[A-Za-z0-9_]+$")
         self.assertIn("sina-cn:sh000001", server.configured_market_return_items_from_constants())
+        self.assertIn("tencent-hk:hkHSTECH", server.configured_market_return_items_from_constants())
+        self.assertIn("hkHSTECH", server.configured_sina_symbols_from_constants())
+
+    def test_history_health_uses_disclosure_lag_and_completed_market_sessions(self) -> None:
+        server.ensure_market_calendar_seeded(2026)
+        beijing_now = datetime.fromisoformat("2026-07-24T10:00:00+08:00")
+        self.assertFalse(server.fund_history_is_stale("2026-07-23", beijing_now))
+        self.assertTrue(server.fund_history_is_stale("2026-07-16", beijing_now))
+
+        before_us_open = datetime.fromisoformat("2026-07-24T08:00:00-04:00")
+        after_us_close = datetime.fromisoformat("2026-07-24T17:00:00-04:00")
+        self.assertEqual(server.latest_completed_trading_day("gb_inx", before_us_open), "2026-07-23")
+        self.assertEqual(server.latest_completed_trading_day("gb_inx", after_us_close), "2026-07-24")
 
     def test_fx_daily_history_is_persisted_for_backtests(self) -> None:
         text = 'var hq_str_fx_susdcny="美元人民币,7.1000,0,0,0,0,0,0,0,09:30:00,0.12,2026-06-29";'

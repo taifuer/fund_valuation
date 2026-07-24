@@ -2,6 +2,7 @@ import type {
   QuoteData,
   Fund,
   FundNavData,
+  FundValuationBasis,
   Holding,
   FundPurchaseData,
   FundHistoryPoint,
@@ -686,8 +687,13 @@ export async function fetchOverviewSnapshot(
   const uniqueFundCodes = [...new Set(fundCodes.filter(Boolean))];
   if (uniqueSymbols.length > 160 || uniqueFundCodes.length > 50) return null;
   const cacheKey = `${uniqueSymbols.join(',')}|${uniqueCurrencies.join(',')}|${uniqueFundCodes.join(',')}`;
+  const dashboardCacheKey = `${uniqueSymbols.join(',')}|${uniqueCurrencies.join(',')}`;
   const pending = overviewSnapshotPending.get(cacheKey);
   if (pending) return pending;
+  const stored = readStoredDashboard(dashboardCacheKey);
+  const storedSnapshot = stored
+    ? parseDashboardSnapshotPayload(stored, uniqueSymbols, Date.now())
+    : null;
 
   const request = (async () => {
     const params = new URLSearchParams({
@@ -696,8 +702,9 @@ export async function fetchOverviewSnapshot(
       fundCodes: uniqueFundCodes.join(','),
     });
     const res = await fetchWithTimeout(apiUrl(`/api/overview?${params.toString()}`));
-    if (!res.ok) return null;
+    if (!res.ok) return storedSnapshot ? { ...storedSnapshot, fundSummaries: new Map() } : null;
     const json = await res.json();
+    storeDashboard(dashboardCacheKey, json);
     const fetchedAt = Date.now();
     const snapshot = parseDashboardSnapshotPayload(json, uniqueSymbols, fetchedAt);
     const fundSummaries = new Map<string, FundNavData>();
@@ -716,7 +723,7 @@ export async function fetchOverviewSnapshot(
       });
     }
     return { ...snapshot, fundSummaries };
-  })().catch(() => null).finally(() => {
+  })().catch(() => storedSnapshot ? { ...storedSnapshot, fundSummaries: new Map() } : null).finally(() => {
     overviewSnapshotPending.delete(cacheKey);
   });
 
@@ -935,6 +942,34 @@ export async function fetchFundHoldings(codes: string[], refresh = false): Promi
     }
   } catch { /* skip */ }
 
+  return results;
+}
+
+export async function fetchFundValuationBases(
+  funds: Array<{ code: string; navDate: string; holdings: Holding[] }>,
+): Promise<Map<string, FundValuationBasis>> {
+  const results = new Map<string, FundValuationBasis>();
+  if (funds.length === 0) return results;
+  try {
+    const res = await fetch(apiUrl('/api/fundvaluationbasis'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        funds: funds.map((fund) => ({
+          code: fund.code,
+          navDate: fund.navDate,
+          symbols: [...new Set(fund.holdings.map((holding) => holding.sinaSymbol).filter(Boolean))],
+          currencies: [...new Set(fund.holdings.map((holding) => holding.currency))],
+        })),
+      }),
+    });
+    if (!res.ok) return results;
+    const json = await res.json() as Record<string, FundValuationBasis>;
+    for (const fund of funds) {
+      const raw = json[fund.code];
+      if (raw?.navDate === fund.navDate) results.set(fund.code, raw);
+    }
+  } catch { /* use daily-change fallback */ }
   return results;
 }
 

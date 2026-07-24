@@ -337,6 +337,15 @@
       }
     },
     {
+      "symbol": "HSTECH",
+      "name": "恒生科技",
+      "sinaSymbol": "hkHSTECH",
+      "history": {
+        "source": "tencent-hk",
+        "symbol": "hkHSTECH"
+      }
+    },
+    {
       "symbol": "N225",
       "name": "日经225",
       "sinaSymbol": "int_nikkei",

@@ -286,6 +286,32 @@
   color: #fff;
 }
 
+.sortDirectionButton {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #334155;
+  cursor: pointer;
+  flex: 0 0 32px;
+  font-size: 16px;
+  font-weight: 700;
+  height: 30px;
+  line-height: 28px;
+  padding: 0;
+  text-align: center;
+  width: 32px;
+}
+
+.sortDirectionButton:hover {
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.sortDirectionButton:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
 .fundManager {
   background: #fff;
   border: 1px solid #e2e8f0;

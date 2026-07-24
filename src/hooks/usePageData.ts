@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchAllQuotes,
   fetchDashboardSnapshot,
+  fetchOverviewSnapshot,
   fetchFundHistory,
   fetchFundNavs,
   fetchFundReturnSummaries,
@@ -16,7 +17,7 @@ import { startAdaptivePolling } from '../polling';
 import type { Fund, FundNavData, FundReturnSummary, FxRateData, MarketStateData, QuoteData, SystemStatus } from '../types';
 import type { FundEstimate } from './useQuotes';
 
-const DISPLAY_FX_CURRENCIES = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
+const DISPLAY_FX_CURRENCIES = ['USD', 'EUR'];
 
 export function useSystemStatus() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
@@ -130,7 +131,7 @@ export function useHeaderFxRates(enabled = true) {
     let cancelled = false;
     const fxSymbols = DISPLAY_FX_CURRENCIES.map((c) => `fx_s${c.toLowerCase()}cny`);
     async function load() {
-      const snapshot = await fetchDashboardSnapshot(fxSymbols, DISPLAY_FX_CURRENCIES);
+      const snapshot = await fetchDashboardSnapshot([], DISPLAY_FX_CURRENCIES);
       const rates = snapshot?.fxRates.size
         ? snapshot.fxRates
         : await fetchFxRates(DISPLAY_FX_CURRENCIES);
@@ -177,13 +178,18 @@ export function useOverviewData(funds: Fund[], enabled: boolean) {
     }
 
     let cancelled = false;
-    async function loadMarket(showLoading = false) {
+    async function loadOverview(showLoading = false) {
       if (showLoading) {
         setLoading(true);
+        setFundLoading(true);
       }
       setError(null);
       try {
-        const snapshot = await fetchDashboardSnapshot(symbols, DISPLAY_FX_CURRENCIES);
+        const snapshot = await fetchOverviewSnapshot(
+          symbols,
+          DISPLAY_FX_CURRENCIES,
+          funds.map((fund) => fund.code),
+        );
         if (cancelled) return;
         if (!snapshot || snapshot.quotes.size === 0) {
           throw new Error('概览行情快照暂不可用');
@@ -195,51 +201,48 @@ export function useOverviewData(funds: Fund[], enabled: boolean) {
           marketStatesRef.current = merged;
           return merged;
         });
+        const missingFundCodes = funds
+          .map((fund) => fund.code)
+          .filter((code) => !snapshot.fundSummaries.has(code));
+        if (missingFundCodes.length === 0) {
+          setFundSummaries(snapshot.fundSummaries);
+        } else {
+          const history = await fetchFundHistory(missingFundCodes);
+          if (cancelled) return;
+          const summaries = new Map(snapshot.fundSummaries);
+          for (const fund of funds) {
+            const hist = history.get(fund.code);
+            if (!hist || summaries.has(fund.code)) continue;
+            summaries.set(fund.code, {
+              code: fund.code,
+              name: fund.name,
+              navDate: hist.navDate,
+              nav: hist.nav,
+              officialChange: hist.officialChange,
+              estimatedNav: hist.nav,
+              estimatedChange: 0,
+            });
+          }
+          setFundSummaries(summaries);
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : '概览数据加载失败');
       } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    async function loadFunds(showLoading = false) {
-      if (showLoading) setFundLoading(true);
-      try {
-        const history = await fetchFundHistory(funds.map((fund) => fund.code));
-        if (cancelled) return;
-        const summaries = new Map<string, FundNavData>();
-        for (const fund of funds) {
-          const hist = history.get(fund.code);
-          if (!hist) continue;
-          summaries.set(fund.code, {
-            code: fund.code,
-            name: fund.name,
-            navDate: hist.navDate,
-            nav: hist.nav,
-            officialChange: hist.officialChange,
-            estimatedNav: hist.nav,
-            estimatedChange: 0,
-          });
+        if (!cancelled) {
+          setLoading(false);
+          setFundLoading(false);
         }
-        setFundSummaries(summaries);
-      } catch {
-        // Market data remains usable when fund summaries are temporarily absent.
-      } finally {
-        if (!cancelled) setFundLoading(false);
       }
     }
 
-    void loadMarket(true);
-    void loadFunds(true);
+    void loadOverview(true);
     const stopMarketPolling = startAdaptivePolling(
-      () => loadMarket(false),
+      () => loadOverview(false),
       () => pickPollInterval(symbols, marketStatesRef.current),
     );
-    const stopFundPolling = startAdaptivePolling(() => loadFunds(false), () => 15 * 60 * 1000);
     return () => {
       cancelled = true;
       stopMarketPolling();
-      stopFundPolling();
     };
   }, [enabled, fundKey, funds, symbols]);
 

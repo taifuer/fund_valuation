@@ -122,6 +122,7 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "fundnav": (120, 60),
     "fundholdings": (80, 60),
     "fundholdings_refresh": (10, 60),
+    "fundvaluationbasis": (120, 60),
     "fundhistory": (120, 60),
     "fundhistory_refresh": (10, 60),
     "fundreturns": (120, 60),
@@ -1771,6 +1772,75 @@ def history_needs_auto_refresh(latest_date: str | None, fetched_at: int) -> bool
     return now_ms() - fetched_at > HISTORY_AUTO_REFRESH_TTL_MS
 
 
+def recent_trading_days(market: str, *, before: datetime, count: int) -> list[str]:
+    days: list[str] = []
+    candidate = before
+    for _ in range(21):
+        candidate -= timedelta(days=1)
+        row = market_calendar_row(market, candidate.strftime("%Y-%m-%d"))
+        if row and row["status"] in {"open", "half_day"}:
+            days.append(str(row["date"]))
+            if len(days) >= count:
+                break
+    return days
+
+
+def fund_history_is_stale(latest_date: str | None, now: datetime | None = None) -> bool:
+    if not latest_date:
+        return True
+    current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+    # QDII NAV disclosure commonly trails the valuation day by one session.
+    # Treat the second previous mainland session as the oldest healthy date.
+    recent = recent_trading_days("cn", before=current, count=2)
+    return bool(recent) and latest_date < recent[-1]
+
+
+def market_history_quote_symbol(source: str, symbol: str) -> str | None:
+    if source == "sina-cn":
+        return symbol
+    if source == "sina-us":
+        return f"gb_{symbol.lstrip('.').lower()}"
+    if source == "tencent-hk":
+        return symbol
+    if source == "naver-korea":
+        return "b_KOSPI"
+    if source == "twse-official":
+        return "b_TWSE"
+    if source == "sina-futures":
+        if symbol == "NK":
+            return "int_nikkei"
+        return f"hf_{symbol}"
+    return None
+
+
+def latest_completed_trading_day(symbol: str, now: datetime | None = None) -> str | None:
+    market = market_key_for_symbol(symbol)
+    if not market or market not in MARKET_CALENDARS:
+        return None
+    current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+    calendar = MARKET_CALENDARS[market]
+    local = current.astimezone(ZoneInfo(str(calendar["timezone"])))
+    day = local.strftime("%Y-%m-%d")
+    row = market_calendar_row(market, day)
+    if row and row["status"] in {"open", "half_day"}:
+        regular_ends = [
+            parse_hhmm(str(end))
+            for start, end in row["sessions"]
+            if parse_hhmm(str(start)) < parse_hhmm(str(end))
+        ]
+        if regular_ends and local.hour * 60 + local.minute >= max(regular_ends):
+            return day
+    return previous_trading_day(market, local)
+
+
+def market_history_is_stale(source: str, symbol: str, latest_date: str | None, now: datetime | None = None) -> bool:
+    if not latest_date:
+        return True
+    quote_symbol = market_history_quote_symbol(source, symbol)
+    expected = latest_completed_trading_day(quote_symbol, now) if quote_symbol else None
+    return bool(expected) and latest_date < expected
+
+
 def auto_refresh_fund_history_if_stale(code: str, target_count: int) -> None:
     latest_date, fetched_at = latest_fund_history_meta(code)
     if not history_needs_auto_refresh(latest_date, fetched_at):
@@ -2239,6 +2309,49 @@ def read_fx_changes(currencies: list[str], start_date: str, end_date: str) -> di
     results: dict[str, dict[str, float]] = {}
     for currency, date, change_percent in rows:
         results.setdefault(str(currency), {})[str(date)] = float(change_percent)
+    return results
+
+
+def read_fund_valuation_basis(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """Read the latest persisted holding closes and FX rates on/before each NAV date."""
+    results: dict[str, Any] = {}
+    with get_conn() as conn:
+        for item in items:
+            code = str(item["code"])
+            nav_date = str(item["navDate"])
+            symbols = sorted(dict.fromkeys(str(value) for value in item["symbols"]))
+            currencies = sorted(dict.fromkeys(
+                str(value) for value in item["currencies"] if str(value) != "CNY"
+            ))
+            holding_prices: dict[str, Any] = {}
+            fx_rates: dict[str, Any] = {}
+            for symbol in symbols:
+                row = conn.execute(
+                    """
+                    SELECT date, close FROM stock_daily_history
+                    WHERE sina_symbol = ? AND date <= ?
+                    ORDER BY date DESC LIMIT 1
+                    """,
+                    (symbol, nav_date),
+                ).fetchone()
+                if row:
+                    holding_prices[symbol] = {"date": str(row[0]), "close": float(row[1])}
+            for currency in currencies:
+                row = conn.execute(
+                    """
+                    SELECT date, rate FROM fx_daily_history
+                    WHERE currency = ? AND date <= ?
+                    ORDER BY date DESC LIMIT 1
+                    """,
+                    (currency, nav_date),
+                ).fetchone()
+                if row:
+                    fx_rates[currency] = {"date": str(row[0]), "rate": float(row[1])}
+            results[code] = {
+                "navDate": nav_date,
+                "holdingPrices": holding_prices,
+                "fxRates": fx_rates,
+            }
     return results
 
 
@@ -2908,6 +3021,50 @@ def fetch_and_store_stock_history(sina_symbol: str, *, refresh: bool = False) ->
         return store_stock_history(sina_symbol, decode_body(body)) > 0
     except Exception:
         return False
+
+
+def refresh_fund_valuation_histories() -> dict[str, Any]:
+    symbols: list[str] = []
+    for code in configured_fund_codes_from_constants():
+        holdings = read_fund_holdings_from_db(code) or parse_default_fund_holdings_from_constants(code)
+        symbols.extend(
+            str(item.get("sinaSymbol") or "")
+            for item in holdings
+            if stock_history_url(str(item.get("sinaSymbol") or "")) is not None
+        )
+    normalized_symbols = sorted(dict.fromkeys(symbol for symbol in symbols if symbol))
+    updated = 0
+    failed: list[str] = []
+    errors: list[str] = []
+
+    def refresh_one(symbol: str) -> bool:
+        return fetch_and_store_stock_history(symbol, refresh=True)
+
+    if normalized_symbols:
+        with ThreadPoolExecutor(max_workers=min(8, len(normalized_symbols))) as executor:
+            futures = {executor.submit(refresh_one, symbol): symbol for symbol in normalized_symbols}
+            for future in as_completed(futures):
+                symbol = futures[future]
+                try:
+                    if future.result():
+                        updated += 1
+                    else:
+                        failed.append(symbol)
+                except Exception as exc:
+                    errors.append(f"{symbol}: {exc}")
+    try:
+        fx_rows = refresh_ecb_fx_history(force_refresh=True)
+    except Exception as exc:
+        fx_rows = 0
+        errors.append(f"fx: {exc}")
+    return {
+        "checked": len(normalized_symbols),
+        "updated": updated,
+        "failed": len(failed),
+        "sampleFailed": failed[:10],
+        "fxRows": fx_rows,
+        "errors": errors,
+    }
 
 
 def read_fund_history_from_db(code: str, page_size: int, page_index: int) -> list[dict[str, str]]:
@@ -3907,7 +4064,7 @@ def fund_history_health() -> dict[str, Any]:
             missing.append(code)
             continue
         latest_dates.append(latest_date)
-        if history_needs_auto_refresh(latest_date, fetched_at):
+        if fund_history_is_stale(latest_date):
             stale.append(code)
     return {
         "total": len(codes),
@@ -3931,7 +4088,7 @@ def market_history_health() -> dict[str, Any]:
             missing.append(item)
             continue
         latest_dates.append(latest_date)
-        if history_needs_auto_refresh(latest_date, fetched_at):
+        if market_history_is_stale(source, symbol, latest_date):
             stale.append(item)
     return {
         "total": len(items),
@@ -4823,6 +4980,48 @@ def fund_holdings() -> Response:
         elif cached_rows:
             results[code] = cached_rows
     return json_response(results)
+
+
+@app.post("/api/fundvaluationbasis")
+def fund_valuation_basis() -> Response:
+    enforce_rate_limit("fundvaluationbasis")
+    if request.content_length is not None and request.content_length > 64 * 1024:
+        return json_response({"error": "Request body too large"}, status=413)
+    payload = request.get_json(silent=True)
+    raw_items = payload.get("funds") if isinstance(payload, dict) else None
+    if not isinstance(raw_items, list) or len(raw_items) > MAX_FUND_CODES_PER_REQUEST:
+        return json_response({"error": "Invalid funds"}, status=400)
+
+    items: list[dict[str, Any]] = []
+    total_symbols = 0
+    for raw in raw_items:
+        if not isinstance(raw, dict):
+            return json_response({"error": "Invalid fund item"}, status=400)
+        code = str(raw.get("code") or "")
+        nav_date = str(raw.get("navDate") or "")
+        symbols = raw.get("symbols")
+        currencies = raw.get("currencies")
+        if not FUND_CODE_RE.fullmatch(code) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", nav_date):
+            return json_response({"error": "Invalid fund code or NAV date"}, status=400)
+        if not isinstance(symbols, list) or not isinstance(currencies, list):
+            return json_response({"error": "Invalid valuation symbols"}, status=400)
+        normalized_symbols = sorted(dict.fromkeys(str(value) for value in symbols))
+        normalized_currencies = sorted(dict.fromkeys(str(value) for value in currencies))
+        total_symbols += len(normalized_symbols)
+        if (
+            len(normalized_symbols) > 30
+            or total_symbols > 1000
+            or any(not SINA_SYMBOL_RE.fullmatch(symbol) for symbol in normalized_symbols)
+            or any(currency not in {"CNY", "USD", "EUR", "JPY", "KRW", "HKD"} for currency in normalized_currencies)
+        ):
+            return json_response({"error": "Invalid valuation symbols"}, status=400)
+        items.append({
+            "code": code,
+            "navDate": nav_date,
+            "symbols": normalized_symbols,
+            "currencies": normalized_currencies,
+        })
+    return json_response(read_fund_valuation_basis(items))
 
 
 @app.get("/api/fundhistory")
