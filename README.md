@@ -10,7 +10,7 @@
 - **资产参考**：独立展示黄金、白银、原油和比特币行情，用于辅助观察风险偏好、通胀和流动性环境
 - **期货参考**：纳指100、标普500、道琼斯、恒生指数、日经225 在现货闭市且对应期货活跃时，自动显示对应期货并标注“期货 LIVE”
 - **市场历史走势**：点击支持的指数/资产卡片查看历史行情，支持今年、1周、1月、3月、半年、1年、3年、5年和全部区间
-- **基金管理**：默认 17 只 QDII 主动基金，支持本地添加/删除基金和一键恢复默认列表
+- **基金管理**：默认 17 只 QDII 主动基金；配置管理令牌后可在当前浏览器添加、删除基金或恢复默认列表
 - **双净值展示**：每只基金同时展示最新官方已出净值（含日间涨跌幅）和 T 日实时估算净值
 - **持仓穿透**：点击基金卡片展开前十大持仓明细，实时现价、涨跌幅、权重贡献度一目了然
 - **动态持仓估算**：新增基金会从东方财富/天天基金抓取最新披露持仓，保存到 SQLite，并在可映射行情时自动参与估算
@@ -141,7 +141,7 @@ open http://localhost:5173
 
 刷新 worker 使用 SQLite 租约避免多实例重复抓取，每分钟检查任务计划：现货开盘时行情每 60 秒更新，期货每 2 分钟更新，仅加密资产交易时每 5 分钟更新，全部闭市后降为 15 分钟；基金净值闭市后降为每小时，历史数据每小时检查一次，最新季度持仓每 24 小时批量检查一次，基金规模与费率资料每周检查一次。worker 每天还会维护当前持仓日线与 ECB 参考汇率，作为跨多个净值日累计估算的本地基准；页面请求本身不会补抓这些历史数据。发现新季度持仓时会同步更新对应基金资料，新持仓入库后会自动加入行情快照和估值计算。`FUND_VALUATION_REFRESH_INTERVAL` 用于设置历史维护周期下限，`FUND_VALUATION_SNAPSHOT_RETENTION_DAYS` 用于调整行情快照保留天数。核心看板请求不会因快照过期而同步抓取上游；首次查看尚未入库的自定义基金资料时，资料接口会按需补取一次。内置刷新默认关闭，仅兼容旧部署时可显式设置 `FUND_VALUATION_BACKGROUND_REFRESH=1`。
 
-公开状态接口 `/api/status` 只返回汇总后的刷新状态，`/api/meta` 返回当前 API 契约版本。内部诊断页位于 `/diagnostics`，对应接口 `/api/diagnostics/quotes` 会返回快照缺失、延迟、兜底、请求耗时、缓存命中以及基金净值、季度持仓、市场日线和汇率覆盖度；必须设置 `FUND_VALUATION_DIAGNOSTICS_TOKEN`，并在诊断页输入同值令牌后才能查询。每个 API 响应都包含 `X-Request-ID`、`X-Elapsed-ms` 和 `X-API-Schema-Version` 响应头，慢请求与未处理异常使用 JSON 结构化日志输出。
+公开状态接口 `/api/status` 只返回汇总后的刷新状态，`/api/meta` 返回当前 API 契约版本和基金管理模式。内部诊断页位于 `/diagnostics`，对应接口 `/api/diagnostics/quotes` 会返回快照缺失、延迟、兜底、请求耗时、缓存命中以及基金净值、季度持仓、市场日线和汇率覆盖度；必须设置 `FUND_VALUATION_DIAGNOSTICS_TOKEN`，并在诊断页输入同值令牌后才能查询。每个 API 响应都包含 `X-Request-ID`、`X-Elapsed-ms` 和 `X-API-Schema-Version` 响应头，慢请求与未处理异常使用 JSON 结构化日志输出。
 
 历史数据回填脚本默认读取 `config/universe.json` 中配置的基金、指数和资产，写入 `data/fund_valuation.db`。常用参数：
 
@@ -186,7 +186,7 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
-默认访问 `http://localhost:8080`。`/api/health` 用于进程存活检查，`/api/ready` 同时检查 SQLite 是否可用。生产环境应通过 `.env` 或部署平台注入诊断令牌，不要写入仓库。设置 `FUND_VALUATION_ENABLE_FUND_MANAGEMENT=0` 后，前端不再构建基金管理入口，后端也只接受默认基金代码；`FUND_VALUATION_BAIDU_ANALYTICS_ID` 可选配置百度统计站点 ID。反向代理部署可将 `FUND_VALUATION_HTTP_HOST` 设为 `127.0.0.1`，国内服务器也可通过 `FUND_VALUATION_NPM_REGISTRY` 和 `FUND_VALUATION_PIP_INDEX_URL` 使用可信软件源镜像。
+默认访问 `http://localhost:8080`。`/api/health` 用于进程存活检查，`/api/ready` 同时检查 SQLite 是否可用。生产环境应通过 `.env` 或部署平台注入诊断令牌，不要写入仓库。基金管理默认关闭；同时设置 `FUND_VALUATION_ENABLE_FUND_MANAGEMENT=1` 和独立的 `FUND_VALUATION_FUND_MANAGEMENT_TOKEN` 后，基金页显示管理入口，用户输入令牌后可在当前浏览器维护基金列表。非默认基金请求由后端校验 `X-Fund-Management-Token`，关闭总开关后仍会被拒绝。`FUND_VALUATION_BAIDU_ANALYTICS_ID` 可选配置百度统计站点 ID。反向代理部署可将 `FUND_VALUATION_HTTP_HOST` 设为 `127.0.0.1`，国内服务器也可通过 `FUND_VALUATION_NPM_REGISTRY` 和 `FUND_VALUATION_PIP_INDEX_URL` 使用可信软件源镜像。
 
 Docker Worker 默认每天创建一次经过完整性校验的 SQLite 在线备份，保留 7 天且最多保留最新 3 份，文件位于数据卷的 `backups/`。可通过 `FUND_VALUATION_AUTO_BACKUP`、`FUND_VALUATION_BACKUP_INTERVAL_HOURS`、`FUND_VALUATION_BACKUP_RETENTION_DAYS` 和 `FUND_VALUATION_BACKUP_MAX_FILES` 调整；非 Docker 本地运行默认不自动备份。行情快照、上游响应缓存和原始响应均为可再生成数据，Docker 默认分别保留 7、14、7 天；Worker 会定期清理并执行非阻塞 WAL checkpoint 与 `PRAGMA optimize`，不会自动删除历史净值、日线或持仓数据。
 

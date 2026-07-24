@@ -346,6 +346,23 @@
 .managerHeader span { color: #94a3b8; display: block; font-size: 11px; margin-top: 2px; }
 .managerClose { background: transparent; border: 0; color: #64748b; cursor: pointer; font-size: 22px; line-height: 22px; }
 
+.managerHeaderActions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.managerLock {
+  background: transparent;
+  border: 0;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 0;
+}
+
+.managerLock:hover { color: #0f172a; }
+
 .managerTrigger {
   background: #fff;
   border: 1px solid #e2e8f0;
@@ -363,6 +380,14 @@
   flex: 1 1 auto;
   gap: 6px;
   min-width: 0;
+}
+
+.managerAuthForm {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  max-width: 360px;
+  width: 100%;
 }
 
 .fundSearchInput {
@@ -435,6 +460,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   width: 100%;
+}
+
+.managerAuthError {
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .fundLoading {
@@ -520,7 +551,8 @@
   }
 
   .fundManager,
-  .addFundForm {
+  .addFundForm,
+  .managerAuthForm {
     align-items: stretch;
     flex-direction: column;
   }

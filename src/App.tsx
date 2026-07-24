@@ -1,7 +1,13 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuotes, type FundEstimate } from './hooks/useQuotes';
 import { useHeaderFxRates, useOverviewData, useRankingMarketData, useSystemStatus } from './hooks/usePageData';
-import { fetchFundNavs, fetchSinaFundNavs } from './api';
+import { fetchApiMeta, fetchFundNavs, fetchSinaFundNavs, verifyFundManagementToken } from './api';
+import {
+  clearFundManagementToken,
+  readFundManagementToken,
+  storeFundManagementToken,
+  type FundManagementMode,
+} from './fundManagementAuth';
 import { FUNDS } from './constants';
 import {
   PAGE_PATHS,
@@ -28,8 +34,6 @@ const FUND_SECTION_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_section';
 const FUND_SUMMARY_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_summary';
 const FUND_MANAGER_KEY = 'fund_valuation:managed_funds';
 const MAX_CUSTOM_FUNDS = 50;
-const FUND_MANAGEMENT_ENABLED = __FUND_MANAGEMENT_ENABLED__;
-
 interface FundSummary {
   fund: Fund;
   nav: FundNavData | null;
@@ -213,6 +217,11 @@ function FundSummaryCards({
 
 export default function App() {
   const [managedFunds, setManagedFunds] = useState<ManagedFundSettings>(() => readManagedFundSettings());
+  const [fundManagementMode, setFundManagementMode] = useState<FundManagementMode>('disabled');
+  const [fundManagementUnlocked, setFundManagementUnlocked] = useState(false);
+  const [fundManagementToken, setFundManagementToken] = useState(readFundManagementToken);
+  const [fundManagementAuthLoading, setFundManagementAuthLoading] = useState(false);
+  const [fundManagementAuthError, setFundManagementAuthError] = useState('');
   const [activePage, setActivePage] = useState<PageKey>(() => pageFromPathname(window.location.pathname));
   // The URL is the single source of truth for the expanded fund card.
   const [expandedCode, setExpandedCode] = useState<string | null>(() => {
@@ -227,8 +236,10 @@ export default function App() {
     }
     setExpandedCode(expanded ? code : null);
   }, []);
+  const fundManagementAvailable = fundManagementMode !== 'disabled';
+  const fundManagementGranted = fundManagementMode === 'open' || fundManagementUnlocked;
   const funds = useMemo(() => {
-    if (!FUND_MANAGEMENT_ENABLED) return FUNDS;
+    if (!fundManagementGranted) return FUNDS;
     const hidden = new Set(managedFunds.hiddenDefaultCodes);
     const defaultFunds = FUNDS.filter((fund) => !hidden.has(fund.code));
     const defaultCodes = new Set(FUNDS.map((fund) => fund.code));
@@ -236,7 +247,7 @@ export default function App() {
       .filter((fund) => !defaultCodes.has(fund.code))
       .map(toCustomFund);
     return [...defaultFunds, ...customFunds];
-  }, [managedFunds]);
+  }, [fundManagementGranted, managedFunds]);
   const { quotes, fundEstimates, fxRates, marketStates, fundLoading, error } = useQuotes(
     funds,
     false,
@@ -269,6 +280,40 @@ export default function App() {
   const managerTriggerRef = useRef<HTMLButtonElement>(null);
   const managerDialogRef = useRef<HTMLElement>(null);
   const [pageStatusMessage, setPageStatusMessage] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadFundManagementMode() {
+      try {
+        const meta = await fetchApiMeta();
+        if (cancelled) return;
+        setFundManagementMode(meta.fundManagementMode);
+        if (meta.fundManagementMode === 'open') {
+          setFundManagementUnlocked(true);
+          return;
+        }
+        setFundManagementUnlocked(false);
+        if (meta.fundManagementMode !== 'token') return;
+        const storedToken = readFundManagementToken();
+        if (!storedToken) return;
+        const valid = await verifyFundManagementToken(storedToken);
+        if (cancelled) return;
+        if (valid) {
+          setFundManagementUnlocked(true);
+        } else {
+          clearFundManagementToken();
+          setFundManagementToken('');
+        }
+      } catch {
+        if (!cancelled) {
+          setFundManagementMode('disabled');
+          setFundManagementUnlocked(false);
+        }
+      }
+    }
+    void loadFundManagementMode();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!fundManagerOpen) return;
@@ -376,6 +421,37 @@ export default function App() {
     };
     setManagedFunds(normalized);
     writeManagedFundSettings(normalized);
+  }
+
+  async function unlockFundManagement() {
+    const token = fundManagementToken.trim();
+    if (!token) {
+      setFundManagementAuthError('请输入管理令牌');
+      return;
+    }
+    setFundManagementAuthLoading(true);
+    setFundManagementAuthError('');
+    try {
+      const valid = await verifyFundManagementToken(token);
+      if (!valid) {
+        setFundManagementAuthError('管理令牌无效');
+        return;
+      }
+      storeFundManagementToken(token);
+      setFundManagementUnlocked(true);
+    } catch {
+      setFundManagementAuthError('管理服务暂不可用');
+    } finally {
+      setFundManagementAuthLoading(false);
+    }
+  }
+
+  function lockFundManagement() {
+    clearFundManagementToken();
+    setFundManagementToken('');
+    setFundManagementUnlocked(false);
+    setFundManagementAuthError('');
+    setFundManagerOpen(false);
   }
 
   function restoreDefaultFund(defaultFund: Fund) {
@@ -563,7 +639,7 @@ export default function App() {
                   >
                     {sortDirection === 'desc' ? '↓' : '↑'}
                   </button>
-                  {FUND_MANAGEMENT_ENABLED && (
+                  {fundManagementAvailable && (
                     <button ref={managerTriggerRef} type="button" className={styles.managerTrigger} onClick={() => setFundManagerOpen(true)}>
                       管理基金
                     </button>
@@ -571,36 +647,77 @@ export default function App() {
                 </div>
               )}
             </div>
-            {FUND_MANAGEMENT_ENABLED && !fundCollapsed && fundManagerOpen && (
+            {fundManagementAvailable && !fundCollapsed && fundManagerOpen && (
               <div className={styles.managerOverlay} role="presentation" onClick={() => setFundManagerOpen(false)}>
                 <section ref={managerDialogRef} className={styles.fundManager} role="dialog" aria-modal="true" aria-label="管理基金" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
                   <div className={styles.managerHeader}>
-                    <div><strong>管理基金</strong><span>配置仅保存在当前浏览器</span></div>
-                    <button type="button" className={styles.managerClose} aria-label="关闭基金管理" onClick={() => setFundManagerOpen(false)}>×</button>
+                    <div>
+                      <strong>管理基金</strong>
+                      <span>{fundManagementGranted ? '配置仅保存在当前浏览器' : '需要管理令牌'}</span>
+                    </div>
+                    <div className={styles.managerHeaderActions}>
+                      {fundManagementMode === 'token' && fundManagementGranted && (
+                        <button type="button" className={styles.managerLock} onClick={lockFundManagement}>退出管理</button>
+                      )}
+                      <button type="button" className={styles.managerClose} aria-label="关闭基金管理" onClick={() => setFundManagerOpen(false)}>×</button>
+                    </div>
                   </div>
-                <div className={styles.addFundForm}>
-                  <input
-                    className={styles.fundSearchInput}
-                    placeholder="基金代码或基金名称"
-                    value={fundSearchQuery}
-                    onChange={(event) => {
-                      setFundSearchQuery(event.target.value);
-                      if (fundManageMessage) setFundManageMessage('');
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' && !addingFund) {
-                        addFund();
-                      }
-                    }}
-                  />
-                  <button type="button" className={styles.managerButtonPrimary} onClick={addFund} disabled={addingFund}>
-                    {addingFund ? '校验中' : '添加'}
-                  </button>
-                  <button type="button" className={styles.managerButton} onClick={restoreDefaultFunds} disabled={addingFund}>
-                    恢复默认
-                  </button>
-                </div>
-                {fundManageMessage && <div className={styles.managerMessage}>{fundManageMessage}</div>}
+                  {fundManagementGranted ? (
+                    <>
+                      <div className={styles.addFundForm}>
+                        <input
+                          className={styles.fundSearchInput}
+                          placeholder="基金代码或基金名称"
+                          value={fundSearchQuery}
+                          onChange={(event) => {
+                            setFundSearchQuery(event.target.value);
+                            if (fundManageMessage) setFundManageMessage('');
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' && !addingFund) {
+                              addFund();
+                            }
+                          }}
+                        />
+                        <button type="button" className={styles.managerButtonPrimary} onClick={addFund} disabled={addingFund}>
+                          {addingFund ? '校验中' : '添加'}
+                        </button>
+                        <button type="button" className={styles.managerButton} onClick={restoreDefaultFunds} disabled={addingFund}>
+                          恢复默认
+                        </button>
+                      </div>
+                      {fundManageMessage && <div className={styles.managerMessage}>{fundManageMessage}</div>}
+                    </>
+                  ) : (
+                    <div className={styles.managerAuthForm}>
+                      <input
+                        className={styles.fundSearchInput}
+                        type="password"
+                        autoComplete="off"
+                        placeholder="管理令牌"
+                        aria-label="管理令牌"
+                        value={fundManagementToken}
+                        onChange={(event) => {
+                          setFundManagementToken(event.target.value);
+                          if (fundManagementAuthError) setFundManagementAuthError('');
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' && !fundManagementAuthLoading) {
+                            void unlockFundManagement();
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className={styles.managerButtonPrimary}
+                        onClick={() => void unlockFundManagement()}
+                        disabled={fundManagementAuthLoading}
+                      >
+                        {fundManagementAuthLoading ? '验证中' : '解锁'}
+                      </button>
+                    </div>
+                  )}
+                  {fundManagementAuthError && <div className={styles.managerAuthError} role="alert">{fundManagementAuthError}</div>}
                 </section>
               </div>
             )}
@@ -618,7 +735,7 @@ export default function App() {
                   sortMode={sortMode}
                   loading={false}
                   marketStates={marketStates}
-                  onRemove={FUND_MANAGEMENT_ENABLED ? removeFund : undefined}
+                  onRemove={fundManagementGranted ? removeFund : undefined}
                   expanded={expandedCode === fund.code}
                   onExpandedChange={handleFundExpandedChange}
                 />

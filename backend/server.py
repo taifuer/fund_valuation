@@ -112,6 +112,27 @@ def fund_management_enabled() -> bool:
     value = os.environ.get("FUND_VALUATION_ENABLE_FUND_MANAGEMENT", "1").strip().lower()
     return value not in {"0", "false", "no", "off"}
 
+
+def fund_management_mode() -> str:
+    if not fund_management_enabled():
+        return "disabled"
+    if os.environ.get("FUND_VALUATION_FUND_MANAGEMENT_TOKEN", "").strip():
+        return "token"
+    return "open"
+
+
+def require_fund_management_access() -> None:
+    mode = fund_management_mode()
+    if mode == "disabled":
+        raise Forbidden("Fund management is disabled; only configured funds are available")
+    if mode == "open":
+        return
+    expected_token = os.environ.get("FUND_VALUATION_FUND_MANAGEMENT_TOKEN", "").strip()
+    provided_token = request.headers.get("X-Fund-Management-Token", "").strip()
+    if not expected_token or not hmac.compare_digest(provided_token, expected_token):
+        raise Forbidden("Fund management token is invalid")
+
+
 RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "sina": (240, 60),
     "dashboard": (180, 60),
@@ -120,6 +141,7 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "meta": (120, 60),
     "datahealth": (120, 60),
     "diagnostics": (30, 60),
+    "fund_management_auth": (10, 60),
     "marketstates": (240, 60),
     "fundnav": (120, 60),
     "fundholdings": (80, 60),
@@ -3902,12 +3924,27 @@ def require_fund_codes(name: str = "codes", *, max_codes: int = MAX_FUND_CODES_P
         raise ValueError(f"Invalid fund code: {preview}; fund codes must be 6 digits")
     if len(codes) > max_codes:
         raise ValueError(f"Too many fund codes; maximum is {max_codes}")
-    if not fund_management_enabled():
-        configured_codes = set(configured_fund_codes_from_constants())
-        unsupported = [code for code in codes if code not in configured_codes]
-        if unsupported:
-            raise Forbidden("Fund management is disabled; only configured funds are available")
+    configured_codes = set(configured_fund_codes_from_constants())
+    if any(code not in configured_codes for code in codes):
+        require_fund_management_access()
     return codes
+
+
+def require_fund_symbol_access(symbols: list[str]) -> None:
+    configured_codes = set(configured_fund_codes_from_constants())
+    invalid_fund_symbols = [
+        symbol for symbol in symbols
+        if symbol.startswith("f_") and not FUND_CODE_RE.fullmatch(symbol[2:])
+    ]
+    if invalid_fund_symbols:
+        raise ValueError("Invalid fund quote symbol")
+    requested_codes = {
+        symbol[2:]
+        for symbol in symbols
+        if symbol.startswith("f_") and FUND_CODE_RE.fullmatch(symbol[2:])
+    }
+    if any(code not in configured_codes for code in requested_codes):
+        require_fund_management_access()
 
 
 def require_symbol_list(name: str, *, pattern: re.Pattern[str], max_symbols: int) -> list[str]:
@@ -4538,7 +4575,15 @@ def api_meta() -> Response:
     return jsonify({
         "apiSchemaVersion": API_SCHEMA_VERSION,
         "dashboardSchemaVersion": DASHBOARD_SCHEMA_VERSION,
+        "fundManagementMode": fund_management_mode(),
     })
+
+
+@app.post("/api/fund-management/verify")
+def verify_fund_management() -> Response:
+    enforce_rate_limit("fund_management_auth")
+    require_fund_management_access()
+    return jsonify({"ok": True, "mode": fund_management_mode()})
 
 
 @app.get("/api/ready")
@@ -4610,6 +4655,7 @@ def sina() -> Response:
         pattern=SINA_SYMBOL_RE,
         max_symbols=MAX_SINA_SYMBOLS_PER_REQUEST,
     ))
+    require_fund_symbol_access(symbol_list)
     symbols = ",".join(symbol_list)
     now_arg = request.args.get("now", "")
     def build() -> tuple[str, int]:
@@ -5044,6 +5090,9 @@ def fund_valuation_basis() -> Response:
             "symbols": normalized_symbols,
             "currencies": normalized_currencies,
         })
+    configured_codes = set(configured_fund_codes_from_constants())
+    if any(item["code"] not in configured_codes for item in items):
+        require_fund_management_access()
     return json_response(read_fund_valuation_basis(items))
 
 

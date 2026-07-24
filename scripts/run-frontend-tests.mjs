@@ -52,9 +52,20 @@ const quoteCapabilitiesCompiled = ts.transpileModule(quoteCapabilitiesSource, {
   },
 });
 await writeFile(quoteCapabilitiesPath, quoteCapabilitiesCompiled.outputText, 'utf8');
+const fundManagementAuthPath = join(outDir, `fundManagementAuth-dep.${Date.now()}.mjs`);
+const fundManagementAuthSource = await readFile(new URL('../src/fundManagementAuth.ts', import.meta.url), 'utf8');
+const fundManagementAuthCompiled = ts.transpileModule(fundManagementAuthSource, {
+  compilerOptions: {
+    module: ts.ModuleKind.ES2022,
+    target: ts.ScriptTarget.ES2022,
+    strict: true,
+  },
+});
+await writeFile(fundManagementAuthPath, fundManagementAuthCompiled.outputText, 'utf8');
 const { parseSinaVar } = await importTsModule('../src/api.ts', 'api', {
   "from './quoteMath';": `from '${pathToFileURL(quoteMathPath).href}';`,
   "from './quoteCapabilities';": `from '${pathToFileURL(quoteCapabilitiesPath).href}';`,
+  "from './fundManagementAuth';": `from '${pathToFileURL(fundManagementAuthPath).href}';`,
 });
 const holidaysPath = join(outDir, `holidays-dep.${Date.now()}.mjs`);
 const holidaysJson = await readFile(new URL('../config/holidays.json', import.meta.url), 'utf8');

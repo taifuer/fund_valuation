@@ -16,6 +16,7 @@ import type {
 } from './types';
 import { globalFutureReferencePrice } from './quoteMath';
 import { isHoldingQuoteSupported } from './quoteCapabilities';
+import { fundManagementHeaders, type FundManagementMode } from './fundManagementAuth';
 
 type Market = 'us' | 'cn_index' | 'cn_full_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'crypto' | 'fund' | 'fx';
 
@@ -417,7 +418,7 @@ export async function fetchSinaFundNavs(codes: string[], refresh = false): Promi
   const refreshParam = refresh ? '&refresh=1' : '';
   const url = apiUrl(`/api/sina?list=${symbols.join(',')}${refreshParam}`);
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: fundManagementHeaders() });
     if (!res.ok) return results;
     const text = await res.text();
     for (const line of text.split('\n')) {
@@ -568,11 +569,11 @@ function storeDashboard(cacheKey: string, payload: unknown) {
   } catch { /* storage may be unavailable or full */ }
 }
 
-async function fetchWithTimeout(url: string, timeoutMs = 4_000): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs = 4_000, init: RequestInit = {}): Promise<Response> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { signal: controller.signal });
+    return await fetch(url, { ...init, signal: controller.signal });
   } finally {
     window.clearTimeout(timer);
   }
@@ -702,7 +703,11 @@ export async function fetchOverviewSnapshot(
       currencies: uniqueCurrencies.join(','),
       fundCodes: uniqueFundCodes.join(','),
     });
-    const res = await fetchWithTimeout(apiUrl(`/api/overview?${params.toString()}`));
+    const res = await fetchWithTimeout(
+      apiUrl(`/api/overview?${params.toString()}`),
+      4_000,
+      { headers: fundManagementHeaders() },
+    );
     if (!res.ok) return storedSnapshot ? { ...storedSnapshot, fundSummaries: new Map() } : null;
     const json = await res.json();
     storeDashboard(dashboardCacheKey, json);
@@ -740,6 +745,35 @@ export async function fetchDataHealth(): Promise<DataHealth | null> {
   } catch {
     return null;
   }
+}
+
+export interface ApiMeta {
+  apiSchemaVersion: number;
+  dashboardSchemaVersion: number;
+  fundManagementMode: FundManagementMode;
+}
+
+export async function fetchApiMeta(): Promise<ApiMeta> {
+  const res = await fetch(apiUrl('/api/meta'), { cache: 'no-store' });
+  if (!res.ok) throw new Error(`API meta request failed (${res.status})`);
+  const raw = await res.json();
+  const mode: FundManagementMode = ['disabled', 'open', 'token'].includes(raw.fundManagementMode)
+    ? raw.fundManagementMode
+    : 'disabled';
+  return {
+    apiSchemaVersion: Number(raw.apiSchemaVersion) || 0,
+    dashboardSchemaVersion: Number(raw.dashboardSchemaVersion) || 0,
+    fundManagementMode: mode,
+  };
+}
+
+export async function verifyFundManagementToken(token: string): Promise<boolean> {
+  const res = await fetch(apiUrl('/api/fund-management/verify'), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { 'X-Fund-Management-Token': token.trim() },
+  });
+  return res.ok;
 }
 
 export async function fetchSystemStatus(): Promise<SystemStatus> {
@@ -852,7 +886,7 @@ export async function fetchFundHistory(
   const results = new Map<string, { navDate: string; nav: number; officialChange: number }>();
   const url = apiUrl(`/api/fundhistory?codes=${codes.join(',')}`);
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: fundManagementHeaders() });
     if (!res.ok) return results;
     const json = asObject(await res.json());
     if (!json) return results;
@@ -880,7 +914,7 @@ export async function fetchFundPurchaseStatuses(codes: string[]): Promise<Map<st
 
   const url = apiUrl(`/api/fundpurchase?codes=${codes.join(',')}`);
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: fundManagementHeaders() });
     if (!res.ok) return results;
     const json = await res.json();
     for (const code of codes) {
@@ -897,7 +931,9 @@ export async function fetchFundProfiles(codes: string[], refresh = false): Promi
 
   try {
     const refreshParam = refresh ? '&refresh=1' : '';
-    const res = await fetch(apiUrl(`/api/fundprofiles?codes=${codes.join(',')}${refreshParam}`));
+    const res = await fetch(apiUrl(`/api/fundprofiles?codes=${codes.join(',')}${refreshParam}`), {
+      headers: fundManagementHeaders(),
+    });
     if (!res.ok) return results;
     const json = await res.json();
     for (const code of codes) {
@@ -914,7 +950,9 @@ export async function fetchFundHoldings(codes: string[], refresh = false): Promi
 
   try {
     const refreshParam = refresh ? '&refresh=1' : '';
-    const res = await fetch(apiUrl(`/api/fundholdings?codes=${codes.join(',')}${refreshParam}`));
+    const res = await fetch(apiUrl(`/api/fundholdings?codes=${codes.join(',')}${refreshParam}`), {
+      headers: fundManagementHeaders(),
+    });
     if (!res.ok) return results;
     const json = await res.json();
     for (const code of codes) {
@@ -955,7 +993,7 @@ export async function fetchFundValuationBases(
   try {
     const res = await fetch(apiUrl('/api/fundvaluationbasis'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: fundManagementHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         funds: funds.map((fund) => ({
           code: fund.code,
@@ -984,7 +1022,9 @@ export async function fetchFundReturnSummaries(codes: string[]): Promise<Map<str
   if (codes.length === 0) return results;
 
   try {
-    const res = await fetch(apiUrl(`/api/fundreturns?codes=${codes.join(',')}`));
+    const res = await fetch(apiUrl(`/api/fundreturns?codes=${codes.join(',')}`), {
+      headers: fundManagementHeaders(),
+    });
     if (!res.ok) return results;
     const json = await res.json();
     for (const code of codes) {
@@ -1001,7 +1041,7 @@ export async function fetchFundHistorySeries(
 ): Promise<FundHistoryPoint[]> {
   try {
     const url = apiUrl(`/api/fundhistory?codes=${code}&pageSize=${targetSize}&pageIndex=1`);
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: fundManagementHeaders() });
     if (!res.ok) return [];
     const json = await res.json();
     const rows: FundHistoryRow[] = json[code] ?? [];
@@ -1148,7 +1188,7 @@ export async function fetchFundNavs(codes: string[], refresh = false): Promise<M
   const refreshParam = refresh ? '&refresh=1' : '';
   const url = apiUrl(`/api/fundnav?codes=${codes.join(',')}${refreshParam}`);
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: fundManagementHeaders() });
     if (!res.ok) return results;
     const json = asObject(await res.json());
     if (!json) return results;

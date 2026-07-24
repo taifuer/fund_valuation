@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchDashboardSnapshot, parseDashboardSnapshotPayload, parseSinaVar } from './api';
+import { fetchApiMeta, fetchDashboardSnapshot, fetchFundNavs, parseDashboardSnapshotPayload, parseSinaVar } from './api';
+import { storeFundManagementToken } from './fundManagementAuth';
 
 function dashboardPayload(price: number) {
   return {
@@ -23,6 +24,8 @@ function dashboardPayload(price: number) {
 
 beforeEach(() => {
   window.localStorage.clear();
+  window.sessionStorage.clear();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -121,5 +124,33 @@ describe('dashboard API contract', () => {
     expect(second?.quotes.get('s_sh000001')?.price).toBe(3210);
     expect(fallback?.quotes.get('s_sh000001')?.price).toBe(3210);
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('reads the runtime fund-management mode', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        apiSchemaVersion: 1,
+        dashboardSchemaVersion: 1,
+        fundManagementMode: 'token',
+      }),
+    }));
+
+    await expect(fetchApiMeta()).resolves.toMatchObject({ fundManagementMode: 'token' });
+  });
+
+  it('attaches the session management token to fund requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    storeFundManagementToken('management-secret');
+
+    await fetchFundNavs(['118001']);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/fundnav?codes=118001'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-Fund-Management-Token': 'management-secret' }),
+      }),
+    );
   });
 });

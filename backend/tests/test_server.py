@@ -255,6 +255,30 @@ class ServerDataRefreshTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 400)
 
+    def test_fund_valuation_basis_requires_management_token_for_custom_funds(self) -> None:
+        payload = {
+            "funds": [{
+                "code": "118001",
+                "navDate": "2026-07-21",
+                "symbols": ["gb_aapl"],
+                "currencies": ["USD"],
+            }],
+        }
+        client = server.app.test_client()
+        with patch.dict(os.environ, {
+            "FUND_VALUATION_ENABLE_FUND_MANAGEMENT": "1",
+            "FUND_VALUATION_FUND_MANAGEMENT_TOKEN": "management-secret",
+        }):
+            denied = client.post("/api/fundvaluationbasis", json=payload)
+            allowed = client.post(
+                "/api/fundvaluationbasis",
+                json=payload,
+                headers={"X-Fund-Management-Token": "management-secret"},
+            )
+
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(allowed.status_code, 200)
+
     def test_background_refresh_schedules_configured_work(self) -> None:
         with (
             patch.object(server, "configured_fund_codes_from_constants", return_value=["016664"]),
@@ -540,6 +564,65 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(configured_response.status_code, 200)
         self.assertEqual(custom_response.status_code, 403)
         self.assertIn("Fund management is disabled", custom_response.get_data(as_text=True))
+
+    def test_token_protected_fund_management_allows_only_authorized_custom_codes(self) -> None:
+        configured_code = server.configured_fund_codes_from_constants()[0]
+        client = server.app.test_client()
+        with patch.dict(os.environ, {
+            "FUND_VALUATION_ENABLE_FUND_MANAGEMENT": "1",
+            "FUND_VALUATION_FUND_MANAGEMENT_TOKEN": "management-secret",
+        }):
+            configured_response = client.get(f"/api/fundreturns?codes={configured_code}")
+            denied = client.get("/api/fundreturns?codes=118001")
+            wrong = client.get(
+                "/api/fundreturns?codes=118001",
+                headers={"X-Fund-Management-Token": "wrong"},
+            )
+            allowed = client.get(
+                "/api/fundreturns?codes=118001",
+                headers={"X-Fund-Management-Token": "management-secret"},
+            )
+
+        self.assertEqual(configured_response.status_code, 200)
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(wrong.status_code, 403)
+        self.assertEqual(allowed.status_code, 200)
+
+    def test_fund_management_verification_and_sina_fund_fallback_require_token(self) -> None:
+        client = server.app.test_client()
+        upstream_body = b'var hq_str_f_118001="fund,1.0,1.0,1.0,2026-05-21,0";'
+        with (
+            patch.dict(os.environ, {
+                "FUND_VALUATION_ENABLE_FUND_MANAGEMENT": "1",
+                "FUND_VALUATION_FUND_MANAGEMENT_TOKEN": "management-secret",
+            }),
+            patch.object(
+                server,
+                "fetch_upstream",
+                return_value=(200, "text/plain; charset=utf-8", upstream_body),
+            ) as fetch,
+        ):
+            denied_verify = client.post("/api/fund-management/verify")
+            allowed_verify = client.post(
+                "/api/fund-management/verify",
+                headers={"X-Fund-Management-Token": "management-secret"},
+            )
+            denied_quote = client.get("/api/sina?list=f_118001&refresh=1")
+            invalid_quote = client.get(
+                "/api/sina?list=f_abcdef&refresh=1",
+                headers={"X-Fund-Management-Token": "management-secret"},
+            )
+            allowed_quote = client.get(
+                "/api/sina?list=f_118001&refresh=1",
+                headers={"X-Fund-Management-Token": "management-secret"},
+            )
+
+        self.assertEqual(denied_verify.status_code, 403)
+        self.assertEqual(allowed_verify.get_json(), {"mode": "token", "ok": True})
+        self.assertEqual(denied_quote.status_code, 403)
+        self.assertEqual(invalid_quote.status_code, 400)
+        self.assertEqual(allowed_quote.status_code, 200)
+        fetch.assert_called_once()
 
     def test_fund_api_rate_limits_by_client(self) -> None:
         body = b'jsonpgz({"fundcode":"016664","name":"test"});'
@@ -1170,11 +1253,19 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(health.headers["X-API-Schema-Version"], "1")
 
     def test_api_meta_exposes_supported_contract_versions(self) -> None:
-        response = server.app.test_client().get("/api/meta", headers={"X-Request-ID": "test-request-1"})
+        with patch.dict(os.environ, {
+            "FUND_VALUATION_ENABLE_FUND_MANAGEMENT": "1",
+            "FUND_VALUATION_FUND_MANAGEMENT_TOKEN": "management-secret",
+        }):
+            response = server.app.test_client().get("/api/meta", headers={"X-Request-ID": "test-request-1"})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["X-Request-ID"], "test-request-1")
-        self.assertEqual(response.get_json(), {"apiSchemaVersion": 1, "dashboardSchemaVersion": 1})
+        self.assertEqual(response.get_json(), {
+            "apiSchemaVersion": 1,
+            "dashboardSchemaVersion": 1,
+            "fundManagementMode": "token",
+        })
 
     def test_shared_universe_supplies_funds_holdings_and_market_targets(self) -> None:
         codes = server.configured_fund_codes_from_constants()
