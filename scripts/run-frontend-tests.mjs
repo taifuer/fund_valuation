@@ -42,8 +42,19 @@ const quoteMathCompiled = ts.transpileModule(quoteMathSource, {
   },
 });
 await writeFile(quoteMathPath, quoteMathCompiled.outputText, 'utf8');
+const quoteCapabilitiesPath = join(outDir, `quoteCapabilities-dep.${Date.now()}.mjs`);
+const quoteCapabilitiesSource = await readFile(new URL('../src/quoteCapabilities.ts', import.meta.url), 'utf8');
+const quoteCapabilitiesCompiled = ts.transpileModule(quoteCapabilitiesSource, {
+  compilerOptions: {
+    module: ts.ModuleKind.ES2022,
+    target: ts.ScriptTarget.ES2022,
+    strict: true,
+  },
+});
+await writeFile(quoteCapabilitiesPath, quoteCapabilitiesCompiled.outputText, 'utf8');
 const { parseSinaVar } = await importTsModule('../src/api.ts', 'api', {
   "from './quoteMath';": `from '${pathToFileURL(quoteMathPath).href}';`,
+  "from './quoteCapabilities';": `from '${pathToFileURL(quoteCapabilitiesPath).href}';`,
 });
 const holidaysPath = join(outDir, `holidays-dep.${Date.now()}.mjs`);
 const holidaysJson = await readFile(new URL('../config/holidays.json', import.meta.url), 'utf8');

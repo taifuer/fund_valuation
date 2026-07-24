@@ -6,6 +6,7 @@ import {
   quoteMarketState,
   type QuoteDisplayState,
 } from '../displayStatus';
+import { isHoldingQuoteSupported } from '../quoteCapabilities';
 import styles from './HoldingsTable.module.css';
 
 interface Props {
@@ -59,6 +60,10 @@ export default function HoldingsTable({
   const quoteMap = new Map(quotes.map((q) => [q.symbol, q]));
   const coveragePct = totalConfiguredWeight > 0 ? (quoteCoverage / totalConfiguredWeight) * 100 : 0;
   const holdingPeriod = formatHoldingPeriod(holdings);
+  const unsupportedQuoteCount = holdings.filter((holding) => (
+    !isHoldingQuoteSupported(holding.sinaSymbol, holding.quoteSupported)
+  )).length;
+  const unavailableQuoteCount = Math.max(missingQuoteCount - unsupportedQuoteCount, 0);
 
   return (
     <div className={styles.container} onClick={(e) => e.stopPropagation()}>
@@ -89,7 +94,8 @@ export default function HoldingsTable({
         </thead>
         <tbody>
           {holdings.map((h) => {
-            const q = quoteMap.get(h.sinaSymbol);
+            const quoteSupported = isHoldingQuoteSupported(h.sinaSymbol, h.quoteSupported);
+            const q = quoteSupported ? quoteMap.get(h.sinaSymbol) : undefined;
             const up = (q?.changePercent ?? 0) >= 0;
             const fxChange = currencyChanges[h.currency] ?? 0;
             const rmbChange = q
@@ -98,7 +104,9 @@ export default function HoldingsTable({
             const contrib = q ? rmbChange * h.weight : 0;
             const marketState = quoteMarketState(h.sinaSymbol, marketStates);
             const displayState = q ? quoteDisplayState({ quote: q, marketState }) : marketState;
-            const displayTime = q ? quoteDisplayTime(q, displayState, { useCloseTimeWhenClosed: true }) : null;
+            const displayTime = q && quoteSupported
+              ? quoteDisplayTime(q, displayState, { useCloseTimeWhenClosed: true })
+              : null;
             return (
               <tr key={h.symbol}>
                 <td className={styles.stockCell}>
@@ -124,9 +132,9 @@ export default function HoldingsTable({
                 </td>
                 <td className={styles.right}>
                   <span
-                    className={`${styles.stateTag} ${stateClassName(displayState)}`}
+                    className={`${styles.stateTag} ${quoteSupported ? stateClassName(displayState) : styles.stateUnavailable}`}
                   >
-                    {displayStateLabel(displayState)}
+                    {quoteSupported ? displayStateLabel(displayState) : '暂无行情'}
                   </span>
                 </td>
               </tr>
@@ -145,9 +153,14 @@ export default function HoldingsTable({
       </div>
       <div className={styles.notes}>
         <div>{holdingPeriod}</div>
-        {missingQuoteCount > 0 && (
+        {unsupportedQuoteCount > 0 && (
           <div>
-            当前有 {missingQuoteCount} 项持仓未获取到行情，T日持仓估算未包含这些持仓的实时涨跌。
+            {unsupportedQuoteCount} 项持仓的数据源暂不支持行情，已从T日持仓估算覆盖权重中排除。
+          </div>
+        )}
+        {unavailableQuoteCount > 0 && (
+          <div>
+            当前有 {unavailableQuoteCount} 项持仓未获取到行情，T日持仓估算未包含这些持仓的实时涨跌。
           </div>
         )}
         {staleQuoteCount > 0 && (

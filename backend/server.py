@@ -34,7 +34,9 @@ from .config import (
     configured_fund_codes as universe_fund_codes,
     configured_market_return_items as universe_market_return_items,
     configured_sina_symbols as universe_sina_symbols,
+    configured_unsupported_quote_symbols as universe_unsupported_quote_symbols,
     default_fund_holdings as universe_fund_holdings,
+    quote_supported_symbol as universe_quote_supported_symbol,
 )
 from .quotes import normalize_quote_text
 from .contracts import API_SCHEMA_VERSION, DASHBOARD_SCHEMA_VERSION, validate_dashboard_payload
@@ -1988,6 +1990,7 @@ def parse_fund_holdings(code: str, text: str) -> list[dict[str, Any]]:
             "market": market,
             "sinaSymbol": sina_symbol,
             "currency": currency,
+            "quoteSupported": universe_quote_supported_symbol(sina_symbol),
         })
     return holdings
 
@@ -2132,6 +2135,7 @@ def read_fund_holdings_from_db(code: str) -> list[dict[str, Any]]:
             "market": str(market),
             "sinaSymbol": str(sina_symbol),
             "currency": str(currency),
+            "quoteSupported": universe_quote_supported_symbol(str(sina_symbol)),
             "fetchedAt": int(fetched_at),
         }
         for report_date, rank, stock_code, stock_name, weight, market, sina_symbol, currency, fetched_at in rows
@@ -2401,7 +2405,20 @@ def configured_quote_symbols() -> list[str]:
     for code in configured_fund_codes_from_constants():
         for holding in read_fund_holdings_from_db(code):
             symbol = str(holding.get("sinaSymbol") or "")
-            if SINA_SYMBOL_RE.fullmatch(symbol):
+            if universe_quote_supported_symbol(symbol, holding.get("quoteSupported")):
+                symbols.append(symbol)
+    return sorted(dict.fromkeys(symbols))
+
+
+def configured_unsupported_quote_symbols() -> list[str]:
+    symbols = universe_unsupported_quote_symbols()
+    for code in configured_fund_codes_from_constants():
+        for holding in read_fund_holdings_from_db(code):
+            symbol = str(holding.get("sinaSymbol") or "")
+            if SINA_SYMBOL_RE.fullmatch(symbol) and not universe_quote_supported_symbol(
+                symbol,
+                holding.get("quoteSupported"),
+            ):
                 symbols.append(symbol)
     return sorted(dict.fromkeys(symbols))
 
@@ -4219,7 +4236,8 @@ def build_data_health_payload() -> dict[str, Any]:
 def quote_snapshot_health(now: datetime | None = None) -> dict[str, Any]:
     current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
     current_ms = int(current.timestamp() * 1000)
-    symbols = configured_sina_symbols_from_constants()
+    symbols = configured_quote_symbols()
+    unsupported_symbols = configured_unsupported_quote_symbols()
     with get_conn() as conn:
         rows = conn.execute(
             """
@@ -4284,6 +4302,11 @@ def quote_snapshot_health(now: datetime | None = None) -> dict[str, Any]:
         "fallbacks": fallbacks[:20],
         "issueCount": len(issues),
         "issues": issues[:20],
+        "unsupportedCount": len(unsupported_symbols),
+        "unsupported": [
+            {"symbol": symbol, "reason": "quote source unavailable"}
+            for symbol in unsupported_symbols
+        ],
         "retentionDays": QUOTE_SNAPSHOT_RETENTION_DAYS,
     }
 

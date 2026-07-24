@@ -113,6 +113,11 @@
   background: #fef3c7;
 }
 
+.stateUnavailable {
+  color: #64748b;
+  background: #f1f5f9;
+}
+
 .up { color: var(--color-up); }
 .down { color: var(--color-down); }
 

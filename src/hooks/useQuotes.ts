@@ -12,6 +12,7 @@ import {
   fetchFxRates,
   fetchMarketStates,
 } from '../api';
+import { isHoldingQuoteSupported } from '../quoteCapabilities';
 import { INDICES, MARKET_ASSETS, ETF_ASSETS, FUNDS } from '../constants';
 import { changeSinceBasis, combineHoldingAndFxChange } from '../fundEstimate';
 import { getMarketState, marketLocalDate, quoteIsAfterNavClose, pickPollInterval } from '../marketHours';
@@ -338,11 +339,12 @@ export function useQuotes(
 
       try {
         const effectiveFunds = await resolveEffectiveFunds();
-        const holdingSymbols = effectiveFunds.flatMap((f) =>
-          f.holdings.map((h) => h.sinaSymbol),
-        ).filter(Boolean);
+        const supportedHoldings = effectiveFunds.flatMap((f) => f.holdings).filter((holding) => (
+          isHoldingQuoteSupported(holding.sinaSymbol, holding.quoteSupported)
+        ));
+        const holdingSymbols = supportedHoldings.map((holding) => holding.sinaSymbol);
         const allSinaSymbols = [...new Set(holdingSymbols)];
-        const holdingCurrencies = effectiveFunds.flatMap((f) => f.holdings.map((h) => h.currency));
+        const holdingCurrencies = supportedHoldings.map((holding) => holding.currency);
         const currencies = [...new Set([...DISPLAY_FX_CURRENCIES, ...holdingCurrencies])];
         const [quotesData, fxRates, marketStatesData, slowFundData] = await Promise.all([
           fetchAllQuotes(allSinaSymbols),
@@ -398,9 +400,11 @@ export function useQuotes(
           // When the decision can't be made reliably (unknown market, no time,
           // unreliable date) we conservatively keep the quote.
           const navDate = officialNAV?.navDate ?? '';
-          const quoteIsAfterNav = (h: { sinaSymbol: string }) => {
+          const quoteIsAfterNav = (h: { sinaSymbol: string; quoteSupported?: boolean }) => {
+            if (!isHoldingQuoteSupported(h.sinaSymbol, h.quoteSupported)) return false;
             const q = fundQuotes.get(h.sinaSymbol);
-            if (!q || !navDate) return true;
+            if (!q) return false;
+            if (!navDate) return true;
             if (!q.time || q.dateReliable === false) return true;
             const decision = quoteIsAfterNavClose(h.sinaSymbol, q.time, navDate);
             return decision == null ? true : decision;

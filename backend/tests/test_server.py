@@ -1096,7 +1096,8 @@ class ServerDataRefreshTests(unittest.TestCase):
         server.store_quote_snapshots(line, line, ["sh000001"], states, now)
 
         with (
-            patch.object(server, "configured_sina_symbols_from_constants", return_value=["sh000001", "sz399006"]),
+            patch.object(server, "configured_quote_symbols", return_value=["sh000001", "sz399006"]),
+            patch.object(server, "configured_unsupported_quote_symbols", return_value=["kr005930"]),
             patch.object(server, "market_state_for_symbol", side_effect=lambda symbol, _now: {
                 "symbol": symbol, "state": "live", "lastTradingDay": "2026-05-26",
             }),
@@ -1106,6 +1107,41 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(health["healthy"], 1)
         self.assertEqual(health["issueCount"], 1)
         self.assertEqual(health["issues"][0]["symbol"], "sz399006")
+        self.assertEqual(health["unsupportedCount"], 1)
+        self.assertEqual(health["unsupported"][0]["symbol"], "kr005930")
+
+    def test_unsupported_quotes_are_diagnostic_only(self) -> None:
+        now = datetime.fromisoformat("2026-05-26T10:00:00+08:00")
+        with (
+            patch.object(server, "configured_quote_symbols", return_value=[]),
+            patch.object(
+                server,
+                "configured_unsupported_quote_symbols",
+                return_value=["kr000660", "kr005930"],
+            ),
+        ):
+            health = server.quote_snapshot_health(now)
+
+        self.assertEqual(health["status"], "ok")
+        self.assertEqual(health["issueCount"], 0)
+        self.assertEqual(health["unsupportedCount"], 2)
+
+    def test_dynamic_unsupported_holdings_are_not_polled(self) -> None:
+        holdings = [
+            {"sinaSymbol": "gb_nvda"},
+            {"sinaSymbol": "kr005930"},
+            {"sinaSymbol": "", "quoteSupported": False},
+        ]
+        with (
+            patch.object(server, "configured_sina_symbols_from_constants", return_value=["sh000001"]),
+            patch.object(server, "configured_fund_codes_from_constants", return_value=["000001"]),
+            patch.object(server, "read_fund_holdings_from_db", return_value=holdings),
+        ):
+            supported = server.configured_quote_symbols()
+            unsupported = server.configured_unsupported_quote_symbols()
+
+        self.assertEqual(supported, ["gb_nvda", "sh000001"])
+        self.assertIn("kr005930", unsupported)
 
     def test_quote_diagnostics_requires_configured_token(self) -> None:
         client = server.app.test_client()
@@ -1150,6 +1186,12 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertIn("sina-cn:sh000001", server.configured_market_return_items_from_constants())
         self.assertIn("tencent-hk:hkHSTECH", server.configured_market_return_items_from_constants())
         self.assertIn("hkHSTECH", server.configured_sina_symbols_from_constants())
+        self.assertNotIn("kr000660", server.configured_sina_symbols_from_constants())
+        self.assertNotIn("kr005930", server.configured_sina_symbols_from_constants())
+        self.assertEqual(
+            server.configured_unsupported_quote_symbols(),
+            ["kr000660", "kr005930"],
+        )
 
     def test_history_health_uses_disclosure_lag_and_completed_market_sessions(self) -> None:
         server.ensure_market_calendar_seeded(2026)

@@ -882,7 +882,8 @@
           "name": "SK海力士",
           "sinaSymbol": "kr000660",
           "weight": 0.0411,
-          "currency": "KRW"
+          "currency": "KRW",
+          "quoteSupported": false
         },
         {
           "symbol": "INTC",
@@ -903,7 +904,8 @@
           "name": "三星电子",
           "sinaSymbol": "kr005930",
           "weight": 0.0333,
-          "currency": "KRW"
+          "currency": "KRW",
+          "quoteSupported": false
         }
       ]
     },

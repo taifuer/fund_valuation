@@ -59,6 +59,15 @@ def configured_fund_codes() -> list[str]:
     ))
 
 
+def quote_supported_symbol(symbol: str, explicit: object = None) -> bool:
+    """Return whether the configured quote provider supports this holding."""
+    normalized = str(symbol or "").strip().lower()
+    if explicit is False or not SINA_SYMBOL_RE.fullmatch(normalized):
+        return False
+    # Sina's public quote endpoint does not provide stable Korean equity quotes.
+    return not normalized.startswith("kr")
+
+
 def configured_sina_symbols() -> list[str]:
     symbols: list[str] = []
     payload = load_universe()
@@ -75,8 +84,28 @@ def configured_sina_symbols() -> list[str]:
         if not isinstance(fund, dict):
             continue
         for holding in fund.get("holdings", []):
-            if isinstance(holding, dict) and SINA_SYMBOL_RE.fullmatch(str(holding.get("sinaSymbol") or "")):
-                symbols.append(str(holding["sinaSymbol"]))
+            if not isinstance(holding, dict):
+                continue
+            symbol = str(holding.get("sinaSymbol") or "")
+            if quote_supported_symbol(symbol, holding.get("quoteSupported")):
+                symbols.append(symbol)
+    return sorted(dict.fromkeys(symbols))
+
+
+def configured_unsupported_quote_symbols() -> list[str]:
+    symbols: list[str] = []
+    for fund in load_universe()["funds"]:
+        if not isinstance(fund, dict):
+            continue
+        for holding in fund.get("holdings", []):
+            if not isinstance(holding, dict):
+                continue
+            symbol = str(holding.get("sinaSymbol") or "")
+            if SINA_SYMBOL_RE.fullmatch(symbol) and not quote_supported_symbol(
+                symbol,
+                holding.get("quoteSupported"),
+            ):
+                symbols.append(symbol)
     return sorted(dict.fromkeys(symbols))
 
 
@@ -120,6 +149,7 @@ def default_fund_holdings(code: str) -> list[dict[str, Any]]:
                 "market": str(holding.get("market") or ""),
                 "sinaSymbol": sina_symbol,
                 "currency": str(holding.get("currency") or "CNY"),
+                "quoteSupported": quote_supported_symbol(sina_symbol, holding.get("quoteSupported")),
             })
         return rows
     return []

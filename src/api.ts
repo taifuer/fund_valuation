@@ -15,6 +15,7 @@ import type {
   SystemStatus,
 } from './types';
 import { globalFutureReferencePrice } from './quoteMath';
+import { isHoldingQuoteSupported } from './quoteCapabilities';
 
 type Market = 'us' | 'cn_index' | 'cn_full_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'crypto' | 'fund' | 'fx';
 
@@ -799,6 +800,7 @@ interface FundHoldingRaw {
   currency?: Holding['currency'];
   market?: string;
   reportDate?: string;
+  quoteSupported?: boolean;
 }
 
 interface SinaCnKlineRow {
@@ -934,7 +936,7 @@ export async function fetchFundHoldings(codes: string[], refresh = false): Promi
             currency,
             market: row.market,
             reportDate: row.reportDate,
-            quoteSupported: Boolean(sinaSymbol),
+            quoteSupported: isHoldingQuoteSupported(sinaSymbol, row.quoteSupported),
           } satisfies Holding;
         })
         .filter((item): item is Holding => item != null);
@@ -958,8 +960,12 @@ export async function fetchFundValuationBases(
         funds: funds.map((fund) => ({
           code: fund.code,
           navDate: fund.navDate,
-          symbols: [...new Set(fund.holdings.map((holding) => holding.sinaSymbol).filter(Boolean))],
-          currencies: [...new Set(fund.holdings.map((holding) => holding.currency))],
+          symbols: [...new Set(fund.holdings
+            .filter((holding) => isHoldingQuoteSupported(holding.sinaSymbol, holding.quoteSupported))
+            .map((holding) => holding.sinaSymbol))],
+          currencies: [...new Set(fund.holdings
+            .filter((holding) => isHoldingQuoteSupported(holding.sinaSymbol, holding.quoteSupported))
+            .map((holding) => holding.currency))],
         })),
       }),
     });
