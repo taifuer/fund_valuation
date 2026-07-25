@@ -649,7 +649,15 @@ export default function App() {
             </div>
             {fundManagementAvailable && !fundCollapsed && fundManagerOpen && (
               <div className={styles.managerOverlay} role="presentation" onClick={() => setFundManagerOpen(false)}>
-                <section ref={managerDialogRef} className={styles.fundManager} role="dialog" aria-modal="true" aria-label="管理基金" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+                <section
+                  ref={managerDialogRef}
+                  className={`${styles.fundManager} ${fundManagementGranted ? '' : styles.fundManagerLocked}`}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="管理基金"
+                  tabIndex={-1}
+                  onClick={(event) => event.stopPropagation()}
+                >
                   <div className={styles.managerHeader}>
                     <div>
                       <strong>管理基金</strong>
@@ -691,7 +699,7 @@ export default function App() {
                   ) : (
                     <div className={styles.managerAuthForm}>
                       <input
-                        className={styles.fundSearchInput}
+                        className={`${styles.fundSearchInput} ${styles.managerTokenInput}`}
                         type="password"
                         autoComplete="off"
                         placeholder="管理令牌"
