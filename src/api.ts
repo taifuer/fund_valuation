@@ -651,6 +651,13 @@ export async function fetchDashboardSnapshot(
   const uniqueSymbols = [...new Set(symbols.filter(Boolean))];
   const uniqueCurrencies = [...new Set(currencies.filter((currency) => currency !== 'CNY'))];
   if (uniqueSymbols.length > 160) return null;
+  if (uniqueSymbols.length === 0) {
+    return {
+      quotes: new Map(),
+      fxRates: await fetchFxRates(uniqueCurrencies),
+      marketStates: new Map(),
+    };
+  }
   const cacheKey = `${uniqueSymbols.join(',')}|${uniqueCurrencies.join(',')}`;
   const pending = dashboardSnapshotPending.get(cacheKey);
   if (pending) return pending;

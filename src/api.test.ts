@@ -126,6 +126,19 @@ describe('dashboard API contract', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it('loads a currencies-only snapshot without sending an empty dashboard request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const snapshot = await fetchDashboardSnapshot([], ['KRW']);
+
+    expect(snapshot?.quotes.size).toBe(0);
+    expect(snapshot?.marketStates.size).toBe(0);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/sina?list=fx_skrwcny'));
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/api/dashboard'));
+  });
+
   it('reads the runtime fund-management mode', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
