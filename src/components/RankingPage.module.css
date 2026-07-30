@@ -101,7 +101,7 @@
 }
 
 .rankCol { width: 7%; }
-.nameCol { width: 24%; }
+.nameCol { width: 20%; }
 .returnCol { width: 13%; }
 .riskCol { width: 13%; }
 .ratioCol { width: 13%; }
@@ -109,16 +109,16 @@
 .valueCol { width: 13%; }
 .categoryCol { width: 12%; }
 .statusCol { width: 13%; }
-.dateCol { width: 18%; }
+.dateCol { width: 22%; }
 
 .riskTable .rankCol { width: 7%; }
-.riskTable .nameCol { width: 22%; }
+.riskTable .nameCol { width: 20%; }
 .riskTable .returnCol { width: 11%; }
 .riskTable .riskCol { width: 12%; }
 .riskTable .ratioCol { width: 13%; }
 .riskTable .winRateCol { width: 10%; }
 .riskTable .categoryCol { width: 11%; }
-.riskTable .dateCol { width: 14%; }
+.riskTable .dateCol { width: 16%; }
 
 .rankingTable th:nth-child(3),
 .rankingTable td:nth-child(3),
@@ -338,11 +338,11 @@
   }
 
   .table {
-    min-width: 760px;
+    min-width: 742px;
   }
 
   .riskTable {
-    min-width: 850px;
+    min-width: 832px;
   }
 
   .table th,
@@ -382,7 +382,7 @@
   }
 
   .table .rankCol { width: 56px; }
-  .table .nameCol { width: 150px; }
+  .table .nameCol { width: 132px; }
   .table .returnCol { width: 92px; }
   .table .valueCol { width: 88px; }
   .table .statusCol { width: 96px; }

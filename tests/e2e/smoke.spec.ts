@@ -57,6 +57,25 @@ test('risk table places drawdown before return', async ({ page }) => {
   ]);
 });
 
+test('return and risk tables keep the name column compact', async ({ page }, testInfo) => {
+  for (const path of ['/returns', '/risk']) {
+    await page.goto(path);
+    const table = page.locator('table');
+    const nameHeader = table.locator('thead th').filter({ hasText: '名称' });
+    await expect(nameHeader).toBeVisible();
+    const widths = await table.evaluate((element) => ({
+      name: element.querySelector('thead th:nth-child(2)')?.getBoundingClientRect().width ?? 0,
+      table: element.getBoundingClientRect().width,
+    }));
+    expect(widths.name).toBeGreaterThan(0);
+    if (testInfo.project.name === 'mobile-chromium') {
+      expect(widths.name).toBeLessThanOrEqual(133);
+    } else {
+      expect(widths.name / widths.table).toBeLessThanOrEqual(0.205);
+    }
+  }
+});
+
 test('return and risk filters survive direct navigation and reload', async ({ page }) => {
   await page.goto('/returns?category=etf&etf=sector&range=1y&sort=value&order=asc');
   await expect(page.getByLabel('分类筛选').getByRole('button', { name: 'ETF', exact: true })).toHaveAttribute('aria-pressed', 'true');
