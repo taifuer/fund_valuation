@@ -345,8 +345,8 @@ export default function RiskPage({
           <colgroup>
             <col className={styles.rankCol} />
             <col className={styles.nameCol} />
-            <col className={styles.returnCol} />
             <col className={styles.riskCol} />
+            <col className={styles.returnCol} />
             <col className={styles.ratioCol} />
             <col className={styles.winRateCol} />
             <col className={styles.categoryCol} />
@@ -356,15 +356,6 @@ export default function RiskPage({
             <tr>
               <th>排名</th>
               <th>名称</th>
-              <th aria-sort={sortKey === 'return' ? (sortDirection === 'desc' ? 'descending' : 'ascending') : 'none'}>
-                <button
-                  type="button"
-                  className={`${styles.sortHeaderButton} ${sortKey === 'return' ? styles.sortHeaderButtonActive : ''}`}
-                  onClick={() => updateSort('return')}
-                >
-                  {sortLabel('收益', 'return')}
-                </button>
-              </th>
               <th aria-sort={sortKey === 'drawdown' ? (sortDirection === 'desc' ? 'descending' : 'ascending') : 'none'}>
                 <button
                   type="button"
@@ -372,6 +363,15 @@ export default function RiskPage({
                   onClick={() => updateSort('drawdown')}
                 >
                   {sortLabel('回撤', 'drawdown')}
+                </button>
+              </th>
+              <th aria-sort={sortKey === 'return' ? (sortDirection === 'desc' ? 'descending' : 'ascending') : 'none'}>
+                <button
+                  type="button"
+                  className={`${styles.sortHeaderButton} ${sortKey === 'return' ? styles.sortHeaderButtonActive : ''}`}
+                  onClick={() => updateSort('return')}
+                >
+                  {sortLabel('收益', 'return')}
                 </button>
               </th>
               <th aria-sort={sortKey === 'ratio' ? (sortDirection === 'desc' ? 'descending' : 'ascending') : 'none'}>
@@ -416,8 +416,8 @@ export default function RiskPage({
                     <strong>{item.name}</strong>
                     <span>{item.symbol}</span>
                   </td>
-                  <td className={`${styles.riskReturn} ${up ? styles.up : styles.down}`}>{formatPercent(item.returnPercent)}</td>
                   <td className={styles.drawdown}>{formatMetricPercent(item.maxDrawdownPercent)}</td>
+                  <td className={`${styles.riskReturn} ${up ? styles.up : styles.down}`}>{formatPercent(item.returnPercent)}</td>
                   <td className={styles.ratio}>{formatRatio(item)}</td>
                   <td className={styles.winRate}>{formatMetricPercent(item.winRatePercent)}</td>
                   <td><span className={styles.category}>{item.categoryLabel}</span></td>

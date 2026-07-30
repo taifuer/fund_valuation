@@ -44,6 +44,19 @@ test('mobile return and risk tables keep every column in a horizontal scroller',
   }
 });
 
+test('risk table places drawdown before return', async ({ page }) => {
+  await page.goto('/risk');
+  const headerCells = page.locator('table thead th');
+  await expect(headerCells).toHaveCount(8);
+  const headers = await headerCells.allTextContents();
+  expect(headers.map((header) => header.trim().replace(/[↑↓]/g, '').trim()).slice(0, 4)).toEqual([
+    '排名',
+    '名称',
+    '回撤',
+    '收益',
+  ]);
+});
+
 test('return and risk filters survive direct navigation and reload', async ({ page }) => {
   await page.goto('/returns?category=etf&etf=sector&range=1y&sort=value&order=asc');
   await expect(page.getByLabel('分类筛选').getByRole('button', { name: 'ETF', exact: true })).toHaveAttribute('aria-pressed', 'true');
