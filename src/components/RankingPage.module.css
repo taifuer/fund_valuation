@@ -338,7 +338,11 @@
   }
 
   .table {
-    min-width: 0;
+    min-width: 760px;
+  }
+
+  .riskTable {
+    min-width: 850px;
   }
 
   .table th,
@@ -351,22 +355,43 @@
     padding: 0 5px;
   }
 
-  .rankingTable th:nth-child(n+4),
-  .rankingTable td:nth-child(n+4),
-  .rankingTable col:nth-child(n+4),
-  .riskTable th:nth-child(3),
-  .riskTable td:nth-child(3),
-  .riskTable col:nth-child(3),
-  .riskTable th:nth-child(n+5),
-  .riskTable td:nth-child(n+5),
-  .riskTable col:nth-child(n+5) {
-    display: none;
+  .table th:first-child,
+  .table td:first-child,
+  .table th:nth-child(2),
+  .table td:nth-child(2) {
+    background: #fff;
+    position: sticky;
+    z-index: 2;
   }
 
-  .rankingTable .rankCol,
-  .riskTable .rankCol { width: 18%; }
-  .rankingTable .nameCol,
-  .riskTable .nameCol { width: 52%; }
-  .rankingTable .returnCol,
-  .riskTable .riskCol { width: 30%; }
+  .table thead th:first-child,
+  .table thead th:nth-child(2) {
+    background: #f8fafc;
+    z-index: 3;
+  }
+
+  .table th:first-child,
+  .table td:first-child {
+    left: 0;
+  }
+
+  .table th:nth-child(2),
+  .table td:nth-child(2) {
+    box-shadow: 1px 0 0 #e2e8f0;
+    left: 56px;
+  }
+
+  .table .rankCol { width: 56px; }
+  .table .nameCol { width: 150px; }
+  .table .returnCol { width: 92px; }
+  .table .valueCol { width: 88px; }
+  .table .statusCol { width: 96px; }
+  .table .categoryCol { width: 86px; }
+  .table .dateCol { width: 192px; }
+
+  .riskTable .returnCol { width: 88px; }
+  .riskTable .riskCol { width: 92px; }
+  .riskTable .ratioCol { width: 120px; }
+  .riskTable .winRateCol { width: 88px; }
+  .riskTable .dateCol { width: 170px; }
 }

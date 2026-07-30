@@ -15,6 +15,35 @@ test('mobile layout keeps page-level content within the viewport', async ({ page
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
+test('mobile return and risk tables keep every column in a horizontal scroller', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-chromium', 'Mobile table behavior');
+
+  for (const path of ['/returns', '/risk']) {
+    await page.goto(path);
+    const table = page.locator('table');
+    const scroller = table.locator('..');
+    const nameHeader = table.locator('thead th').filter({ hasText: '名称' });
+    await expect(table.locator('thead th').filter({ hasText: '截至' })).toBeVisible();
+
+    const before = await scroller.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollLeft: element.scrollLeft,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(before.scrollWidth).toBeGreaterThan(before.clientWidth);
+
+    const stickyLeftBefore = await nameHeader.evaluate(
+      (element) => element.getBoundingClientRect().left,
+    );
+    await scroller.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
+    await expect.poll(() => scroller.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+    const stickyLeftAfter = await nameHeader.evaluate(
+      (element) => element.getBoundingClientRect().left,
+    );
+    expect(Math.abs(stickyLeftAfter - stickyLeftBefore)).toBeLessThanOrEqual(1);
+  }
+});
+
 test('return and risk filters survive direct navigation and reload', async ({ page }) => {
   await page.goto('/returns?category=etf&etf=sector&range=1y&sort=value&order=asc');
   await expect(page.getByLabel('分类筛选').getByRole('button', { name: 'ETF', exact: true })).toHaveAttribute('aria-pressed', 'true');
