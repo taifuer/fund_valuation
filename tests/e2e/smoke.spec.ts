@@ -73,6 +73,37 @@ test('risk table places drawdown before return', async ({ page }) => {
 });
 
 test('risk table defaults to the largest drawdown first', async ({ page }) => {
+  await page.route('**/api/marketreturns?*', async (route) => {
+    const range = (returnPercent: number, maxDrawdownPercent: number) => ({
+      label: '今年',
+      returnPercent,
+      maxDrawdownPercent,
+      winRatePercent: 50,
+      startDate: '2026-01-01',
+      endDate: '2026-07-31',
+      startClose: 100,
+      endClose: 100 + returnPercent,
+    });
+    await route.fulfill({
+      json: {
+        'sina-cn:sh000001': {
+          source: 'sina-cn',
+          symbol: 'sh000001',
+          ranges: { ytd: range(8, -5) },
+        },
+        'sina-cn:sz399006': {
+          source: 'sina-cn',
+          symbol: 'sz399006',
+          ranges: { ytd: range(4, -12) },
+        },
+        'sina-cn:sh000300': {
+          source: 'sina-cn',
+          symbol: 'sh000300',
+          ranges: { ytd: range(6, -8) },
+        },
+      },
+    });
+  });
   await page.goto('/risk');
   await expect(page.getByRole('button', { name: '回撤 ↓' })).toBeVisible();
   const drawdownCells = page.locator('table tbody tr td:nth-child(3)');
@@ -80,10 +111,7 @@ test('risk table defaults to the largest drawdown first', async ({ page }) => {
   const drawdowns = (await drawdownCells.allTextContents())
     .map((value) => Math.abs(Number.parseFloat(value)))
     .filter(Number.isFinite);
-  expect(drawdowns.length).toBeGreaterThan(1);
-  for (let index = 1; index < drawdowns.length; index += 1) {
-    expect(drawdowns[index - 1]).toBeGreaterThanOrEqual(drawdowns[index]);
-  }
+  expect(drawdowns).toEqual([12, 8, 5]);
 });
 
 test('return and risk tables keep the name column compact', async ({ page }, testInfo) => {
