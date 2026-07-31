@@ -158,7 +158,7 @@ function sortableValue(item: RiskItem, sortKey: SortKey) {
 }
 
 function defaultDirection(sortKey: SortKey): SortDirection {
-  return sortKey === 'drawdown' ? 'asc' : 'desc';
+  return 'desc';
 }
 
 function nextDirection(currentKey: SortKey, currentDirection: SortDirection, nextKey: SortKey): SortDirection {
@@ -193,7 +193,9 @@ export default function RiskPage({
   const [category, setCategory] = useState<CategoryKey>(() => choiceFromSearch(window.location.search, 'category', CATEGORY_KEYS, 'index'));
   const [etfFilter, setEtfFilter] = useState<EtfFilterKey>(() => choiceFromSearch(window.location.search, 'etf', ETF_FILTER_KEYS, 'all'));
   const [sortKey, setSortKey] = useState<SortKey>(() => choiceFromSearch(window.location.search, 'sort', SORT_KEYS, 'drawdown'));
-  const [sortDirection, setSortDirection] = useState<SortDirection>(() => choiceFromSearch(window.location.search, 'order', SORT_DIRECTIONS, 'asc'));
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => (
+    choiceFromSearch(window.location.search, 'order', SORT_DIRECTIONS, defaultDirection(sortKey))
+  ));
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
   const [returnsLoading, setReturnsLoading] = useState(false);
   const refreshTick = useMarketReturnRefreshTick();
@@ -206,7 +208,7 @@ export default function RiskPage({
       range: range === 'ytd' ? null : range,
       etf: category === 'etf' && etfFilter !== 'all' ? etfFilter : null,
       sort: sortKey === 'drawdown' ? null : sortKey,
-      order: sortDirection === 'asc' ? null : sortDirection,
+      order: sortDirection === defaultDirection(sortKey) ? null : sortDirection,
     });
   }, [category, etfFilter, range, sortDirection, sortKey]);
   const selectedMarketConfigs = useMemo(
@@ -282,9 +284,7 @@ export default function RiskPage({
 
   function sortLabel(label: string, key: SortKey) {
     if (sortKey !== key) return label;
-    const arrow = key === 'drawdown'
-      ? (sortDirection === 'asc' ? '↓' : '↑')
-      : (sortDirection === 'desc' ? '↓' : '↑');
+    const arrow = sortDirection === 'desc' ? '↓' : '↑';
     return `${label} ${arrow}`;
   }
 

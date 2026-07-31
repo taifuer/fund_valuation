@@ -25,6 +25,7 @@ test('mobile return and risk tables keep every column in a horizontal scroller',
       const table = page.locator('table');
       const scroller = table.locator('..');
       const nameHeader = table.locator('thead th').filter({ hasText: '名称' });
+      const thirdHeader = table.locator('thead th:nth-child(3)');
       const fourthHeader = table.locator('thead th:nth-child(4)');
       await expect(table.locator('thead th').filter({ hasText: '截至' })).toBeVisible();
 
@@ -34,11 +35,16 @@ test('mobile return and risk tables keep every column in a horizontal scroller',
         scrollWidth: element.scrollWidth,
       }));
       expect(before.scrollWidth).toBeGreaterThan(before.clientWidth);
-      const firstFourFit = await fourthHeader.evaluate((element) => {
+      const primaryViewport = await fourthHeader.evaluate((element) => {
         const scrollerRect = element.closest('section')?.getBoundingClientRect();
-        return scrollerRect ? element.getBoundingClientRect().right <= scrollerRect.right + 1 : false;
+        const thirdRect = element.previousElementSibling?.getBoundingClientRect();
+        return {
+          fourthStartsOutside: Boolean(scrollerRect && element.getBoundingClientRect().left >= scrollerRect.right - 1),
+          thirdFits: Boolean(scrollerRect && thirdRect && thirdRect.right <= scrollerRect.right + 1),
+        };
       });
-      expect(firstFourFit).toBe(true);
+      await expect(thirdHeader).toBeVisible();
+      expect(primaryViewport).toEqual({ fourthStartsOutside: true, thirdFits: true });
 
       const stickyLeftBefore = await nameHeader.evaluate(
         (element) => element.getBoundingClientRect().left,
@@ -64,6 +70,20 @@ test('risk table places drawdown before return', async ({ page }) => {
     '回撤',
     '收益',
   ]);
+});
+
+test('risk table defaults to the largest drawdown first', async ({ page }) => {
+  await page.goto('/risk');
+  await expect(page.getByRole('button', { name: '回撤 ↓' })).toBeVisible();
+  const drawdownCells = page.locator('table tbody tr td:nth-child(3)');
+  await expect(drawdownCells.first()).toBeVisible();
+  const drawdowns = (await drawdownCells.allTextContents())
+    .map((value) => Math.abs(Number.parseFloat(value)))
+    .filter(Number.isFinite);
+  expect(drawdowns.length).toBeGreaterThan(1);
+  for (let index = 1; index < drawdowns.length; index += 1) {
+    expect(drawdowns[index - 1]).toBeGreaterThanOrEqual(drawdowns[index]);
+  }
 });
 
 test('return and risk tables keep the name column compact', async ({ page }, testInfo) => {
@@ -94,10 +114,10 @@ test('return and risk filters survive direct navigation and reload', async ({ pa
   await page.reload();
   await expect(page.getByLabel('ETF类型筛选').getByRole('button', { name: '行业ETF' })).toHaveAttribute('aria-pressed', 'true');
 
-  await page.goto('/risk?category=asset&range=1m&sort=winRate&order=desc');
+  await page.goto('/risk?category=asset&range=1m&sort=winRate&order=asc');
   await expect(page.getByLabel('分类筛选').getByRole('button', { name: '资产' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('风险区间').getByRole('button', { name: '近1月' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page).toHaveURL(/sort=winRate&order=desc/);
+  await expect(page).toHaveURL(/sort=winRate&order=asc/);
 });
 
 test('diagnostics route stays hidden from primary navigation and requires a token', async ({ page }) => {

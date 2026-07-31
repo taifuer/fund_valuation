@@ -338,11 +338,13 @@
   }
 
   .table {
-    min-width: calc(544px + clamp(90px, calc(100vw - 230px), 112px));
+    --mobile-name-width: clamp(90px, calc(100vw - 230px), 112px);
+    --mobile-primary-width: calc(100vw - 82px - var(--mobile-name-width));
+    min-width: calc(100vw + 387px);
   }
 
   .riskTable {
-    min-width: calc(624px + clamp(90px, calc(100vw - 230px), 112px));
+    min-width: calc(100vw + 467px);
   }
 
   .table th,
@@ -382,15 +384,16 @@
   }
 
   .table .rankCol { width: 56px; }
-  .table .nameCol { width: clamp(90px, calc(100vw - 230px), 112px); }
+  .table .nameCol { width: var(--mobile-name-width); }
   .table .returnCol { width: 75px; }
   .table .valueCol { width: 75px; }
   .table .statusCol { width: 90px; }
   .table .categoryCol { width: 80px; }
   .table .dateCol { width: 168px; }
 
+  .rankingTable .returnCol { width: var(--mobile-primary-width); }
   .riskTable .returnCol { width: 75px; }
-  .riskTable .riskCol { width: 75px; }
+  .riskTable .riskCol { width: var(--mobile-primary-width); }
   .riskTable .ratioCol { width: 110px; }
   .riskTable .winRateCol { width: 80px; }
   .riskTable .dateCol { width: 148px; }
