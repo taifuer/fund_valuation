@@ -3,6 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 import Header from './Header';
 
 describe('Header', () => {
+  it('describes the dashboard coverage in the brand subtitle', () => {
+    render(<Header fxRates={new Map()} activePage="overview" onPageChange={vi.fn()} />);
+    expect(screen.getByText('Markets · ETFs · QDII Funds')).toBeInTheDocument();
+  });
+
   it('reports degraded freshness without adding a visible status banner', () => {
     render(
       <Header

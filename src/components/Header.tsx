@@ -65,7 +65,7 @@ export default function Header({
                   全球资产看板
                 </button>
               </h1>
-              <div className={styles.subtitle}>Funds · ETF · Market Assets</div>
+              <div className={styles.subtitle}>Markets · ETFs · QDII Funds</div>
             </div>
           </div>
           <nav className={styles.nav} aria-label="页面切换">
