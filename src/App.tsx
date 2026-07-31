@@ -27,7 +27,7 @@ const RankingPage = lazy(() => import('./components/RankingPage'));
 const RiskPage = lazy(() => import('./components/RiskPage'));
 const DiagnosticsPage = lazy(() => import('./components/DiagnosticsPage'));
 
-type SortMode = 'estimate' | 'official';
+type SortMode = 'pending' | 'preview' | 'official';
 type SortDirection = 'desc' | 'asc';
 
 const FUND_SECTION_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_section';
@@ -120,8 +120,12 @@ function sortValue(estimate: FundEstimate, mode: SortMode): number | null {
   if (mode === 'official') {
     return estimate.officialNAV?.officialChange ?? null;
   }
-  // Sort by the coverage-normalized change so fund ordering matches the
-  // headline number shown on each card (not the under-stated raw value).
+  const projection = mode === 'preview'
+    ? estimate.projections?.preview ?? estimate.projections?.pending
+    : estimate.projections?.pending ?? estimate.projections?.preview;
+  if (projection) return projection.changePercent;
+  // Compatibility fallback for custom funds and servers not yet exposing the
+  // date-aligned endpoint.
   if (estimate.normalizedNAVLocal === null) return null;
   return estimate.normalizedChange;
 }
@@ -269,7 +273,7 @@ export default function App() {
     : activePage === 'ranking'
       ? marketPageData.error
       : null;
-  const [sortMode, setSortMode] = useState<SortMode>('estimate');
+  const [sortMode, setSortMode] = useState<SortMode>('pending');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [fundCollapsed, setFundCollapsed] = useState(() => readCollapsedFlag(FUND_SECTION_COLLAPSED_KEY));
   const [fundSummaryCollapsed, setFundSummaryCollapsed] = useState(() => readCollapsedFlag(FUND_SUMMARY_COLLAPSED_KEY));
@@ -362,7 +366,18 @@ export default function App() {
     return sorted.map((estimate, i) => ({ estimate, rank: i + 1 }));
   }, [fundEstimates, sortMode, sortDirection]);
 
-  const sortLabel = sortMode === 'official' ? '按最新净值涨跌排序' : '按实时估算（含汇率）涨跌排序';
+  useEffect(() => {
+    if (fundLoading || sortMode !== 'pending' || fundEstimates.length === 0) return;
+    const hasPending = fundEstimates.some((estimate) => estimate.projections?.pending);
+    const hasPreview = fundEstimates.some((estimate) => estimate.projections?.preview);
+    if (!hasPending && hasPreview) setSortMode('preview');
+  }, [fundEstimates, fundLoading, sortMode]);
+
+  const sortLabel = sortMode === 'official'
+    ? '按最新净值涨跌排序'
+    : sortMode === 'preview'
+      ? '按实时参考（含汇率）涨跌排序'
+      : '按待公布估值（含汇率）涨跌排序';
   const overviewFundSummaries = useMemo(() => {
     const items = funds.map((fund) => ({ fund, nav: overviewData.fundSummaries.get(fund.code) ?? null }));
     return items.sort((a, b) => {
@@ -615,11 +630,19 @@ export default function App() {
                   <div className={styles.sortToggle} aria-label="基金排序方式">
                     <button
                       type="button"
-                      aria-pressed={sortMode === 'estimate'}
-                      className={`${styles.sortButton} ${sortMode === 'estimate' ? styles.sortButtonActive : ''}`}
-                      onClick={() => setSortMode('estimate')}
+                      aria-pressed={sortMode === 'pending'}
+                      className={`${styles.sortButton} ${sortMode === 'pending' ? styles.sortButtonActive : ''}`}
+                      onClick={() => setSortMode('pending')}
                     >
-                      实时估算
+                      待公布估值
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={sortMode === 'preview'}
+                      className={`${styles.sortButton} ${sortMode === 'preview' ? styles.sortButtonActive : ''}`}
+                      onClick={() => setSortMode('preview')}
+                    >
+                      实时参考
                     </button>
                     <button
                       type="button"

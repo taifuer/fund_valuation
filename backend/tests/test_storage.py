@@ -32,6 +32,7 @@ class StorageMigrationTests(unittest.TestCase):
                 tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
             self.assertIn("fund_nav_history", tables)
             self.assertIn("market_quote_snapshots", tables)
+            self.assertIn("fund_estimate_snapshots", tables)
 
     def test_backup_and_confirmed_restore_preserve_data(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -64,6 +65,29 @@ class StorageMigrationTests(unittest.TestCase):
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
             with self.assertRaisesRegex(RuntimeError, "newer than supported"):
                 migrate_database(path)
+
+    def test_schema_six_estimate_table_gains_raw_change_column(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "schema-six.db"
+            with sqlite3.connect(path) as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE fund_estimate_snapshots (
+                      code TEXT, target_date TEXT, estimate_kind TEXT, model_version TEXT,
+                      base_nav_date TEXT, base_nav REAL, estimated_nav REAL,
+                      estimated_change REAL, cumulative_change REAL, coverage REAL,
+                      benchmark_source TEXT, benchmark_symbol TEXT, phase TEXT,
+                      complete INTEGER, as_of INTEGER, actual_nav REAL,
+                      actual_change REAL, error REAL
+                    );
+                    PRAGMA user_version = 6;
+                    """
+                )
+
+            self.assertEqual(migrate_database(path), SCHEMA_VERSION)
+            with sqlite3.connect(path) as conn:
+                columns = {row[1] for row in conn.execute("PRAGMA table_info(fund_estimate_snapshots)")}
+            self.assertIn("raw_change", columns)
 
     def test_scheduled_backup_respects_interval_and_prunes_expired_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

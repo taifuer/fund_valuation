@@ -18,7 +18,7 @@ import time
 import uuid
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
@@ -36,8 +36,10 @@ from .config import (
     configured_sina_symbols as universe_sina_symbols,
     configured_unsupported_quote_symbols as universe_unsupported_quote_symbols,
     default_fund_holdings as universe_fund_holdings,
+    fund_benchmark as universe_fund_benchmark,
     quote_supported_symbol as universe_quote_supported_symbol,
 )
+from .estimation import estimate_cumulative_return, select_calibration
 from .quotes import normalize_quote_text
 from .contracts import API_SCHEMA_VERSION, DASHBOARD_SCHEMA_VERSION, validate_dashboard_payload
 from .observability import REQUEST_METRICS, log_event
@@ -147,6 +149,7 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "fundholdings": (80, 60),
     "fundholdings_refresh": (10, 60),
     "fundvaluationbasis": (120, 60),
+    "fundestimates": (120, 60),
     "fundhistory": (120, 60),
     "fundhistory_refresh": (10, 60),
     "fundreturns": (120, 60),
@@ -162,6 +165,8 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
 }
 
 BACKTEST_MODEL_VERSION = "quarterly_holdings_fx_v3"
+FUND_ESTIMATE_MODEL_VERSION = "date_aligned_benchmark_v1"
+FUND_ESTIMATE_SNAPSHOT_NAME = "fund-estimates"
 EASTMONEY_GLOBAL_QUOTES: dict[str, tuple[str, str]] = {
     "int_nikkei": ("100.N225", "日经指数"),
 }
@@ -2381,6 +2386,539 @@ def read_fund_valuation_basis(items: list[dict[str, Any]]) -> dict[str, Any]:
     return results
 
 
+def cn_valuation_day_on_or_before(current: datetime) -> str | None:
+    local = current.astimezone(ZoneInfo("Asia/Shanghai"))
+    day = local.strftime("%Y-%m-%d")
+    row = market_calendar_row("cn", day)
+    # Beijing midnight is still the previous US trading session. Roll the
+    # valuation cycle after that session has closed in both daylight-saving and
+    # standard time, but before the first Asian cash market opens.
+    if row and row["status"] in {"open", "half_day"}:
+        if local.hour >= 6:
+            return day
+        return previous_trading_day("cn", local)
+    return previous_trading_day("cn", local + timedelta(days=1))
+
+
+def previous_cn_valuation_day(day: str) -> str | None:
+    parsed = datetime.fromisoformat(day).replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+    return previous_trading_day("cn", parsed)
+
+
+def market_value_date_on_or_before(market: str, day: str) -> str | None:
+    if market not in MARKET_CALENDARS:
+        return None
+    candidate = datetime.fromisoformat(day)
+    for days_back in range(15):
+        value = (candidate - timedelta(days=days_back)).strftime("%Y-%m-%d")
+        row = market_calendar_row(market, value)
+        if row and row["status"] in {"open", "half_day"}:
+            return value
+    return None
+
+
+def market_completed_valuation_date(market: str, target_date: str, current: datetime) -> bool:
+    if market not in MARKET_CALENDARS:
+        return False
+    row = market_calendar_row(market, target_date)
+    if row and row["status"] in {"holiday", "weekend"}:
+        return True
+    if not row or row["status"] not in {"open", "half_day"}:
+        return False
+    calendar = MARKET_CALENDARS[market]
+    local = current.astimezone(ZoneInfo(str(calendar["timezone"])))
+    local_date = local.strftime("%Y-%m-%d")
+    if target_date < local_date:
+        return True
+    if target_date > local_date:
+        return False
+    closes = [
+        parse_hhmm(str(end))
+        for start, end in row["sessions"]
+        if parse_hhmm(str(start)) < parse_hhmm(str(end))
+    ]
+    return bool(closes) and local.hour * 60 + local.minute >= max(closes)
+
+
+def quote_market_date(symbol: str, quote_time: str) -> str | None:
+    market = market_key_for_symbol(symbol)
+    if not market or market not in MARKET_CALENDARS or not quote_time:
+        return None
+    normalized = quote_time.strip().replace(" ", "T")
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}", normalized):
+        normalized += ":00"
+    if not re.search(r"(?:Z|[+-]\d{2}:?\d{2})$", normalized):
+        normalized += "+08:00"
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    timezone = str(MARKET_CALENDARS[market]["timezone"])
+    return parsed.astimezone(ZoneInfo(timezone)).strftime("%Y-%m-%d")
+
+
+def parse_dashboard_fx_rates(text: str) -> dict[str, dict[str, Any]]:
+    results: dict[str, dict[str, Any]] = {}
+    for line in text.splitlines():
+        match = re.match(r'^var\s+hq_str_fx_s([a-z]{3})cny="([^"]*)"', line.strip(), re.I)
+        if not match:
+            continue
+        fields = match.group(2).split(",")
+        rate = safe_float(fields[1]) if len(fields) > 1 else None
+        day = next((field for field in reversed(fields) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", field)), "")
+        if rate and rate > 0:
+            results[match.group(1).upper()] = {"rate": rate, "date": day}
+    return results
+
+
+def fund_estimate_calibration(code: str) -> dict[str, Any]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT raw_change, actual_change
+            FROM fund_estimate_snapshots
+            WHERE code = ? AND estimate_kind = 'pending'
+              AND actual_change IS NOT NULL
+            ORDER BY target_date ASC
+            """,
+            (code,),
+        ).fetchall()
+    pairs = [(float(predicted) / 100, float(actual) / 100) for predicted, actual in rows]
+    return select_calibration(pairs)
+
+
+def reconcile_fund_estimate_snapshots(codes: list[str] | None = None) -> int:
+    normalized = sorted(dict.fromkeys(codes or configured_fund_codes_from_constants()))
+    if not normalized:
+        return 0
+    placeholders = ",".join("?" for _ in normalized)
+    with get_conn() as conn:
+        cursor = conn.execute(
+            f"""
+            UPDATE fund_estimate_snapshots
+            SET actual_nav = (
+                  SELECT history.nav FROM fund_nav_history AS history
+                  WHERE history.code = fund_estimate_snapshots.code
+                    AND history.date = fund_estimate_snapshots.target_date
+                ),
+                actual_change = (
+                  SELECT history.change_percent FROM fund_nav_history AS history
+                  WHERE history.code = fund_estimate_snapshots.code
+                    AND history.date = fund_estimate_snapshots.target_date
+                ),
+                error = estimated_change - (
+                  SELECT history.change_percent FROM fund_nav_history AS history
+                  WHERE history.code = fund_estimate_snapshots.code
+                    AND history.date = fund_estimate_snapshots.target_date
+                )
+            WHERE code IN ({placeholders})
+              AND EXISTS (
+                SELECT 1 FROM fund_nav_history AS history
+                WHERE history.code = fund_estimate_snapshots.code
+                  AND history.date = fund_estimate_snapshots.target_date
+              )
+            """,
+            tuple(normalized),
+        )
+    return max(int(cursor.rowcount), 0)
+
+
+def store_fund_estimate_snapshots(payload: dict[str, Any]) -> int:
+    rows: list[tuple[Any, ...]] = []
+    for code, result in payload.items():
+        if not isinstance(result, dict):
+            continue
+        for kind in ("pending", "preview"):
+            projection = result.get(kind)
+            if not isinstance(projection, dict):
+                continue
+            rows.append((
+                code,
+                str(projection.get("targetDate") or ""),
+                kind,
+                FUND_ESTIMATE_MODEL_VERSION,
+                str(result.get("officialNavDate") or ""),
+                float(result.get("officialNav") or 0),
+                float(projection.get("estimatedNav") or 0),
+                float(projection.get("rawChangePercent") or projection.get("changePercent") or 0),
+                float(projection.get("changePercent") or 0),
+                float(projection.get("cumulativeChangePercent") or 0),
+                float(projection.get("coverage") or 0),
+                str(projection.get("benchmarkSource") or ""),
+                str(projection.get("benchmarkSymbol") or ""),
+                str(projection.get("phase") or "CLOSED"),
+                int(bool(projection.get("complete"))),
+                int(projection.get("asOf") or now_ms()),
+            ))
+    if not rows:
+        return 0
+    with get_conn() as conn:
+        conn.executemany(
+            """
+            INSERT INTO fund_estimate_snapshots(
+              code, target_date, estimate_kind, model_version,
+              base_nav_date, base_nav, estimated_nav, raw_change, estimated_change,
+              cumulative_change, coverage, benchmark_source, benchmark_symbol,
+              phase, complete, as_of
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(code, target_date, estimate_kind, model_version) DO UPDATE SET
+              base_nav_date = excluded.base_nav_date,
+              base_nav = excluded.base_nav,
+              estimated_nav = excluded.estimated_nav,
+              raw_change = excluded.raw_change,
+              estimated_change = excluded.estimated_change,
+              cumulative_change = excluded.cumulative_change,
+              coverage = excluded.coverage,
+              benchmark_source = excluded.benchmark_source,
+              benchmark_symbol = excluded.benchmark_symbol,
+              phase = excluded.phase,
+              complete = excluded.complete,
+              as_of = excluded.as_of
+            """,
+            rows,
+        )
+    reconcile_fund_estimate_snapshots(sorted(payload))
+    return len(rows)
+
+
+def build_fund_estimates(
+    codes: list[str] | None = None,
+    *,
+    current: datetime | None = None,
+    dashboard_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    ensure_market_calendar_seeded()
+    now = current or datetime.now(ZoneInfo("Asia/Shanghai"))
+    normalized_codes = sorted(dict.fromkeys(codes or configured_fund_codes_from_constants()))
+    dashboard = dashboard_payload or read_dashboard_snapshot() or {}
+    quotes = dashboard.get("quotes") if isinstance(dashboard.get("quotes"), dict) else {}
+    states = dashboard.get("marketStates") if isinstance(dashboard.get("marketStates"), dict) else {}
+    current_fx = parse_dashboard_fx_rates(str(dashboard.get("fxText") or ""))
+    as_of = int(dashboard.get("generatedAt") or now_ms())
+    preview_target = cn_valuation_day_on_or_before(now)
+    if not preview_target:
+        return {}
+
+    with get_conn() as conn:
+        stock_cache: dict[tuple[str, str], float | None] = {}
+        carried_stock_cache: dict[tuple[str, str], float | None] = {}
+        fx_cache: dict[tuple[str, str], float | None] = {}
+        benchmark_cache: dict[tuple[str, str, str], float | None] = {}
+
+        def historical_stock(symbol: str, day: str) -> float | None:
+            key = (symbol, day)
+            if key in stock_cache:
+                return stock_cache[key]
+            market = market_key_for_symbol(symbol)
+            expected = market_value_date_on_or_before(market, day) if market else None
+            row = conn.execute(
+                """
+                SELECT date, close FROM stock_daily_history
+                WHERE sina_symbol = ? AND date <= ?
+                ORDER BY date DESC LIMIT 1
+                """,
+                (symbol, day),
+            ).fetchone()
+            value = float(row[1]) if row and (not expected or str(row[0]) == expected) else None
+            stock_cache[key] = value
+            return value
+
+        def carried_stock(symbol: str, day: str) -> float | None:
+            key = (symbol, day)
+            if key not in carried_stock_cache:
+                row = conn.execute(
+                    """
+                    SELECT close FROM stock_daily_history
+                    WHERE sina_symbol = ? AND date <= ?
+                    ORDER BY date DESC LIMIT 1
+                    """,
+                    (symbol, day),
+                ).fetchone()
+                carried_stock_cache[key] = float(row[0]) if row else None
+            return carried_stock_cache[key]
+
+        def historical_fx(currency: str, day: str) -> float | None:
+            if currency == "CNY":
+                return 1.0
+            key = (currency, day)
+            if key not in fx_cache:
+                row = conn.execute(
+                    """
+                    SELECT rate FROM fx_daily_history
+                    WHERE currency = ? AND date <= ?
+                    ORDER BY date DESC LIMIT 1
+                    """,
+                    (currency, day),
+                ).fetchone()
+                fx_cache[key] = float(row[0]) if row else None
+            return fx_cache[key]
+
+        def historical_benchmark(source: str, symbol: str, day: str) -> float | None:
+            key = (source, symbol, day)
+            if key not in benchmark_cache:
+                quote_symbol = market_history_quote_symbol(source, symbol)
+                market = market_key_for_symbol(quote_symbol or "")
+                expected = market_value_date_on_or_before(market, day) if market else None
+                row = conn.execute(
+                    """
+                    SELECT date, close FROM market_history
+                    WHERE source = ? AND symbol = ? AND date <= ?
+                    ORDER BY date DESC LIMIT 1
+                    """,
+                    (source, symbol, day),
+                ).fetchone()
+                benchmark_cache[key] = float(row[1]) if row and (not expected or str(row[0]) == expected) else None
+            return benchmark_cache[key]
+
+        def carried_benchmark(source: str, symbol: str, day: str) -> float | None:
+            row = conn.execute(
+                """
+                SELECT close FROM market_history
+                WHERE source = ? AND symbol = ? AND date <= ?
+                ORDER BY date DESC LIMIT 1
+                """,
+                (source, symbol, day),
+            ).fetchone()
+            return float(row[0]) if row else None
+
+        def quote_value(symbol: str, target: str, *, include_extended: bool) -> float | None:
+            raw = quotes.get(symbol)
+            if not isinstance(raw, dict) or raw.get("dateReliable") is False:
+                return None
+            session = str(raw.get("session") or "regular")
+            if include_extended:
+                value = safe_float(raw.get("price"))
+                quote_time = str(raw.get("time") or "")
+            else:
+                value = safe_float(raw.get("regularPrice")) if session in {"pre", "post"} else safe_float(raw.get("price"))
+                quote_time = str(raw.get("regularTime") or raw.get("time") or "")
+            expected_market_date = market_value_date_on_or_before(market_key_for_symbol(symbol) or "", target)
+            if not value or value <= 0 or quote_market_date(symbol, quote_time) != expected_market_date:
+                return None
+            return value
+
+        def quote_previous_close(symbol: str, target: str) -> float | None:
+            raw = quotes.get(symbol)
+            if not isinstance(raw, dict) or raw.get("dateReliable") is False:
+                return None
+            quote_time = str(raw.get("time") or raw.get("regularTime") or "")
+            quote_day = quote_market_date(symbol, quote_time)
+            market = market_key_for_symbol(symbol)
+            if not quote_day or not market:
+                return None
+            previous_day = market_value_date_on_or_before(
+                market,
+                (datetime.fromisoformat(quote_day) - timedelta(days=1)).strftime("%Y-%m-%d"),
+            )
+            expected_day = market_value_date_on_or_before(market, target)
+            value = safe_float(raw.get("previousClose"))
+            if previous_day != expected_day or not value or value <= 0:
+                return None
+            return value
+
+        def settled_stock(symbol: str, day: str) -> float | None:
+            return (
+                historical_stock(symbol, day)
+                or quote_value(symbol, day, include_extended=False)
+                or quote_previous_close(symbol, day)
+            )
+
+        def preview_stock(symbol: str, day: str) -> float | None:
+            if day != preview_target:
+                return settled_stock(symbol, day)
+            return (
+                quote_value(symbol, day, include_extended=True)
+                or settled_stock(symbol, day)
+                or carried_stock(symbol, day)
+            )
+
+        def preview_fx(currency: str, day: str) -> float | None:
+            if currency == "CNY":
+                return 1.0
+            if day == preview_target:
+                raw = current_fx.get(currency)
+                if raw and (not raw.get("date") or str(raw.get("date")) == day):
+                    return float(raw["rate"])
+            return historical_fx(currency, day)
+
+        def settled_benchmark(source: str, symbol: str, day: str) -> float | None:
+            value = historical_benchmark(source, symbol, day)
+            if value is not None:
+                return value
+            quote_symbol = market_history_quote_symbol(source, symbol)
+            return quote_value(quote_symbol, day, include_extended=False) if quote_symbol else None
+
+        def preview_benchmark(source: str, symbol: str, day: str) -> float | None:
+            if day == preview_target:
+                quote_symbol = market_history_quote_symbol(source, symbol)
+                if quote_symbol:
+                    current_value = quote_value(quote_symbol, day, include_extended=True)
+                    if current_value is not None:
+                        return current_value
+            return settled_benchmark(source, symbol, day) or carried_benchmark(source, symbol, day)
+
+        results: dict[str, Any] = {}
+        for code in normalized_codes:
+            official = read_fund_overview_summary_from_db(code)
+            if not official:
+                continue
+            base_date = str(official["navDate"])
+            base_nav = float(official["nav"])
+            holdings = read_fund_holdings_from_db(code) or parse_default_fund_holdings_from_constants(code)
+            supported = [
+                holding for holding in holdings
+                if universe_quote_supported_symbol(
+                    str(holding.get("sinaSymbol") or ""),
+                    holding.get("quoteSupported"),
+                )
+            ]
+            if not supported:
+                continue
+            benchmark = universe_fund_benchmark(code)
+            required_markets = {
+                market
+                for holding in supported
+                if (market := market_key_for_symbol(str(holding.get("sinaSymbol") or ""))) in MARKET_CALENDARS
+            }
+            if benchmark:
+                benchmark_quote_symbol = market_history_quote_symbol(benchmark["source"], benchmark["symbol"])
+                benchmark_market = market_key_for_symbol(benchmark_quote_symbol or "")
+                if benchmark_market in MARKET_CALENDARS:
+                    required_markets.add(str(benchmark_market))
+
+            pending_target: str | None = None
+            candidate = preview_target
+            for _ in range(15):
+                if candidate <= base_date:
+                    break
+                if all(market_completed_valuation_date(market, candidate, now) for market in required_markets):
+                    pending_target = candidate
+                    break
+                candidate = previous_cn_valuation_day(candidate) or ""
+                if not candidate:
+                    break
+
+            calibration = fund_estimate_calibration(code)
+
+            def projection(target: str, kind: str) -> dict[str, Any] | None:
+                is_preview = kind == "preview"
+                price_lookup = preview_stock if is_preview else settled_stock
+                fx_lookup = preview_fx if is_preview else historical_fx
+                benchmark_lookup = preview_benchmark if is_preview else settled_benchmark
+                cumulative = estimate_cumulative_return(
+                    supported,
+                    base_date=base_date,
+                    target_date=target,
+                    price_lookup=price_lookup,
+                    fx_lookup=fx_lookup,
+                    benchmark=benchmark,
+                    benchmark_lookup=benchmark_lookup,
+                )
+                if cumulative is None:
+                    return None
+                previous_target = previous_cn_valuation_day(target)
+                previous_return = 0.0
+                if previous_target and previous_target > base_date:
+                    previous_result = estimate_cumulative_return(
+                        supported,
+                        base_date=base_date,
+                        target_date=previous_target,
+                        price_lookup=price_lookup,
+                        fx_lookup=fx_lookup,
+                        benchmark=benchmark,
+                        benchmark_lookup=benchmark_lookup,
+                    )
+                    if previous_result is not None:
+                        previous_return = float(previous_result["return"])
+                raw_cumulative_return = float(cumulative["return"])
+                previous_nav = base_nav * (1 + previous_return)
+                raw_nav = base_nav * (1 + raw_cumulative_return)
+                raw_daily_return = raw_nav / previous_nav - 1 if previous_nav > 0 else raw_cumulative_return
+                calibrated_return = raw_daily_return
+                if calibration.get("applied"):
+                    calibrated_return = float(calibration["alpha"]) + float(calibration["beta"]) * raw_daily_return
+                estimated_nav = previous_nav * (1 + calibrated_return)
+                calibrated_cumulative = estimated_nav / base_nav - 1
+                complete = all(market_completed_valuation_date(market, target, now) for market in required_markets)
+                quote_sessions = {
+                    str(raw.get("session") or "regular")
+                    for holding in supported
+                    if isinstance((raw := quotes.get(str(holding.get("sinaSymbol") or ""))), dict)
+                }
+                live_market = any(
+                    isinstance(states.get(str(holding.get("sinaSymbol") or "")), dict)
+                    and states[str(holding.get("sinaSymbol") or "" )].get("state") == "live"
+                    for holding in supported
+                )
+                if complete:
+                    phase = "CLOSED"
+                elif "pre" in quote_sessions:
+                    phase = "PRE"
+                elif live_market:
+                    phase = "LIVE"
+                elif "post" in quote_sessions:
+                    phase = "POST"
+                else:
+                    phase = "PRE"
+                return {
+                    "kind": kind,
+                    "targetDate": target,
+                    "estimatedNav": round(estimated_nav, 4),
+                    "changePercent": round(calibrated_return * 100, 4),
+                    "rawChangePercent": round(raw_daily_return * 100, 4),
+                    "cumulativeChangePercent": round(calibrated_cumulative * 100, 4),
+                    "localChangePercent": round(float(cumulative["localReturn"]) * 100, 4),
+                    "coverage": round(float(cumulative["coveredWeight"]), 6),
+                    "residualWeight": round(float(cumulative["residualWeight"]), 6),
+                    "pricedHoldingCount": int(cumulative["pricedHoldingCount"]),
+                    "missingQuoteCount": max(len(holdings) - int(cumulative["pricedHoldingCount"]), 0),
+                    "benchmarkSource": str(cumulative["benchmarkSource"]),
+                    "benchmarkSymbol": str(cumulative["benchmarkSymbol"]),
+                    "model": str(cumulative["model"]),
+                    "calibration": calibration,
+                    "phase": phase,
+                    "complete": complete,
+                    "asOf": as_of,
+                }
+
+            pending = projection(pending_target, "pending") if pending_target else None
+            preview = projection(preview_target, "preview") if preview_target > base_date else None
+            if not pending and not preview:
+                continue
+            results[code] = {
+                "code": code,
+                "modelVersion": FUND_ESTIMATE_MODEL_VERSION,
+                "officialNavDate": base_date,
+                "officialNav": base_nav,
+                "officialChange": float(official["officialChange"]),
+                "holdingReportDate": str(supported[0].get("reportDate") or ""),
+                "pending": pending,
+                "preview": preview,
+            }
+    return results
+
+
+def refresh_fund_estimate_snapshots(dashboard_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = build_fund_estimates(dashboard_payload=dashboard_payload)
+    stored = store_fund_estimate_snapshots(payload)
+    store_dashboard_snapshot(payload, FUND_ESTIMATE_SNAPSHOT_NAME)
+    response_cache_clear_prefix("api:fundestimates")
+    return {"funds": len(payload), "stored": stored}
+
+
+def available_fund_estimates(codes: list[str]) -> dict[str, Any]:
+    snapshot = read_dashboard_snapshot(FUND_ESTIMATE_SNAPSHOT_NAME) or {}
+    results = {
+        code: snapshot[code]
+        for code in codes
+        if isinstance(snapshot.get(code), dict)
+    }
+    missing = [code for code in codes if code not in results]
+    if missing:
+        results.update(build_fund_estimates(missing))
+    return results
+
+
 def refresh_ecb_fx_history(*, start_date: str | None = None, force_refresh: bool = False) -> int:
     if not start_date:
         latest_date = latest_fx_history_date()
@@ -4542,7 +5080,7 @@ def add_response_headers(response: Response) -> Response:
     response.headers["X-API-Schema-Version"] = str(API_SCHEMA_VERSION)
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Diagnostics-Token"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Diagnostics-Token, X-Fund-Management-Token"
     response.headers["Access-Control-Expose-Headers"] = "X-Request-ID, X-Elapsed-ms, X-API-Schema-Version, X-Cache"
     return response
 
@@ -5094,6 +5632,14 @@ def fund_valuation_basis() -> Response:
     if any(item["code"] not in configured_codes for item in items):
         require_fund_management_access()
     return json_response(read_fund_valuation_basis(items))
+
+
+@app.get("/api/fundestimates")
+def fund_estimates() -> Response:
+    enforce_rate_limit("fundestimates")
+    codes = require_fund_codes()
+    cache_key = f"api:fundestimates:{','.join(sorted(codes))}"
+    return cached_json_response(cache_key, 15, lambda: available_fund_estimates(codes))
 
 
 @app.get("/api/fundhistory")

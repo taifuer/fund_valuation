@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { QuoteData, FundNavData, FxRateData, Fund, FundPurchaseData, FundReturnSummary, MarketStateData } from '../types';
+import type { QuoteData, FundNavData, FxRateData, Fund, FundPurchaseData, FundReturnSummary, MarketStateData, FundEstimateResult } from '../types';
 import {
   fetchAllQuotes,
   fetchDashboardSnapshot,
@@ -7,6 +7,7 @@ import {
   fetchSinaFundNavs,
   fetchFundHistory,
   fetchFundHoldings,
+  fetchFundEstimates,
   fetchFundValuationBases,
   fetchFundReturnSummaries,
   fetchFxRates,
@@ -15,7 +16,7 @@ import {
 import { isHoldingQuoteSupported } from '../quoteCapabilities';
 import { INDICES, MARKET_ASSETS, ETF_ASSETS, FUNDS } from '../constants';
 import { changeSinceBasis, combineHoldingAndFxChange } from '../fundEstimate';
-import { getMarketState, marketLocalDate, quoteIsAfterNavClose, pickPollInterval } from '../marketHours';
+import { getMarketState, quoteIsAfterNavClose, pickPollInterval } from '../marketHours';
 import { startAdaptivePolling } from '../polling';
 
 const DISPLAY_FX_CURRENCIES = ['USD', 'EUR', 'JPY', 'KRW', 'HKD'];
@@ -54,6 +55,9 @@ export interface FundEstimate {
   lastUpdated: number | null;
   estimateState: EstimateState;
   currencyChanges: Record<string, number>;
+  /** Date-aligned server estimates. The legacy browser calculation above is
+   * retained as a fallback for custom funds or older backends. */
+  projections: FundEstimateResult | null;
 }
 
 interface SlowFundData {
@@ -346,11 +350,12 @@ export function useQuotes(
         const allSinaSymbols = [...new Set(holdingSymbols)];
         const holdingCurrencies = supportedHoldings.map((holding) => holding.currency);
         const currencies = [...new Set([...DISPLAY_FX_CURRENCIES, ...holdingCurrencies])];
-        const [quotesData, fxRates, marketStatesData, slowFundData] = await Promise.all([
+        const [quotesData, fxRates, marketStatesData, slowFundData, serverEstimates] = await Promise.all([
           fetchAllQuotes(allSinaSymbols),
           fetchFxRates(currencies),
           fetchMarketStates(allSinaSymbols),
           loadSlowFundData(effectiveFunds, showLoading),
+          fetchFundEstimates(effectiveFunds.map((fund) => fund.code)),
         ]);
 
         const valuationBases = await fetchFundValuationBases(effectiveFunds.flatMap((fund) => {
@@ -372,6 +377,10 @@ export function useQuotes(
 
         const estimates: FundEstimate[] = effectiveFunds.map((fund) => {
           const officialNAV = slowFundData.navs.get(fund.code) ?? null;
+          const serverEstimate = serverEstimates.get(fund.code);
+          const projections = serverEstimate && serverEstimate.officialNavDate === officialNAV?.navDate
+            ? serverEstimate
+            : null;
           const valuationBasis = valuationBases.get(fund.code);
           const hasConfiguredHoldings = fund.holdings.length > 0;
           const rawHoldingsQuotes = fund.holdings
@@ -525,6 +534,7 @@ export function useQuotes(
             currencyChanges: Object.fromEntries(
               [...fundFxRates].map(([currency, rate]) => [currency, rate.changePercent]),
             ),
+            projections,
           };
         });
 

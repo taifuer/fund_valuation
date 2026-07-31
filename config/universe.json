@@ -656,6 +656,7 @@
       "symbol": "017436",
       "name": "华宝纳斯达克精选",
       "code": "017436",
+      "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2023-03-02",
         "assetScale": "39.51亿元",
@@ -741,6 +742,7 @@
       "symbol": "017091",
       "name": "景顺长城纳斯达克科技",
       "code": "017091",
+      "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2022-12-09",
         "assetScale": "23.05亿元",
@@ -826,6 +828,7 @@
       "symbol": "022184",
       "name": "富国全球科技互联网",
       "code": "022184",
+      "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2024-09-18",
         "assetScale": "8.34亿元",
@@ -913,6 +916,7 @@
       "symbol": "161128",
       "name": "易方达标普信息科技",
       "code": "161128",
+      "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2016-12-13",
         "assetScale": "33.29亿元",
@@ -998,6 +1002,7 @@
       "symbol": "006555",
       "name": "浦银安盛全球智能科技",
       "code": "006555",
+      "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2019-01-29",
         "assetScale": "10.73亿元",
@@ -1083,6 +1088,7 @@
       "symbol": "006373",
       "name": "国富全球科技互联",
       "code": "006373",
+      "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2018-11-20",
         "assetScale": "29.89亿元",
@@ -1168,6 +1174,7 @@
       "symbol": "270023",
       "name": "广发全球精选",
       "code": "270023",
+      "benchmark": { "source": "sina-us", "symbol": ".INX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2010-08-18",
         "assetScale": "112.68亿元",
@@ -1253,6 +1260,7 @@
       "symbol": "001668",
       "name": "汇添富全球移动互联",
       "code": "001668",
+      "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2017-01-25",
         "assetScale": "14.91亿元",
@@ -1338,6 +1346,7 @@
       "symbol": "000043",
       "name": "嘉实美国成长",
       "code": "000043",
+      "benchmark": { "source": "sina-us", "symbol": ".INX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2013-06-14",
         "assetScale": "43.44亿元",
@@ -1423,6 +1432,7 @@
       "symbol": "008253",
       "name": "华宝致远混合",
       "code": "008253",
+      "benchmark": { "source": "sina-us", "symbol": ".INX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2019-11-27",
         "assetScale": "2.26亿元",
@@ -1508,6 +1518,7 @@
       "symbol": "012920",
       "name": "易方达全球成长精选",
       "code": "012920",
+      "benchmark": { "source": "sina-us", "symbol": ".INX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2022-01-11",
         "assetScale": "37.05亿元",
@@ -1593,6 +1604,7 @@
       "symbol": "017730",
       "name": "嘉实全球产业升级",
       "code": "017730",
+      "benchmark": { "source": "sina-us", "symbol": ".INX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2023-02-09",
         "assetScale": "9.22亿元",
@@ -1678,6 +1690,7 @@
       "symbol": "016664",
       "name": "天弘全球高端制造",
       "code": "016664",
+      "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2023-04-26",
         "assetScale": "5.61亿元",
@@ -1763,6 +1776,7 @@
       "symbol": "501312",
       "name": "华宝海外科技",
       "code": "501312",
+      "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2023-04-11",
         "assetScale": "7.99亿元",
@@ -1848,6 +1862,7 @@
       "symbol": "005698",
       "name": "华夏全球科技先锋",
       "code": "005698",
+      "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2018-04-17",
         "assetScale": "33.00亿元",
@@ -1933,6 +1948,7 @@
       "symbol": "016701",
       "name": "银华海外数字经济",
       "code": "016701",
+      "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2023-03-15",
         "assetScale": "11.46亿元",

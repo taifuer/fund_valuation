@@ -21,7 +21,7 @@ interface Props {
   fund: Fund;
   estimate?: FundEstimate;
   rank: number;
-  sortMode: 'estimate' | 'official';
+  sortMode: 'pending' | 'preview' | 'official';
   loading: boolean;
   marketStates?: Map<string, MarketStateData>;
   onRemove?: (fund: Fund) => void;
@@ -42,6 +42,20 @@ function formatDate(yyyymmdd: string): string {
   const m = yyyymmdd.match(/^\d{4}-(\d{2})-(\d{2})$/);
   if (m) return `${m[1]}/${m[2]}`;
   return yyyymmdd;
+}
+
+function formatAsOf(timestamp: number): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return '';
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(timestamp));
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  return `${value('month')}/${value('day')} ${value('hour')}:${value('minute')}`;
 }
 
 function quoteTimeCandidate(
@@ -137,21 +151,33 @@ const FundCard = memo(function FundCard({
     missingQuoteCount,
     staleQuoteCount,
     missingFxCount,
-    estimateState,
+    estimateState: legacyEstimateState,
     currencyChanges,
   } = estimate;
-  // Headline direction uses the coverage-normalized change (the displayed
-  // estimate), so up/down tinting matches the number the user reads.
-  const up = normalizedChange >= 0;
+  const requestedProjection = sortMode === 'preview'
+    ? estimate.projections?.preview
+    : estimate.projections?.pending;
+  const projection = requestedProjection
+    ?? estimate.projections?.pending
+    ?? estimate.projections?.preview
+    ?? null;
+  const displayNav = projection?.estimatedNav ?? normalizedNAV;
+  const displayChange = projection?.changePercent ?? normalizedChange;
+  const displayState = projection?.phase ?? legacyEstimateState;
+  const estimateKindLabel = projection
+    ? `${formatDate(projection.targetDate)} ${projection.kind === 'pending' ? '待公布' : '实时参考'}`
+    : '实时估算';
+  const officialKindLabel = `${formatDate(officialNAV.navDate)} 已出净值`;
+  const up = displayChange >= 0;
   const estBoxCls = up ? styles.estimateBox : styles.estimateBoxDown;
   const officialUp = officialNAV.officialChange >= 0;
   const officialBoxCls = officialUp ? styles.estimateBox : styles.estimateBoxDown;
-  const estimateIsPrimary = sortMode === 'estimate';
-  const tagCls = estimateState === 'LIVE'
+  const estimateIsPrimary = sortMode !== 'official';
+  const tagCls = displayState === 'LIVE'
     ? styles.estLiveTagUp
-    : estimateState === 'PRE' || estimateState === 'POST'
+    : displayState === 'PRE' || displayState === 'POST'
       ? styles.estLiveTagExtended
-    : estimateState === 'PARTIAL'
+    : displayState === 'PARTIAL'
       ? styles.estLiveTagPartial
       : styles.estLiveTagClosed;
   const estimateStateLabel = {
@@ -159,9 +185,11 @@ const FundCard = memo(function FundCard({
     PRE: '盘前',
     POST: '盘后',
     PARTIAL: '部分',
-    CLOSED: '收盘',
-  }[estimateState];
-  const timeLabel = estimateTimeLabel(estimate.holdingsQuotes, estimateState === 'CLOSED', marketStates);
+    CLOSED: '已收盘',
+  }[displayState];
+  const timeLabel = projection
+    ? (projection.kind === 'preview' ? formatAsOf(projection.asOf) : '')
+    : estimateTimeLabel(estimate.holdingsQuotes, displayState === 'CLOSED', marketStates);
   return (
     <div className={cardClassName}>
       <div
@@ -189,15 +217,15 @@ const FundCard = memo(function FundCard({
           <div
             className={`${styles.navBox} ${styles.estimateNavBox} ${estimateIsPrimary ? `${styles.primaryNavBox} ${estBoxCls}` : styles.secondaryNavBox}`}
             role="group"
-            aria-label={`T日估算（含汇率），状态${estimateStateLabel}`}
+            aria-label={`${estimateKindLabel}（含汇率），状态${estimateStateLabel}`}
           >
-            <span className={`${styles.navKindLabel} ${styles.estimateKindLabel}`}>T日估算</span>
+            <span className={`${styles.navKindLabel} ${styles.estimateKindLabel}`}>{estimateKindLabel}</span>
             <span className={`${styles.navBoxValue} ${up ? styles.up : styles.down}`}>
-              {normalizedNAV !== null ? normalizedNAV.toFixed(4) : '--'}
+              {displayNav !== null ? displayNav.toFixed(4) : '--'}
             </span>
             <span className={`${styles.navBoxChange} ${up ? styles.up : styles.down}`}>
-              {normalizedNAV !== null
-                ? `${up ? '+' : ''}${normalizedChange.toFixed(2)}%`
+              {displayNav !== null
+                ? `${up ? '+' : ''}${displayChange.toFixed(2)}%`
                 : '数据不足'}
             </span>
             <span className={`${styles.estLiveTag} ${tagCls}`}>{estimateStateLabel}</span>
@@ -208,16 +236,15 @@ const FundCard = memo(function FundCard({
           <div
             className={`${styles.navBox} ${styles.officialNavBox} ${estimateIsPrimary ? styles.secondaryNavBox : `${styles.primaryNavBox} ${officialBoxCls}`}`}
             role="group"
-            aria-label="最新已出净值"
+            aria-label={officialKindLabel}
           >
-            <span className={styles.navKindLabel}>已出净值</span>
+            <span className={styles.navKindLabel}>{officialKindLabel}</span>
             <span className={`${styles.navBoxValue} ${!estimateIsPrimary ? (officialUp ? styles.up : styles.down) : ''}`}>
               {officialNAV.nav.toFixed(4)}
             </span>
             <span className={`${styles.navBoxChange} ${officialUp ? styles.up : styles.down}`}>
               {officialUp ? '+' : ''}{officialNAV.officialChange.toFixed(2)}%
             </span>
-            <span className={styles.navDataTime}>{formatDate(officialNAV.navDate)}</span>
           </div>
           </div>
         </div>

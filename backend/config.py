@@ -153,3 +153,21 @@ def default_fund_holdings(code: str) -> list[dict[str, Any]]:
             })
         return rows
     return []
+
+
+def fund_benchmark(code: str) -> dict[str, str] | None:
+    for fund in load_universe()["funds"]:
+        if not isinstance(fund, dict) or str(fund.get("code")) != code:
+            continue
+        benchmark = fund.get("benchmark")
+        if not isinstance(benchmark, dict):
+            return None
+        source = str(benchmark.get("source") or "")
+        symbol = str(benchmark.get("symbol") or "")
+        currency = str(benchmark.get("currency") or "CNY")
+        if source not in HISTORY_SOURCES or not HISTORY_SYMBOL_RE.fullmatch(symbol):
+            return None
+        if currency not in {"CNY", "USD", "EUR", "JPY", "KRW", "HKD"}:
+            return None
+        return {"source": source, "symbol": symbol, "currency": currency}
+    return None

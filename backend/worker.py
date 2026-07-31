@@ -32,6 +32,7 @@ from .server import (
     refresh_configured_fund_history,
     refresh_configured_market_history,
     refresh_fund_profiles,
+    refresh_fund_estimate_snapshots,
     refresh_fund_valuation_histories,
     refresh_latest_fund_holdings,
     release_background_job,
@@ -219,11 +220,19 @@ def main() -> None:
                         errors.append(f"continuous-quotes: {exc}")
                     due["continuous_quotes"] = current + continuous_interval
                 if acquired and quotes_refreshed:
+                    dashboard_payload = None
                     try:
-                        publish_dashboard_snapshot()
+                        dashboard_payload = publish_dashboard_snapshot()
                         tasks.append("dashboard-snapshot")
                     except Exception as exc:
                         errors.append(f"dashboard-snapshot: {exc}")
+                    try:
+                        if dashboard_payload is None:
+                            raise RuntimeError("dashboard snapshot unavailable")
+                        estimate_result = refresh_fund_estimate_snapshots(dashboard_payload)
+                        tasks.append(f"fund-estimates:{estimate_result['funds']}")
+                    except Exception as exc:
+                        errors.append(f"fund-estimates: {exc}")
                 maintenance_flags: set[str] = set()
                 if acquired:
                     maintenance_intervals = {

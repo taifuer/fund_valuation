@@ -3,6 +3,7 @@ import type {
   Fund,
   FundNavData,
   FundValuationBasis,
+  FundEstimateResult,
   Holding,
   FundPurchaseData,
   FundHistoryPoint,
@@ -1021,6 +1022,24 @@ export async function fetchFundValuationBases(
       if (raw?.navDate === fund.navDate) results.set(fund.code, raw);
     }
   } catch { /* use daily-change fallback */ }
+  return results;
+}
+
+export async function fetchFundEstimates(codes: string[]): Promise<Map<string, FundEstimateResult>> {
+  const results = new Map<string, FundEstimateResult>();
+  if (codes.length === 0) return results;
+  try {
+    const res = await fetch(apiUrl(`/api/fundestimates?codes=${codes.join(',')}`), {
+      headers: fundManagementHeaders(),
+    });
+    if (!res.ok) return results;
+    const json = await res.json() as Record<string, FundEstimateResult>;
+    for (const code of codes) {
+      const raw = json[code];
+      if (!raw || raw.code !== code || !/^\d{4}-\d{2}-\d{2}$/.test(raw.officialNavDate)) continue;
+      results.set(code, raw);
+    }
+  } catch { /* retain the browser-side estimate as a compatibility fallback */ }
   return results;
 }
 

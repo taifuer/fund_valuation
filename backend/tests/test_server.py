@@ -50,6 +50,7 @@ class ServerDataRefreshTests(unittest.TestCase):
                 DELETE FROM stock_daily_history;
                 DELETE FROM fx_daily_history;
                 DELETE FROM fund_estimate_backtest;
+                DELETE FROM fund_estimate_snapshots;
                 DELETE FROM fund_backtest_summaries;
                 DELETE FROM market_quote_snapshots;
                 DELETE FROM dashboard_snapshots;
@@ -278,6 +279,140 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(allowed.status_code, 200)
+
+    def test_fund_estimates_separate_completed_target_from_live_preview(self) -> None:
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.executemany(
+                "INSERT INTO fund_nav_history VALUES (?, ?, ?, ?, ?)",
+                [
+                    ("017436", "2026-07-28", 0.99, 0, 1),
+                    ("017436", "2026-07-29", 1.00, 1.01, 2),
+                ],
+            )
+            conn.executemany(
+                "INSERT INTO stock_daily_history VALUES (?, ?, ?, ?, ?)",
+                [
+                    ("gb_aapl", "2026-07-29", 100, 0, 1),
+                    ("gb_aapl", "2026-07-30", 110, 10, 2),
+                ],
+            )
+            conn.executemany(
+                "INSERT INTO fx_daily_history VALUES (?, ?, ?, ?, ?)",
+                [
+                    ("USD", "2026-07-29", 7.0, 0, 1),
+                    ("USD", "2026-07-30", 7.0, 0, 2),
+                    ("USD", "2026-07-31", 7.0, 0, 3),
+                ],
+            )
+            conn.executemany(
+                "INSERT INTO market_history VALUES (?, ?, ?, ?, ?)",
+                [
+                    ("sina-us", ".NDX", "2026-07-29", 100, 1),
+                    ("sina-us", ".NDX", "2026-07-30", 105, 2),
+                ],
+            )
+        dashboard = {
+            "generatedAt": 123456,
+            "fxText": 'var hq_str_fx_susdcny="美元人民币,7.0,0,0,0,0,0,0,0,23:00:00,0,2026-07-31";',
+            "quotes": {
+                "gb_aapl": {
+                    "price": 120,
+                    "previousClose": 110,
+                    "changePercent": 9.09,
+                    "time": "2026-07-31 23:00:00",
+                    "dateReliable": True,
+                    "session": "regular",
+                },
+                "gb_ndx": {
+                    "price": 120,
+                    "previousClose": 105,
+                    "changePercent": 14.29,
+                    "time": "2026-07-31 23:00:00",
+                    "dateReliable": True,
+                    "session": "regular",
+                },
+            },
+            "marketStates": {"gb_aapl": {"state": "live"}},
+        }
+        holdings = [{
+            "sinaSymbol": "gb_aapl",
+            "weight": 0.6,
+            "currency": "USD",
+            "reportDate": "2026-06-30",
+        }]
+        current = datetime(2026, 7, 31, 23, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        with (
+            patch.object(server, "read_fund_holdings_from_db", return_value=holdings),
+            patch.object(server, "universe_fund_benchmark", return_value={
+                "source": "sina-us", "symbol": ".NDX", "currency": "USD",
+            }),
+        ):
+            payload = server.build_fund_estimates(
+                ["017436"], current=current, dashboard_payload=dashboard,
+            )
+
+        result = payload["017436"]
+        self.assertEqual(result["pending"]["targetDate"], "2026-07-30")
+        self.assertTrue(result["pending"]["complete"])
+        self.assertAlmostEqual(result["pending"]["estimatedNav"], 1.08)
+        self.assertEqual(result["preview"]["targetDate"], "2026-07-31")
+        self.assertFalse(result["preview"]["complete"])
+        self.assertEqual(result["preview"]["phase"], "LIVE")
+        self.assertAlmostEqual(result["preview"]["estimatedNav"], 1.20)
+
+    def test_valuation_cycle_rolls_after_the_us_session_closes(self) -> None:
+        server.ensure_market_calendar_seeded(2026)
+        before_roll = datetime(2026, 7, 31, 1, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        after_roll = datetime(2026, 7, 31, 7, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+        self.assertEqual(server.cn_valuation_day_on_or_before(before_roll), "2026-07-30")
+        self.assertEqual(server.cn_valuation_day_on_or_before(after_roll), "2026-07-31")
+
+    def test_fund_estimate_snapshot_reconciles_official_nav(self) -> None:
+        payload = {
+            "017436": {
+                "officialNavDate": "2026-07-29",
+                "officialNav": 1.0,
+                "pending": {
+                    "targetDate": "2026-07-30",
+                    "estimatedNav": 1.08,
+                    "changePercent": 8.0,
+                    "cumulativeChangePercent": 8.0,
+                    "coverage": 0.6,
+                    "benchmarkSource": "sina-us",
+                    "benchmarkSymbol": ".NDX",
+                    "phase": "CLOSED",
+                    "complete": True,
+                    "asOf": 123,
+                },
+                "preview": None,
+            },
+        }
+        server.store_fund_estimate_snapshots(payload)
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute(
+                "INSERT INTO fund_nav_history VALUES (?, ?, ?, ?, ?)",
+                ("017436", "2026-07-30", 1.07, 7.0, 1),
+            )
+        server.reconcile_fund_estimate_snapshots(["017436"])
+        with sqlite3.connect(server.DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT actual_nav, actual_change, error FROM fund_estimate_snapshots WHERE code = ?",
+                ("017436",),
+            ).fetchone()
+        self.assertEqual(row, (1.07, 7.0, 1.0))
+
+    def test_available_fund_estimates_reads_worker_snapshot(self) -> None:
+        expected = {"code": "017436", "officialNavDate": "2026-07-30"}
+        server.store_dashboard_snapshot(
+            {"017436": expected},
+            server.FUND_ESTIMATE_SNAPSHOT_NAME,
+        )
+
+        with patch.object(server, "build_fund_estimates", side_effect=AssertionError("must use snapshot")):
+            payload = server.available_fund_estimates(["017436"])
+
+        self.assertEqual(payload, {"017436": expected})
 
     def test_background_refresh_schedules_configured_work(self) -> None:
         with (

@@ -120,6 +120,7 @@ function emptyFundEstimate(
     lastUpdated: null,
     estimateState: 'CLOSED',
     currencyChanges: {},
+    projections: null,
   };
 }
 

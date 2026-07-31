@@ -56,6 +56,44 @@ export interface FundValuationBasis {
   fxRates: Record<string, { date: string; rate: number }>;
 }
 
+export type FundEstimatePhase = 'LIVE' | 'PRE' | 'POST' | 'PARTIAL' | 'CLOSED';
+
+export interface FundEstimateProjection {
+  kind: 'pending' | 'preview';
+  targetDate: string;
+  estimatedNav: number;
+  changePercent: number;
+  rawChangePercent: number;
+  cumulativeChangePercent: number;
+  localChangePercent: number;
+  coverage: number;
+  residualWeight: number;
+  pricedHoldingCount: number;
+  missingQuoteCount: number;
+  benchmarkSource: string;
+  benchmarkSymbol: string;
+  model: 'holdingsBenchmark' | 'coverageNormalizedFallback';
+  calibration: {
+    applied: boolean;
+    sampleCount: number;
+    reason: string;
+  };
+  phase: FundEstimatePhase;
+  complete: boolean;
+  asOf: number;
+}
+
+export interface FundEstimateResult {
+  code: string;
+  modelVersion: string;
+  officialNavDate: string;
+  officialNav: number;
+  officialChange: number;
+  holdingReportDate: string;
+  pending: FundEstimateProjection | null;
+  preview: FundEstimateProjection | null;
+}
+
 export interface FundPurchaseData {
   code: string;
   name: string;

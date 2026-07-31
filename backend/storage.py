@@ -10,7 +10,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("FUND_VALUATION_DATA_DIR", ROOT_DIR / "data"))
 DB_PATH = DATA_DIR / "fund_valuation.db"
 RAW_DIR = DATA_DIR / "raw"
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 7
 
 
 MIGRATIONS: dict[int, str] = {
@@ -122,6 +122,37 @@ MIGRATIONS: dict[int, str] = {
         CREATE INDEX IF NOT EXISTS idx_fund_profiles_fetched
           ON fund_profiles(fetched_at);
     """,
+    6: """
+        CREATE TABLE IF NOT EXISTS fund_estimate_snapshots (
+          code TEXT NOT NULL,
+          target_date TEXT NOT NULL,
+          estimate_kind TEXT NOT NULL,
+          model_version TEXT NOT NULL,
+          base_nav_date TEXT NOT NULL,
+          base_nav REAL NOT NULL,
+          estimated_nav REAL NOT NULL,
+          raw_change REAL NOT NULL,
+          estimated_change REAL NOT NULL,
+          cumulative_change REAL NOT NULL,
+          coverage REAL NOT NULL,
+          benchmark_source TEXT NOT NULL,
+          benchmark_symbol TEXT NOT NULL,
+          phase TEXT NOT NULL,
+          complete INTEGER NOT NULL,
+          as_of INTEGER NOT NULL,
+          actual_nav REAL,
+          actual_change REAL,
+          error REAL,
+          PRIMARY KEY (code, target_date, estimate_kind, model_version)
+        );
+        CREATE INDEX IF NOT EXISTS idx_fund_estimate_snapshots_actual
+          ON fund_estimate_snapshots(code, actual_nav, target_date);
+        CREATE INDEX IF NOT EXISTS idx_fund_estimate_snapshots_as_of
+          ON fund_estimate_snapshots(as_of);
+    """,
+    7: """
+        SELECT 1;
+    """,
 }
 
 
@@ -153,6 +184,13 @@ def migrate_database(path: Path | None = None) -> int:
             script = MIGRATIONS.get(version)
             if script is None:
                 raise RuntimeError(f"Missing database migration {version}")
+            if version == 7:
+                columns = {
+                    str(row[1])
+                    for row in conn.execute("PRAGMA table_info(fund_estimate_snapshots)").fetchall()
+                }
+                if "raw_change" not in columns:
+                    script += "\nALTER TABLE fund_estimate_snapshots ADD COLUMN raw_change REAL NOT NULL DEFAULT 0;"
             conn.executescript(
                 "BEGIN IMMEDIATE;\n"
                 + script
