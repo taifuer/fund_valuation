@@ -18,29 +18,38 @@ test('mobile layout keeps page-level content within the viewport', async ({ page
 test('mobile return and risk tables keep every column in a horizontal scroller', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile-chromium', 'Mobile table behavior');
 
-  for (const path of ['/returns', '/risk']) {
-    await page.goto(path);
-    const table = page.locator('table');
-    const scroller = table.locator('..');
-    const nameHeader = table.locator('thead th').filter({ hasText: '名称' });
-    await expect(table.locator('thead th').filter({ hasText: '截至' })).toBeVisible();
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const path of ['/returns', '/risk']) {
+      await page.goto(path);
+      const table = page.locator('table');
+      const scroller = table.locator('..');
+      const nameHeader = table.locator('thead th').filter({ hasText: '名称' });
+      const fourthHeader = table.locator('thead th:nth-child(4)');
+      await expect(table.locator('thead th').filter({ hasText: '截至' })).toBeVisible();
 
-    const before = await scroller.evaluate((element) => ({
-      clientWidth: element.clientWidth,
-      scrollLeft: element.scrollLeft,
-      scrollWidth: element.scrollWidth,
-    }));
-    expect(before.scrollWidth).toBeGreaterThan(before.clientWidth);
+      const before = await scroller.evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollLeft: element.scrollLeft,
+        scrollWidth: element.scrollWidth,
+      }));
+      expect(before.scrollWidth).toBeGreaterThan(before.clientWidth);
+      const firstFourFit = await fourthHeader.evaluate((element) => {
+        const scrollerRect = element.closest('section')?.getBoundingClientRect();
+        return scrollerRect ? element.getBoundingClientRect().right <= scrollerRect.right + 1 : false;
+      });
+      expect(firstFourFit).toBe(true);
 
-    const stickyLeftBefore = await nameHeader.evaluate(
-      (element) => element.getBoundingClientRect().left,
-    );
-    await scroller.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
-    await expect.poll(() => scroller.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
-    const stickyLeftAfter = await nameHeader.evaluate(
-      (element) => element.getBoundingClientRect().left,
-    );
-    expect(Math.abs(stickyLeftAfter - stickyLeftBefore)).toBeLessThanOrEqual(1);
+      const stickyLeftBefore = await nameHeader.evaluate(
+        (element) => element.getBoundingClientRect().left,
+      );
+      await scroller.evaluate((element) => { element.scrollLeft = element.scrollWidth; });
+      await expect.poll(() => scroller.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+      const stickyLeftAfter = await nameHeader.evaluate(
+        (element) => element.getBoundingClientRect().left,
+      );
+      expect(Math.abs(stickyLeftAfter - stickyLeftBefore)).toBeLessThanOrEqual(1);
+    }
   }
 });
 
@@ -69,7 +78,7 @@ test('return and risk tables keep the name column compact', async ({ page }, tes
     }));
     expect(widths.name).toBeGreaterThan(0);
     if (testInfo.project.name === 'mobile-chromium') {
-      expect(widths.name).toBeLessThanOrEqual(133);
+      expect(widths.name).toBeLessThanOrEqual(113);
     } else {
       expect(widths.name / widths.table).toBeLessThanOrEqual(0.205);
     }
