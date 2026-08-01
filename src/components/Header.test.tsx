@@ -24,13 +24,26 @@ describe('Header', () => {
   it('navigates through the primary page tabs', () => {
     const onPageChange = vi.fn();
     render(<Header fxRates={new Map()} activePage="overview" onPageChange={onPageChange} />);
-    fireEvent.click(screen.getByRole('button', { name: '风险' }));
-    expect(onPageChange).toHaveBeenCalledWith('risk');
+    fireEvent.click(screen.getByRole('button', { name: '关于' }));
+    expect(onPageChange).toHaveBeenCalledWith('about');
   });
 
   it('shows an offline status before the first status response', () => {
     render(<Header fxRates={new Map()} activePage="overview" onPageChange={vi.fn()} />);
     expect(screen.getByLabelText('数据状态暂不可用')).toHaveClass(/liveOffline/);
+  });
+
+  it('hides market metadata on the about page', () => {
+    render(
+      <Header
+        fxRates={new Map()}
+        activePage="about"
+        onPageChange={vi.fn()}
+        showMarketMeta={false}
+      />,
+    );
+    expect(screen.queryByText(/北京时间/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('数据状态暂不可用')).not.toBeInTheDocument();
   });
 
   it('shows only USD and EUR in the global exchange-rate summary', () => {

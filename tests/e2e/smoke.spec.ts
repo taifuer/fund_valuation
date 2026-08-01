@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-for (const [path, activeLabel] of [['/', '概览'], ['/funds', '基金'], ['/returns', '收益'], ['/risk', '风险']] as const) {
+for (const [path, activeLabel] of [['/', '概览'], ['/funds', '基金'], ['/returns', '收益'], ['/risk', '风险'], ['/about', '关于']] as const) {
   test(`${path} survives direct navigation`, async ({ page }) => {
     await page.goto(path);
     await expect(page.getByRole('heading', { name: '全球资产看板' })).toBeVisible();

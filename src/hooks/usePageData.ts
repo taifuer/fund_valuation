@@ -19,10 +19,11 @@ import type { FundEstimate } from './useQuotes';
 
 const DISPLAY_FX_CURRENCIES = ['USD', 'EUR'];
 
-export function useSystemStatus() {
+export function useSystemStatus(enabled = true) {
   const [status, setStatus] = useState<SystemStatus | null>(null);
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     async function load() {
       const next = await fetchSystemStatus();
@@ -34,7 +35,7 @@ export function useSystemStatus() {
       cancelled = true;
       stopPolling();
     };
-  }, []);
+  }, [enabled]);
 
   return status;
 }

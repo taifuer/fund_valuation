@@ -24,6 +24,7 @@ interface Props {
   onPageChange: (page: PageKey) => void;
   statusMessage?: string;
   systemStatus?: SystemStatus | null;
+  showMarketMeta?: boolean;
 }
 
 const FX_ORDER = ['USD', 'EUR'];
@@ -34,6 +35,7 @@ export default function Header({
   onPageChange,
   statusMessage = '',
   systemStatus = null,
+  showMarketMeta = true,
 }: Props) {
   const [time, setTime] = useState(formatTime());
   const displayRates = FX_ORDER.map((currency) => fxRates.get(currency)).filter((rate): rate is FxRateData => rate != null);
@@ -44,9 +46,10 @@ export default function Header({
       : '数据状态暂不可用';
 
   useEffect(() => {
+    if (!showMarketMeta) return;
     const timer = setInterval(() => setTime(formatTime()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [showMarketMeta]);
 
   function reloadToTop() {
     onPageChange('overview');
@@ -101,42 +104,52 @@ export default function Header({
             >
               风险
             </button>
+            <button
+              type="button"
+              aria-current={activePage === 'about' ? 'page' : undefined}
+              className={`${styles.navButton} ${activePage === 'about' ? styles.navButtonActive : ''}`}
+              onClick={() => onPageChange('about')}
+            >
+              关于
+            </button>
           </nav>
         </div>
       </header>
-      <div className={styles.statusBar}>
-        <div className={styles.meta}>
-          <div className={styles.datetime}>
-            <span>
-              <span
-                className={`${styles.live} ${systemStatus?.status === 'degraded' ? styles.liveDegraded : ''} ${!systemStatus || systemStatus.status === 'offline' ? styles.liveOffline : ''}`}
-                title={freshnessLabel}
-                aria-label={freshnessLabel}
-              />
-              {time}（北京时间）
-            </span>
-          </div>
-          {displayRates.length > 0 && (
-            <div className={styles.fxRow}>
-              {displayRates.map((rate) => {
-                const up = rate.changePercent >= 0;
-                return (
-                  <span key={rate.currency} className={styles.fxItem}>
-                    <span className={styles.fxPair}>{rate.pair}</span>
-                    <span className={styles.fxRate}>{rate.rate.toFixed(4)}</span>
-                    <span className={up ? styles.fxUp : styles.fxDown}>
-                      {up ? '+' : ''}{rate.changePercent.toFixed(2)}%
-                    </span>
-                  </span>
-                );
-              })}
+      {showMarketMeta && (
+        <div className={styles.statusBar}>
+          <div className={styles.meta}>
+            <div className={styles.datetime}>
+              <span>
+                <span
+                  className={`${styles.live} ${systemStatus?.status === 'degraded' ? styles.liveDegraded : ''} ${!systemStatus || systemStatus.status === 'offline' ? styles.liveOffline : ''}`}
+                  title={freshnessLabel}
+                  aria-label={freshnessLabel}
+                />
+                {time}（北京时间）
+              </span>
             </div>
-          )}
-          {statusMessage && (
-            <div className={styles.statusMessage}>{statusMessage}</div>
-          )}
+            {displayRates.length > 0 && (
+              <div className={styles.fxRow}>
+                {displayRates.map((rate) => {
+                  const up = rate.changePercent >= 0;
+                  return (
+                    <span key={rate.currency} className={styles.fxItem}>
+                      <span className={styles.fxPair}>{rate.pair}</span>
+                      <span className={styles.fxRate}>{rate.rate.toFixed(4)}</span>
+                      <span className={up ? styles.fxUp : styles.fxDown}>
+                        {up ? '+' : ''}{rate.changePercent.toFixed(2)}%
+                      </span>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            {statusMessage && (
+              <div className={styles.statusMessage}>{statusMessage}</div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 }

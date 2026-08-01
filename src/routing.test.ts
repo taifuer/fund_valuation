@@ -7,6 +7,7 @@ describe('routing', () => {
     expect(pageFromPathname('/funds')).toBe('funds');
     expect(pageFromPathname('/returns')).toBe('ranking');
     expect(pageFromPathname('/risk')).toBe('risk');
+    expect(pageFromPathname('/about')).toBe('about');
     expect(pageFromPathname('/diagnostics')).toBe('diagnostics');
   });
 

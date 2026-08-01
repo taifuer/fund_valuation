@@ -1390,7 +1390,7 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         with (
             patch.object(server, "configured_quote_symbols", return_value=["sh000001", "sz399006"]),
-            patch.object(server, "configured_unsupported_quote_symbols", return_value=["kr005930"]),
+            patch.object(server, "configured_unsupported_quote_symbols", return_value=["tw2330"]),
             patch.object(server, "market_state_for_symbol", side_effect=lambda symbol, _now: {
                 "symbol": symbol, "state": "live", "lastTradingDay": "2026-05-26",
             }),
@@ -1401,7 +1401,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(health["issueCount"], 1)
         self.assertEqual(health["issues"][0]["symbol"], "sz399006")
         self.assertEqual(health["unsupportedCount"], 1)
-        self.assertEqual(health["unsupported"][0]["symbol"], "kr005930")
+        self.assertEqual(health["unsupported"][0]["symbol"], "tw2330")
 
     def test_unsupported_quotes_are_diagnostic_only(self) -> None:
         now = datetime.fromisoformat("2026-05-26T10:00:00+08:00")
@@ -1410,7 +1410,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             patch.object(
                 server,
                 "configured_unsupported_quote_symbols",
-                return_value=["kr000660", "kr005930"],
+                return_value=["tw2317", "tw2330"],
             ),
         ):
             health = server.quote_snapshot_health(now)

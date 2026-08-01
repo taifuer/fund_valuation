@@ -25,6 +25,7 @@ import styles from './App.module.css';
 
 const RankingPage = lazy(() => import('./components/RankingPage'));
 const RiskPage = lazy(() => import('./components/RiskPage'));
+const AboutPage = lazy(() => import('./components/AboutPage'));
 const DiagnosticsPage = lazy(() => import('./components/DiagnosticsPage'));
 
 type SortMode = 'pending' | 'preview' | 'official';
@@ -258,9 +259,10 @@ export default function App() {
     activePage === 'funds',
   );
   const overviewData = useOverviewData(funds, activePage === 'overview');
-  const headerFxRates = useHeaderFxRates(activePage !== 'overview' && activePage !== 'funds');
+  const showMarketMeta = activePage !== 'about';
+  const headerFxRates = useHeaderFxRates(showMarketMeta && activePage !== 'overview' && activePage !== 'funds');
   const marketPageData = useRankingMarketData(activePage === 'ranking');
-  const systemStatus = useSystemStatus();
+  const systemStatus = useSystemStatus(showMarketMeta);
   const activeFxRates = activePage === 'overview'
     ? overviewData.fxRates
     : activePage === 'funds'
@@ -597,6 +599,7 @@ export default function App() {
         onPageChange={navigatePage}
         statusMessage={pageStatusMessage}
         systemStatus={systemStatus}
+        showMarketMeta={showMarketMeta}
       />
       {activeError && <div className={styles.error}>{activeError}</div>}
       {activePage === 'overview' ? (
@@ -793,13 +796,17 @@ export default function App() {
             onStatusMessageChange={setPageStatusMessage}
           />
         </Suspense>
+      ) : activePage === 'about' ? (
+        <Suspense fallback={<div className={styles.pageFallback}>关于页面加载中...</div>}>
+          <AboutPage />
+        </Suspense>
       ) : (
         <Suspense fallback={<div className={styles.pageFallback}>诊断页面加载中...</div>}>
           <DiagnosticsPage />
         </Suspense>
       )}
       <footer className={styles.footer}>
-        © {new Date().getFullYear()} <a href="https://github.com/taifuer/fund_valuation" target="_blank" rel="noreferrer">Fund Valuation</a> · 数据来源：新浪财经、天天基金、东方财富等公开数据；行情与估值可能存在延迟或误差，仅供参考，不构成投资建议；基金净值以基金管理人正式披露为准。
+        © {new Date().getFullYear()} <a href="https://github.com/taifuer/fund_valuation" target="_blank" rel="noreferrer">Fund Valuation</a> · 数据仅供参考，不构成投资建议
       </footer>
     </div>
   );
