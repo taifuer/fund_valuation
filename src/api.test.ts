@@ -81,6 +81,30 @@ describe('dashboard API contract', () => {
     expect(parsed?.data.time).toBe('2026-07-02 14:33:00');
   });
 
+  it('parses backend-adapted Japanese and Korean equity quotes', () => {
+    const japanese = parseSinaVar(
+      'var hq_str_jp6857="Advantest,19320.0000,-250.0000,-1.2775,2026-07-31,14:30:00";',
+      new Date('2026-07-31T14:31:00+08:00').getTime(),
+    );
+    const korean = parseSinaVar(
+      'var hq_str_kr005930="Samsung Electronics,162000.0000,1500.0000,0.9346,2026-07-31,14:30:00";',
+      new Date('2026-07-31T14:31:00+08:00').getTime(),
+    );
+
+    expect(japanese?.data).toMatchObject({
+      price: 19320,
+      previousClose: 19570,
+      changePercent: -1.28,
+      time: '2026-07-31 14:30:00',
+    });
+    expect(korean?.data).toMatchObject({
+      price: 162000,
+      previousClose: 160500,
+      changePercent: 0.93,
+      time: '2026-07-31 14:30:00',
+    });
+  });
+
   it('keeps a dated Nikkei close across a long weekend', () => {
     const parsed = parseSinaVar(
       'var hq_str_int_nikkei="日经225,64140.90,-2694.64,-4.03,2026-07-17,14:30:01";',

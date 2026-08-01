@@ -33,6 +33,8 @@ def stale_date(value: str, captured_at: int, max_days: int = 2) -> bool:
 
 
 def max_reasonable_change(symbol: str) -> float:
+    if symbol.startswith(("jp", "kr")):
+        return 80
     if symbol.startswith("hf_") or symbol.startswith(("s_", "int_", "b_", "hk")):
         return 25
     if re.match(r"^(sh000|sz399)\d{3}$", symbol):
@@ -118,6 +120,12 @@ def normalize_quote_line(symbol: str, line: str, captured_at: int) -> dict[str, 
     elif symbol.startswith("hk") and len(fields) >= 19:
         previous_close, price, change_percent = number(fields[3]), number(fields[6]), number(fields[8])
         quote_time = combine_date_time(fields[17], fields[18])
+    elif symbol.startswith(("jp", "kr")) and len(fields) >= 6:
+        price = number(fields[1])
+        change = number(fields[2])
+        change_percent = number(fields[3])
+        previous_close = price - change if price is not None and change is not None else None
+        quote_time = combine_date_time(fields[4], fields[5])
     elif symbol.startswith("hf_") and len(fields) >= 13:
         price = number(fields[0])
         previous_close = number(fields[7]) or number(fields[8])

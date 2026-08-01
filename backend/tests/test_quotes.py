@@ -81,6 +81,20 @@ class QuoteNormalizationTests(unittest.TestCase):
         assert record is not None
         self.assertEqual(record["time"], "2026-07-02 14:33:00")
 
+    def test_backend_adapted_equity_quote_uses_compact_fields(self) -> None:
+        record = normalize_quote_line(
+            "jp6857",
+            'var hq_str_jp6857="Advantest,19320.0000,-250.0000,-1.2775,2026-07-31,14:30:00";',
+            captured_at("2026-07-31T14:31:00"),
+        )
+
+        self.assertIsNotNone(record)
+        assert record is not None
+        self.assertEqual(record["price"], 19320)
+        self.assertEqual(record["previousClose"], 19570)
+        self.assertEqual(record["changePercent"], -1.2775)
+        self.assertEqual(record["time"], "2026-07-31 14:30:00")
+
 
 if __name__ == "__main__":
     unittest.main()

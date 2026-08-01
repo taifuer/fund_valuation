@@ -745,8 +745,8 @@
       "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2022-12-09",
-        "assetScale": "23.05亿元",
-        "scaleDate": "2026-03-31",
+        "assetScale": "27.70亿元",
+        "scaleDate": "2026-06-30",
         "managementFee": "0.80%",
         "custodianFee": "0.20%",
         "salesServiceFee": "0.00%"
@@ -756,70 +756,70 @@
           "symbol": "NVDA",
           "name": "NVIDIA",
           "sinaSymbol": "gb_nvda",
-          "weight": 0.1269,
+          "weight": 0.1301,
           "currency": "USD"
         },
         {
           "symbol": "AAPL",
           "name": "Apple",
           "sinaSymbol": "gb_aapl",
-          "weight": 0.1231,
+          "weight": 0.1273,
           "currency": "USD"
         },
         {
           "symbol": "MSFT",
           "name": "Microsoft",
           "sinaSymbol": "gb_msft",
-          "weight": 0.1212,
-          "currency": "USD"
-        },
-        {
-          "symbol": "AVGO",
-          "name": "Broadcom",
-          "sinaSymbol": "gb_avgo",
-          "weight": 0.0725,
-          "currency": "USD"
-        },
-        {
-          "symbol": "META",
-          "name": "Meta",
-          "sinaSymbol": "gb_meta",
-          "weight": 0.0679,
+          "weight": 0.0952,
           "currency": "USD"
         },
         {
           "symbol": "GOOGL",
           "name": "Alphabet A",
           "sinaSymbol": "gb_googl",
-          "weight": 0.061,
+          "weight": 0.0669,
           "currency": "USD"
         },
         {
           "symbol": "GOOG",
           "name": "Alphabet C",
           "sinaSymbol": "gb_goog",
-          "weight": 0.0569,
+          "weight": 0.062,
+          "currency": "USD"
+        },
+        {
+          "symbol": "AVGO",
+          "name": "Broadcom",
+          "sinaSymbol": "gb_avgo",
+          "weight": 0.0615,
           "currency": "USD"
         },
         {
           "symbol": "MU",
           "name": "美光科技",
           "sinaSymbol": "gb_mu",
-          "weight": 0.0294,
+          "weight": 0.0566,
           "currency": "USD"
         },
         {
-          "symbol": "PLTR",
-          "name": "Palantir",
-          "sinaSymbol": "gb_pltr",
-          "weight": 0.0245,
+          "symbol": "META",
+          "name": "Meta",
+          "sinaSymbol": "gb_meta",
+          "weight": 0.0538,
           "currency": "USD"
         },
         {
           "symbol": "AMD",
           "name": "AMD",
           "sinaSymbol": "gb_amd",
-          "weight": 0.024,
+          "weight": 0.0412,
+          "currency": "USD"
+        },
+        {
+          "symbol": "INTC",
+          "name": "Intel",
+          "sinaSymbol": "gb_intc",
+          "weight": 0.0305,
           "currency": "USD"
         }
       ]
@@ -885,8 +885,7 @@
           "name": "SK海力士",
           "sinaSymbol": "kr000660",
           "weight": 0.0411,
-          "currency": "KRW",
-          "quoteSupported": false
+          "currency": "KRW"
         },
         {
           "symbol": "INTC",
@@ -907,8 +906,7 @@
           "name": "三星电子",
           "sinaSymbol": "kr005930",
           "weight": 0.0333,
-          "currency": "KRW",
-          "quoteSupported": false
+          "currency": "KRW"
         }
       ]
     },
@@ -1779,81 +1777,91 @@
       "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2023-04-11",
-        "assetScale": "7.99亿元",
-        "scaleDate": "2026-03-31",
+        "assetScale": "18.62亿元",
+        "scaleDate": "2026-06-30",
         "managementFee": "1.00%",
         "custodianFee": "0.20%",
         "salesServiceFee": "0.00%"
       },
       "holdings": [
         {
-          "symbol": "NVDA",
-          "name": "NVIDIA",
-          "sinaSymbol": "gb_nvda",
-          "weight": 0.09,
+          "symbol": "ARKK",
+          "name": "ARK Innovation ETF",
+          "sinaSymbol": "gb_arkk",
+          "weight": 0.1848,
+          "market": "us",
           "currency": "USD"
         },
         {
-          "symbol": "AAPL",
-          "name": "Apple",
-          "sinaSymbol": "gb_aapl",
-          "weight": 0.08,
+          "symbol": "ARKG",
+          "name": "ARK Genomic Revolution ETF",
+          "sinaSymbol": "gb_arkg",
+          "weight": 0.1693,
+          "market": "us",
           "currency": "USD"
         },
         {
-          "symbol": "MSFT",
-          "name": "Microsoft",
-          "sinaSymbol": "gb_msft",
-          "weight": 0.08,
+          "symbol": "ARKQ",
+          "name": "ARK Autonomous Technology & Robotics ETF",
+          "sinaSymbol": "gb_arkq",
+          "weight": 0.1015,
+          "market": "us",
           "currency": "USD"
         },
         {
-          "symbol": "AMZN",
-          "name": "Amazon",
-          "sinaSymbol": "gb_amzn",
-          "weight": 0.06,
+          "symbol": "AIQ",
+          "name": "Global X Artificial Intelligence & Technology ETF",
+          "sinaSymbol": "gb_aiq",
+          "weight": 0.0632,
+          "market": "us",
           "currency": "USD"
         },
         {
-          "symbol": "META",
-          "name": "Meta",
-          "sinaSymbol": "gb_meta",
-          "weight": 0.06,
+          "symbol": "BOTZ",
+          "name": "Global X Robotics & Artificial Intelligence ETF",
+          "sinaSymbol": "gb_botz",
+          "weight": 0.0505,
+          "market": "us",
           "currency": "USD"
         },
         {
-          "symbol": "GOOGL",
-          "name": "Alphabet",
-          "sinaSymbol": "gb_googl",
-          "weight": 0.06,
-          "currency": "USD"
-        },
-        {
-          "symbol": "TSLA",
-          "name": "Tesla",
-          "sinaSymbol": "gb_tsla",
+          "symbol": "ARKX",
+          "name": "ARK Space & Defense Innovation ETF",
+          "sinaSymbol": "gb_arkx",
           "weight": 0.05,
+          "market": "us",
           "currency": "USD"
         },
         {
-          "symbol": "AVGO",
-          "name": "Broadcom",
-          "sinaSymbol": "gb_avgo",
-          "weight": 0.05,
+          "symbol": "XLK",
+          "name": "Technology Select Sector SPDR ETF",
+          "sinaSymbol": "gb_xlk",
+          "weight": 0.0467,
+          "market": "us",
           "currency": "USD"
         },
         {
-          "symbol": "AMD",
-          "name": "AMD",
-          "sinaSymbol": "gb_amd",
-          "weight": 0.03,
+          "symbol": "SMH",
+          "name": "VanEck Semiconductor ETF",
+          "sinaSymbol": "gb_smh",
+          "weight": 0.0439,
+          "market": "us",
           "currency": "USD"
         },
         {
-          "symbol": "NFLX",
-          "name": "Netflix",
-          "sinaSymbol": "gb_nflx",
-          "weight": 0.03,
+          "symbol": "SOXX",
+          "name": "iShares Semiconductor ETF",
+          "sinaSymbol": "gb_soxx",
+          "weight": 0.0333,
+          "market": "us",
+          "currency": "USD"
+        },
+        {
+          "symbol": "QQQ",
+          "name": "Invesco QQQ Trust",
+          "sinaSymbol": "gb_qqq",
+          "weight": 0.0327,
+          "market": "us",
           "currency": "USD"
         }
       ]

@@ -109,6 +109,20 @@ BACKGROUND_REFRESH_INTERVAL_SECONDS = int(os.environ.get("FUND_VALUATION_REFRESH
 QUOTE_SNAPSHOT_RETENTION_DAYS = int(os.environ.get("FUND_VALUATION_SNAPSHOT_RETENTION_DAYS", "30"))
 BACKGROUND_JOB_NAME = "data-refresh"
 
+# Some East Money reports omit an exchange link for overseas securities. Keep
+# the small alias table explicit so numeric Japanese tickers are not confused
+# with Taiwan listings and ISIN-only rows can still be quoted.
+JAPAN_HOLDING_ALIASES: dict[str, str] = {
+    "285A": "285A",
+    "6857": "6857",
+    "JP3236330001": "285A",
+    "JP3684400009": "3110",
+}
+FUND_HOLDINGS_TARGET_ETFS: dict[str, str] = {
+    "017091": "159509",
+}
+CONFIGURED_FUND_PORTFOLIO_CODES = {"501312"}
+
 
 def fund_management_enabled() -> bool:
     value = os.environ.get("FUND_VALUATION_ENABLE_FUND_MANAGEMENT", "1").strip().lower()
@@ -463,6 +477,10 @@ def market_key_for_symbol(symbol: str) -> str | None:
         return "us"
     if symbol.startswith("hk"):
         return "hk"
+    if symbol.startswith("jp"):
+        return "jp"
+    if symbol.startswith("kr"):
+        return "kr"
     if symbol.startswith("s_") or re.match(r"^(sz|sh)\d", symbol):
         return "cn"
     if symbol == "int_nikkei":
@@ -1114,6 +1132,120 @@ def safe_float(value: Any) -> float | None:
     return result
 
 
+def parse_localized_number(value: Any) -> float | None:
+    return safe_float(str(value or "").replace(",", "").strip())
+
+
+def naver_equity_url(symbol: str, endpoint: str) -> str | None:
+    if re.fullmatch(r"kr\d{6}", symbol):
+        return f"https://m.stock.naver.com/api/stock/{symbol[2:]}/{endpoint}"
+    if re.fullmatch(r"jp[A-Za-z0-9]{4}", symbol):
+        return f"https://api.stock.naver.com/stock/{symbol[2:]}.T/{endpoint}"
+    return None
+
+
+def naver_equity_quote_line(symbol: str) -> str | None:
+    url = naver_equity_url(symbol, "basic")
+    if not url:
+        return None
+    status, _, body = fetch_upstream(
+        url,
+        referer="https://m.stock.naver.com/",
+        content_type="application/json; charset=utf-8",
+        cache_key=f"naver-equity:{symbol}",
+        kind="naver-equity",
+        ttl_seconds=30,
+    )
+    if status >= 400:
+        record_quote_health(symbol, "error", f"Naver equity quote HTTP {status}")
+        return None
+    try:
+        payload = json.loads(decode_body(body))
+    except json.JSONDecodeError as exc:
+        record_quote_health(symbol, "error", f"invalid Naver equity quote: {exc}")
+        return None
+    if not isinstance(payload, dict):
+        record_quote_health(symbol, "error", "invalid Naver equity quote payload")
+        return None
+
+    price = parse_localized_number(payload.get("closePrice"))
+    change = parse_localized_number(payload.get("compareToPreviousClosePrice"))
+    change_percent = parse_localized_number(payload.get("fluctuationsRatio"))
+    direction = payload.get("compareToPreviousPrice")
+    direction_name = str(direction.get("name") or "") if isinstance(direction, dict) else ""
+    if change is not None:
+        change = abs(change)
+        if direction_name in {"FALLING", "LOWER_LIMIT"} or (change_percent is not None and change_percent < 0):
+            change = -change
+    if change_percent is not None:
+        change_percent = abs(change_percent)
+        if direction_name in {"FALLING", "LOWER_LIMIT"}:
+            change_percent = -change_percent
+    if not price or price <= 0 or change is None:
+        record_quote_health(symbol, "error", "Naver equity quote missing price or change")
+        return None
+    previous_close = price - change
+    if previous_close <= 0:
+        record_quote_health(symbol, "error", "Naver equity quote has invalid previous close")
+        return None
+    if change_percent is None:
+        change_percent = change / previous_close * 100
+
+    raw_time = str(payload.get("localTradedAt") or "")
+    try:
+        updated_at = datetime.fromisoformat(raw_time)
+        if updated_at.tzinfo is None:
+            market_timezone = "Asia/Seoul" if symbol.startswith("kr") else "Asia/Tokyo"
+            updated_at = updated_at.replace(tzinfo=ZoneInfo(market_timezone))
+        updated_at = updated_at.astimezone(ZoneInfo("Asia/Shanghai"))
+    except ValueError:
+        record_quote_health(symbol, "error", "Naver equity quote missing exchange timestamp")
+        return None
+    name = str(payload.get("stockNameEng") or payload.get("stockName") or symbol)
+    name = name.replace(",", " ").replace('"', "'")
+    return (
+        f'var hq_str_{symbol}="{name},{price:.4f},{change:.4f},{change_percent:.4f},'
+        f'{updated_at.date().isoformat()},{updated_at.strftime("%H:%M:%S")}";'
+    )
+
+
+def fetch_market_quote_text(symbols: list[str]) -> tuple[int, str]:
+    normalized = sorted(dict.fromkeys(symbols))
+    adapted = [symbol for symbol in normalized if symbol.startswith(("jp", "kr"))]
+    sina_symbols = [symbol for symbol in normalized if symbol not in adapted]
+    lines: list[str] = []
+    status = 200
+
+    if sina_symbols:
+        joined = ",".join(sina_symbols)
+        status, _, body = fetch_upstream(
+            f"https://hq.sinajs.cn/list={joined}",
+            referer="https://finance.sina.com.cn/",
+            content_type="text/plain; charset=utf-8",
+            cache_key=f"sina:{joined}",
+            kind="sina",
+            ttl_seconds=30,
+        )
+        if status < 400:
+            lines.extend(line for line in decode_body(body).splitlines() if line.strip())
+
+    if adapted:
+        with ThreadPoolExecutor(max_workers=min(6, len(adapted))) as executor:
+            futures = {executor.submit(naver_equity_quote_line, symbol): symbol for symbol in adapted}
+            for future in as_completed(futures):
+                symbol = futures[future]
+                try:
+                    line = future.result()
+                except Exception as exc:
+                    record_quote_health(symbol, "error", f"Naver equity quote failed: {exc}")
+                    line = None
+                if line:
+                    lines.append(line)
+
+    text = "\n".join(lines)
+    return (200 if text else status), text + ("\n" if text else "")
+
+
 def raw_sina_cn_price(symbol: str, fields: list[str]) -> float | None:
     if symbol.startswith("s_"):
         if len(fields) < 4:
@@ -1293,6 +1425,11 @@ def parse_quote_snapshot_line(symbol: str, line: str) -> tuple[float | None, flo
         previous_close = safe_float(fields[3])
         price = safe_float(fields[6])
         change_percent = safe_float(fields[8])
+    elif symbol.startswith(("jp", "kr")) and len(fields) >= 6:
+        price = safe_float(fields[1])
+        change = safe_float(fields[2])
+        change_percent = safe_float(fields[3])
+        previous_close = price - change if price is not None and change is not None else None
     elif symbol.startswith("hf_") and len(fields) >= 9:
         price = safe_float(fields[0])
         previous_close = safe_float(fields[7]) or safe_float(fields[8])
@@ -1966,7 +2103,18 @@ def classify_holding_symbol(stock_code: str, href: str, stock_name: str) -> tupl
         return "cn", f"sz{code}", "CNY"
     if re.fullmatch(r"(60|68)\d{4}", code):
         return "cn", f"sh{code}", "CNY"
-    if code.endswith("JP"):
+    japan_code = JAPAN_HOLDING_ALIASES.get(code)
+    if not japan_code:
+        normalized_name = stock_name.upper()
+        if "KIOXIA" in normalized_name or "铠侠" in stock_name:
+            japan_code = "285A"
+        elif "ADVANTEST" in normalized_name or "爱德万" in stock_name:
+            japan_code = "6857"
+        elif "NITTO BOSEKI" in normalized_name or "日东纺" in stock_name:
+            japan_code = "3110"
+    if japan_code:
+        return "jp", f"jp{japan_code}", "JPY"
+    if code.startswith("JP") or code.endswith("JP"):
         return "jp", "", "JPY"
     if re.fullmatch(r"\d{4}", code):
         return "tw", "", "TWD"
@@ -2082,6 +2230,18 @@ def current_fund_holding_report_date(value: str, *, as_of: date | None = None) -
     return 0 <= age_days <= FUND_HOLDINGS_MAX_AGE_DAYS
 
 
+def configured_portfolio_holdings(code: str) -> list[dict[str, Any]]:
+    if code not in CONFIGURED_FUND_PORTFOLIO_CODES:
+        return []
+    rows = parse_default_fund_holdings_from_constants(code)
+    report_date = str(rows[0].get("reportDate") or "") if rows else ""
+    return rows if rows and current_fund_holding_report_date(report_date) else []
+
+
+def fund_holdings_source_code(code: str) -> str:
+    return FUND_HOLDINGS_TARGET_ETFS.get(code, code)
+
+
 def refresh_missing_fund_holdings(
     *,
     max_requests: int = 4,
@@ -2105,12 +2265,21 @@ def refresh_missing_fund_holdings(
         quarter = int(gap["quarter"])
         expected_report_date = str(gap["reportDate"])
         attempted += 1
-        query = urlencode({"type": "jjcc", "code": code, "topline": 10, "year": year, "month": quarter})
+        configured_rows = configured_portfolio_holdings(code)
+        if configured_rows:
+            if str(configured_rows[0].get("reportDate") or "") == expected_report_date:
+                store_fund_holdings(code, configured_rows)
+                stored += 1
+            else:
+                unavailable += 1
+            continue
+        source_code = fund_holdings_source_code(code)
+        query = urlencode({"type": "jjcc", "code": source_code, "topline": 10, "year": year, "month": quarter})
         status, _, body = fetch_upstream(
             f"https://fundf10.eastmoney.com/FundArchivesDatas.aspx?{query}",
-            referer=f"https://fundf10.eastmoney.com/ccmx_{quote(code)}.html",
+            referer=f"https://fundf10.eastmoney.com/ccmx_{quote(source_code)}.html",
             content_type="text/plain; charset=utf-8",
-            cache_key=f"fundholdings:{code}:{year}:{quarter}",
+            cache_key=f"fundholdings:{source_code}:{year}:{quarter}",
             kind="fundholdings",
             ttl_seconds=30 * 24 * 60 * 60,
         )
@@ -2186,14 +2355,18 @@ def refresh_latest_fund_holdings(
         return {"checked": 0, "stored": 0, "updated": 0, "unavailable": 0, "errors": []}
 
     def fetch_one(code: str) -> tuple[str, list[dict[str, Any]], str]:
-        query = urlencode({"type": "jjcc", "code": code, "topline": 10, "year": "", "month": ""})
+        configured_rows = configured_portfolio_holdings(code)
+        if configured_rows:
+            return code, configured_rows, ""
+        source_code = fund_holdings_source_code(code)
+        query = urlencode({"type": "jjcc", "code": source_code, "topline": 10, "year": "", "month": ""})
         for attempt in range(2):
             try:
                 status, _, body = fetch_upstream(
                     f"https://fundf10.eastmoney.com/FundArchivesDatas.aspx?{query}",
-                    referer=f"https://fundf10.eastmoney.com/ccmx_{quote(code)}.html",
+                    referer=f"https://fundf10.eastmoney.com/ccmx_{quote(source_code)}.html",
                     content_type="text/plain; charset=utf-8",
-                    cache_key=f"fundholdings:{code}",
+                    cache_key=f"fundholdings:{source_code}",
                     kind="fundholdings",
                     ttl_seconds=FUND_HOLDINGS_REFRESH_TTL_SECONDS,
                     force_refresh=force_refresh,
@@ -3490,7 +3663,35 @@ def stock_history_url(sina_symbol: str) -> tuple[str, str] | None:
             f"https://quotes.sina.cn/hk/api/jsonp.php/var%20_=/HK_MarketData.getKLine?symbol={quote(symbol)}&scale=240&ma=no&datalen=1023",
             "https://finance.sina.com.cn/stock/hkstock/",
         )
+    if re.fullmatch(r"kr\d{6}", sina_symbol):
+        return (
+            f"https://m.stock.naver.com/api/stock/{sina_symbol[2:]}/price?pageSize=60&page=1",
+            "https://m.stock.naver.com/",
+        )
+    if re.fullmatch(r"jp[A-Za-z0-9]{4}", sina_symbol):
+        return (
+            f"https://api.stock.naver.com/stock/{sina_symbol[2:]}.T/price?pageSize=60&page=1",
+            "https://m.stock.naver.com/",
+        )
     return None
+
+
+def parse_naver_equity_history(text: str) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(payload, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        date = str(item.get("localTradedAt") or "")[:10]
+        close = parse_localized_number(item.get("closePrice"))
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) and close and close > 0:
+            rows.append({"date": date, "close": close})
+    return rows
 
 
 def parse_stock_history_rows(sina_symbol: str, text: str) -> list[dict[str, Any]]:
@@ -3499,6 +3700,8 @@ def parse_stock_history_rows(sina_symbol: str, text: str) -> list[dict[str, Any]
     if re.match(r"^(sh|sz)\d{6}$", sina_symbol):
         parsed = json.loads(text)
         return parsed if isinstance(parsed, list) else []
+    if sina_symbol.startswith(("jp", "kr")):
+        return parse_naver_equity_history(text)
     return []
 
 
@@ -4977,7 +5180,7 @@ def run_background_refresh_once(owner: str = "manual") -> bool:
     except Exception as exc:
         errors.append(f"fund-holdings: {exc}")
     try:
-        symbols = configured_sina_symbols_from_constants()
+        symbols = configured_quote_symbols()
         if symbols:
             build_dashboard_payload(symbols, [], "")
             snapshot_health = quote_snapshot_health()
@@ -5217,16 +5420,7 @@ def sina() -> Response:
             if cached_fx:
                 fetched_text = decode_body(cached_fx[2])
             else:
-                status, _, body = fetch_upstream(
-                    f"https://hq.sinajs.cn/list={missing_key}",
-                    referer="https://finance.sina.com.cn/",
-                    content_type="text/plain; charset=utf-8",
-                    cache_key=f"sina:{missing_key}",
-                    kind="sina",
-                    ttl_seconds=30,
-                )
-                if status < 400:
-                    fetched_text = decode_body(body)
+                status, fetched_text = fetch_market_quote_text(missing)
         combined = snapshot_text + fetched_text
         sanitized_fresh = sanitize_sina_quote_text(combined, symbol_list, now)
         resolved_symbols = set(quote_lines_by_symbol(sanitized_fresh))
@@ -5291,17 +5485,8 @@ def build_dashboard_payload(
                 max_age_by_symbol=max_ages,
             )
         if missing_symbols and allow_upstream:
-            joined_symbols = ",".join(missing_symbols)
-            status, _, body = fetch_upstream(
-                f"https://hq.sinajs.cn/list={joined_symbols}",
-                referer="https://finance.sina.com.cn/",
-                content_type="text/plain; charset=utf-8",
-                cache_key=f"sina:{joined_symbols}",
-                kind="sina",
-                ttl_seconds=30,
-            )
+            status, fetched_text = fetch_market_quote_text(missing_symbols)
             if status < 400:
-                fetched_text = decode_body(body)
                 sina_text += fetched_text
                 fetched_symbols = missing_symbols
     raw_sina_text = sina_text if allow_upstream else "\n".join(
@@ -5555,9 +5740,15 @@ def fund_holdings() -> Response:
                 results[code] = cached_rows
             continue
 
+        configured_rows = configured_portfolio_holdings(code)
+        if configured_rows:
+            store_fund_holdings(code, configured_rows)
+            results[code] = read_fund_holdings_from_db(code)
+            continue
+        source_code = fund_holdings_source_code(code)
         query = urlencode({
             "type": "jjcc",
-            "code": code,
+            "code": source_code,
             "topline": 10,
             "year": "",
             "month": "",
@@ -5565,9 +5756,9 @@ def fund_holdings() -> Response:
         url = f"https://fundf10.eastmoney.com/FundArchivesDatas.aspx?{query}"
         status, _, body = fetch_upstream(
             url,
-            referer=f"https://fundf10.eastmoney.com/ccmx_{quote(code)}.html",
+            referer=f"https://fundf10.eastmoney.com/ccmx_{quote(source_code)}.html",
             content_type="text/plain; charset=utf-8",
-            cache_key=f"fundholdings:{code}",
+            cache_key=f"fundholdings:{source_code}",
             kind="fundholdings",
             ttl_seconds=86400,
             force_refresh=refresh,

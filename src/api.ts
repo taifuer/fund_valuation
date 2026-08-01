@@ -19,7 +19,7 @@ import { globalFutureReferencePrice } from './quoteMath';
 import { isHoldingQuoteSupported } from './quoteCapabilities';
 import { fundManagementHeaders, type FundManagementMode } from './fundManagementAuth';
 
-type Market = 'us' | 'cn_index' | 'cn_full_index' | 'cn_stock' | 'intl_index' | 'hk' | 'global_future' | 'crypto' | 'fund' | 'fx';
+type Market = 'us' | 'cn_index' | 'cn_full_index' | 'cn_stock' | 'intl_index' | 'intl_equity' | 'hk' | 'global_future' | 'crypto' | 'fund' | 'fx';
 
 const API_BASE = ((import.meta as ImportMeta & { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 
@@ -41,6 +41,7 @@ function marketType(raw: string): Market {
   if (raw.startsWith('fx_')) return 'fx';
   if (raw.startsWith('hf_')) return 'global_future';
   if (raw.startsWith('gb_')) return 'us';
+  if (raw.startsWith('jp') || raw.startsWith('kr')) return 'intl_equity';
   if (raw.startsWith('s_')) return 'cn_index';
   if (/^(sh000|sz399)\d{3}$/.test(raw)) return 'cn_full_index';
   if (raw.startsWith('int_') || raw.startsWith('b_')) return 'intl_index';
@@ -117,7 +118,7 @@ function usExtendedSession(raw: string): 'pre' | 'post' | null {
 function maxReasonableChangePercent(market: Market): number {
   if (market === 'global_future') return 25;
   if (market === 'cn_index' || market === 'cn_full_index' || market === 'intl_index' || market === 'hk') return 25;
-  if (market === 'cn_stock') return 80;
+  if (market === 'cn_stock' || market === 'intl_equity') return 80;
   if (market === 'us') return 120;
   if (market === 'crypto') return 120;
   return 80;
@@ -233,6 +234,16 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
           date = beijingDatetimeFromTimestamp(fetchedAt);
           dateReliable = false;
         }
+      }
+      break;
+    case 'intl_equity':
+      if (fields.length < 6) return null;
+      price = parseFloat(fields[1]) || 0;
+      previousClose = price - (parseFloat(fields[2]) || 0);
+      changePct = parseFloat(fields[3]) || 0;
+      date = combineBeijingDateTime(fields[4] || '', fields[5] || '');
+      if (!date || isStale(date, fetchedAt)) {
+        dateReliable = false;
       }
       break;
     case 'hk':

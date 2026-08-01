@@ -799,7 +799,7 @@ export default function App() {
         </Suspense>
       )}
       <footer className={styles.footer}>
-        © {new Date().getFullYear()} <a href="https://github.com/taifuer/fund_valuation" target="_blank" rel="noreferrer">Fund Valuation</a> · 数据来源：新浪财经、天天基金、东方财富等公开数据；行情与估值可能存在延迟或误差，仅供参考，不构成投资建议；基金净值以基金管理人披露为准。
+        © {new Date().getFullYear()} <a href="https://github.com/taifuer/fund_valuation" target="_blank" rel="noreferrer">Fund Valuation</a> · 数据来源：新浪财经、天天基金、东方财富等公开数据；行情与估值可能存在延迟或误差，仅供参考，不构成投资建议；基金净值以基金管理人正式披露为准。
       </footer>
     </div>
   );

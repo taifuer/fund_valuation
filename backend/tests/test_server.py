@@ -472,6 +472,81 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertIn("易方达亚洲精选股票(QDII)", response.get_data(as_text=True))
         self.assertNotIn("�", response.get_data(as_text=True))
 
+    def test_naver_equity_adapter_normalizes_price_direction_and_beijing_time(self) -> None:
+        payload = json.dumps({
+            "stockNameEng": "SK Hynix",
+            "closePrice": "350,500",
+            "compareToPreviousClosePrice": "4,500",
+            "fluctuationsRatio": "1.27",
+            "compareToPreviousPrice": {"name": "FALLING"},
+            "localTradedAt": "2026-07-31T15:30:00+09:00",
+        }).encode()
+        with patch.object(
+            server,
+            "fetch_upstream",
+            return_value=(200, "application/json; charset=utf-8", payload),
+        ) as fetch:
+            line = server.naver_equity_quote_line("kr000660")
+
+        self.assertEqual(
+            line,
+            'var hq_str_kr000660="SK Hynix,350500.0000,-4500.0000,-1.2700,2026-07-31,14:30:00";',
+        )
+        self.assertIn("/api/stock/000660/basic", fetch.call_args.args[0])
+
+    def test_market_quote_adapter_combines_sina_and_naver_lines(self) -> None:
+        def fake_fetch(url: str, **_kwargs: object) -> tuple[int, str, bytes]:
+            if "hq.sinajs.cn" in url:
+                return 200, "text/plain", b'var hq_str_gb_nvda="NVIDIA,1,2";'
+            return 200, "application/json", json.dumps({
+                "stockNameEng": "Advantest",
+                "closePrice": "19,320",
+                "compareToPreviousClosePrice": "250",
+                "fluctuationsRatio": "1.31",
+                "compareToPreviousPrice": {"name": "RISING"},
+                "localTradedAt": "2026-07-31T15:30:00+09:00",
+            }).encode()
+
+        with patch.object(server, "fetch_upstream", side_effect=fake_fetch):
+            status, text = server.fetch_market_quote_text(["gb_nvda", "jp6857"])
+
+        self.assertEqual(status, 200)
+        self.assertIn("hq_str_gb_nvda", text)
+        self.assertIn("hq_str_jp6857", text)
+        self.assertIn("2026-07-31,14:30:00", text)
+
+    def test_japanese_and_korean_holding_symbols_are_classified_for_quotes(self) -> None:
+        self.assertEqual(
+            server.classify_holding_symbol("005930", "", "三星电子"),
+            ("kr", "kr005930", "KRW"),
+        )
+        self.assertEqual(
+            server.classify_holding_symbol("6857", "", "ADVANTEST"),
+            ("jp", "jp6857", "JPY"),
+        )
+        self.assertEqual(
+            server.classify_holding_symbol("JP3236330001", "", "KIOXIA HOLDINGS"),
+            ("jp", "jp285A", "JPY"),
+        )
+        self.assertEqual(
+            server.classify_holding_symbol("JP3684400009", "", "NITTO BOSEKI"),
+            ("jp", "jp3110", "JPY"),
+        )
+
+    def test_naver_equity_history_uses_supported_page_size_and_parses_rows(self) -> None:
+        target = server.stock_history_url("jp6857")
+        self.assertIsNotNone(target)
+        assert target is not None
+        self.assertIn("pageSize=60", target[0])
+        rows = server.parse_stock_history_rows("jp6857", json.dumps([
+            {"localTradedAt": "2026-07-31T15:00:00+09:00", "closePrice": "19,320"},
+            {"localTradedAt": "2026-07-30T15:00:00+09:00", "closePrice": "19,570"},
+        ]))
+        self.assertEqual(rows, [
+            {"date": "2026-07-31", "close": 19320.0},
+            {"date": "2026-07-30", "close": 19570.0},
+        ])
+
     def test_dashboard_aggregates_market_snapshot_and_uses_cache(self) -> None:
         quote_body = 'var hq_str_s_sh000001="上证指数,3000,10,0.33";'.encode("gb18030")
         fx_body = 'var hq_str_fx_susdcny="美元人民币,7.1000,0,0,0,0,0,0,0,09:30:00,0.12,2026-06-12";'.encode("gb18030")
@@ -1344,7 +1419,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(health["issueCount"], 0)
         self.assertEqual(health["unsupportedCount"], 2)
 
-    def test_dynamic_unsupported_holdings_are_not_polled(self) -> None:
+    def test_dynamic_backend_adapted_holdings_are_polled(self) -> None:
         holdings = [
             {"sinaSymbol": "gb_nvda"},
             {"sinaSymbol": "kr005930"},
@@ -1358,8 +1433,8 @@ class ServerDataRefreshTests(unittest.TestCase):
             supported = server.configured_quote_symbols()
             unsupported = server.configured_unsupported_quote_symbols()
 
-        self.assertEqual(supported, ["gb_nvda", "sh000001"])
-        self.assertIn("kr005930", unsupported)
+        self.assertEqual(supported, ["gb_nvda", "kr005930", "sh000001"])
+        self.assertEqual(unsupported, [])
 
     def test_quote_diagnostics_requires_configured_token(self) -> None:
         client = server.app.test_client()
@@ -1412,12 +1487,9 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertIn("sina-cn:sh000001", server.configured_market_return_items_from_constants())
         self.assertIn("tencent-hk:hkHSTECH", server.configured_market_return_items_from_constants())
         self.assertIn("hkHSTECH", server.configured_sina_symbols_from_constants())
-        self.assertNotIn("kr000660", server.configured_sina_symbols_from_constants())
-        self.assertNotIn("kr005930", server.configured_sina_symbols_from_constants())
-        self.assertEqual(
-            server.configured_unsupported_quote_symbols(),
-            ["kr000660", "kr005930"],
-        )
+        self.assertIn("kr000660", server.configured_sina_symbols_from_constants())
+        self.assertIn("kr005930", server.configured_sina_symbols_from_constants())
+        self.assertEqual(server.configured_unsupported_quote_symbols(), [])
 
     def test_history_health_uses_disclosure_lag_and_completed_market_sessions(self) -> None:
         server.ensure_market_calendar_seeded(2026)
@@ -1571,6 +1643,37 @@ class ServerDataRefreshTests(unittest.TestCase):
         for call in fetch.call_args_list:
             self.assertEqual(call.kwargs["ttl_seconds"], server.FUND_HOLDINGS_REFRESH_TTL_SECONDS)
             self.assertIs(call.kwargs["force_refresh"], True)
+
+    def test_target_etf_fund_refreshes_holdings_from_target_code(self) -> None:
+        rows = [{
+            "code": "017091", "reportDate": "2026-06-30", "rank": 1,
+            "stockCode": "NVDA", "symbol": "NVDA", "name": "NVIDIA",
+            "weight": 0.1301, "market": "us", "sinaSymbol": "gb_nvda", "currency": "USD",
+        }]
+        with (
+            patch.object(server, "fetch_upstream", return_value=(200, "text/plain", b"payload")) as fetch,
+            patch.object(server, "parse_fund_holdings", return_value=rows) as parse,
+        ):
+            result = server.refresh_latest_fund_holdings(["017091"], force_refresh=True)
+
+        self.assertEqual(result["latestReports"], {"017091": "2026-06-30"})
+        self.assertIn("code=159509", fetch.call_args.args[0])
+        self.assertIn("ccmx_159509.html", fetch.call_args.kwargs["referer"])
+        parse.assert_called_once_with("017091", "payload")
+        self.assertEqual(server.read_fund_holdings_from_db("017091")[0]["stockCode"], "NVDA")
+
+    def test_configured_etf_portfolio_is_stored_without_invalid_stock_scrape(self) -> None:
+        with (
+            patch.object(server, "fetch_upstream", side_effect=AssertionError("must use disclosed ETF portfolio")),
+            patch.object(server, "current_fund_holding_report_date", return_value=True),
+        ):
+            result = server.refresh_latest_fund_holdings(["501312"], force_refresh=True)
+
+        self.assertEqual(result["latestReports"], {"501312": "2026-06-30"})
+        holdings = server.read_fund_holdings_from_db("501312")
+        self.assertEqual(holdings[0]["stockCode"], "ARKK")
+        self.assertEqual(holdings[0]["sinaSymbol"], "gb_arkk")
+        self.assertAlmostEqual(holdings[0]["weight"], 0.1848)
 
     def test_latest_holding_refresh_does_not_replace_newer_report(self) -> None:
         latest_rows = [{

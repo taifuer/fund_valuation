@@ -62,10 +62,7 @@ def configured_fund_codes() -> list[str]:
 def quote_supported_symbol(symbol: str, explicit: object = None) -> bool:
     """Return whether the configured quote provider supports this holding."""
     normalized = str(symbol or "").strip().lower()
-    if explicit is False or not SINA_SYMBOL_RE.fullmatch(normalized):
-        return False
-    # Sina's public quote endpoint does not provide stable Korean equity quotes.
-    return not normalized.startswith("kr")
+    return explicit is not False and bool(SINA_SYMBOL_RE.fullmatch(normalized))
 
 
 def configured_sina_symbols() -> list[str]:

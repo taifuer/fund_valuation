@@ -250,6 +250,8 @@ function marketKey(sinaSymbol: string): string | null {
   if (futuresKey) return futuresKey;
   if (sinaSymbol.startsWith('gb_')) return 'us';
   if (sinaSymbol.startsWith('hk')) return 'hk';
+  if (sinaSymbol.startsWith('jp')) return 'jp';
+  if (sinaSymbol.startsWith('kr')) return 'kr';
   if (sinaSymbol.startsWith('s_') || /^(sz|sh)\d/.test(sinaSymbol)) return 'cn';
   if (sinaSymbol === 'int_nikkei') return 'jp';
   if (sinaSymbol === 'b_KOSPI') return 'kr';
