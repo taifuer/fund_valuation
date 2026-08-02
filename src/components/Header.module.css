@@ -97,7 +97,7 @@
   padding: 0 13px;
 }
 
-.navButton:hover {
+.navButton:not(.navButtonActive):hover {
   background: #f8fafc;
   border-color: #e2e8f0;
   color: #334155;

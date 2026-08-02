@@ -15,6 +15,29 @@ test('mobile layout keeps page-level content within the viewport', async ({ page
   expect(overflow).toBeLessThanOrEqual(1);
 });
 
+test('mobile navigation keeps the active style after client-side navigation', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-chromium', 'Mobile navigation behavior');
+
+  await page.goto('/');
+  const returnsButton = page.getByRole('button', { name: '收益', exact: true });
+  await returnsButton.click();
+  await expect(page).toHaveURL(/\/returns$/);
+  await expect(returnsButton).toHaveAttribute('aria-current', 'page');
+  const backgroundAfterClick = await returnsButton.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+
+  await page.reload();
+  const reloadedButton = page.getByRole('button', { name: '收益', exact: true });
+  await expect(reloadedButton).toHaveAttribute('aria-current', 'page');
+  const backgroundAfterReload = await reloadedButton.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+
+  expect(backgroundAfterClick).toBe('rgb(15, 23, 42)');
+  expect(backgroundAfterReload).toBe(backgroundAfterClick);
+});
+
 test('mobile return and risk tables keep every column in a horizontal scroller', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile-chromium', 'Mobile table behavior');
 
