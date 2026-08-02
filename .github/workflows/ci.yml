@@ -100,6 +100,7 @@ jobs:
           curl --fail http://127.0.0.1:18080/api/ready | grep -q '"ready":true'
           curl --fail http://127.0.0.1:18080/api/meta | grep -q '"dashboardSchemaVersion":1'
           curl --fail http://127.0.0.1:18080/risk | grep -q '<div id="root"></div>'
+          curl --fail --silent http://127.0.0.1:18080/brand-mark.png | cmp --silent - public/brand-mark.png
           docker compose --profile tools run --rm db-tools | grep -q '"integrity": "ok"'
           docker compose --profile tools run --rm db-tools python -m backend.db_admin backup | grep -q 'Backup created:'
       - name: Upload Compose logs
