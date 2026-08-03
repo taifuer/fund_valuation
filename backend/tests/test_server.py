@@ -160,6 +160,26 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(snapshot["issueCount"], 1)
         self.assertIn("quote:stale", snapshot["issues"][0]["key"])
 
+    def test_upstream_health_ignores_expired_transient_issues(self) -> None:
+        with patch.object(server, "now_ms", return_value=1_000):
+            server.record_upstream_health(
+                cache_key="quote:expired",
+                kind="quote",
+                url="sina:expired",
+                source="error",
+                error="temporary failure",
+            )
+        with patch.object(
+            server,
+            "now_ms",
+            return_value=1_000 + server.UPSTREAM_HEALTH_ISSUE_TTL_MS + 1,
+        ):
+            snapshot = server.upstream_health_snapshot()
+
+        self.assertEqual(snapshot["issueCount"], 0)
+        self.assertEqual(snapshot["errorCount"], 0)
+        self.assertEqual(snapshot["expiredIssueCount"], 1)
+
     def test_eastmoney_json_can_disable_stale_fallback(self) -> None:
         with sqlite3.connect(server.DB_PATH) as conn:
             conn.execute(
@@ -416,10 +436,11 @@ class ServerDataRefreshTests(unittest.TestCase):
 
     def test_background_refresh_schedules_configured_work(self) -> None:
         with (
-            patch.object(server, "configured_fund_codes_from_constants", return_value=["016664"]),
-            patch.object(server, "latest_fund_history_meta", return_value=("2026-05-21", 0)),
-            patch.object(server, "count_fund_history_rows", return_value=101),
-            patch.object(server, "auto_refresh_fund_history_if_stale") as fund_refresh,
+            patch.object(
+                server,
+                "refresh_latest_fund_history",
+                return_value={"checked": 1, "updated": 0, "failed": 0, "errors": []},
+            ) as fund_refresh,
             patch.object(server, "configured_market_return_items_from_constants", return_value=["sina-cn:sh000001"]),
             patch.object(server, "market_history_should_refresh_for_returns", return_value=True),
             patch.object(server, "schedule_market_history_refresh") as market_refresh,
@@ -434,12 +455,34 @@ class ServerDataRefreshTests(unittest.TestCase):
         ):
             self.assertTrue(server.run_background_refresh_once())
 
-        fund_refresh.assert_called_once_with("016664", server.FUND_HISTORY_AUTO_REFRESH_ROWS)
+        fund_refresh.assert_called_once_with()
         market_refresh.assert_called_once_with("sina-cn", "sh000001")
         prewarm.assert_called_once()
         nav_prewarm.assert_called_once()
         holdings_refresh.assert_called_once()
         self.assertGreater(server.background_refresh_state_snapshot()["runCount"], 0)
+
+    def test_latest_fund_history_refresh_fetches_only_latest_rows(self) -> None:
+        server.store_fund_history("017091", [{"FSRQ": "2026-07-30", "DWJZ": "2.7450", "JZZZL": "-1.0"}])
+        rows = [
+            {"FSRQ": "2026-07-31", "DWJZ": "2.7554", "JZZZL": "0.38"},
+            {"FSRQ": "2026-07-30", "DWJZ": "2.7450", "JZZZL": "-1.0"},
+        ]
+        with server._RESPONSE_CACHE_GUARD:
+            server._RESPONSE_CACHE["api:overview:test"] = (10**12, 200, "application/json", b"{}")
+            server._RESPONSE_CACHE["api:fundreturns:test"] = (10**12, 200, "application/json", b"{}")
+
+        with patch.object(server, "fetch_fund_history_page", return_value=(rows, 100)) as fetch:
+            result = server.refresh_latest_fund_history(["017091"], max_workers=1)
+
+        fetch.assert_called_once_with("017091", 1, 2, refresh=True)
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual(result["failed"], 0)
+        self.assertEqual(server.latest_fund_history_point("017091"), ("2026-07-31", 2.7554, 0.38))
+        self.assertEqual(server.read_dashboard_snapshot(server.FUND_HISTORY_SYNC_SNAPSHOT_NAME)["updated"], 1)
+        with server._RESPONSE_CACHE_GUARD:
+            self.assertNotIn("api:overview:test", server._RESPONSE_CACHE)
+            self.assertNotIn("api:fundreturns:test", server._RESPONSE_CACHE)
 
     def test_background_job_lease_allows_only_one_owner(self) -> None:
         self.assertTrue(server.claim_background_job("worker-a", lease_seconds=120, current_ms=1_000))
@@ -1249,6 +1292,104 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(stored, 2)
         self.assertEqual(rows[-1], {"date": "2026-07-16", "close": 45900.25})
 
+    def test_coinmetrics_bitcoin_history_parser_stores_daily_usd_closes(self) -> None:
+        payload = json.dumps({
+            "data": [
+                {"asset": "btc", "time": "2026-08-01T00:00:00.000000000Z", "PriceUSD": "62751.8791"},
+                {"asset": "btc", "time": "2026-08-02T00:00:00.000000000Z", "PriceUSD": "63445.6830"},
+            ]
+        })
+
+        stored = server.store_market_history("coinmetrics-crypto", "BTC", payload)
+        rows = server.read_market_history_from_db("coinmetrics-crypto", "BTC")
+
+        self.assertEqual(stored, 2)
+        self.assertEqual(rows[-1], {"date": "2026-08-02", "close": 63445.683})
+
+    def test_binance_bitcoin_parser_excludes_open_daily_candle(self) -> None:
+        payload = json.dumps([
+            [1785628800000, "62000", "64000", "61000", "63445.68", "1", 1785715199999],
+            [1785715200000, "63445", "64000", "62000", "63000", "1", 1785801599999],
+        ])
+
+        rows = server.parse_binance_bitcoin_history(payload, current_ms=1785750000000)
+
+        self.assertEqual(rows, [{"date": "2026-08-02", "close": 63445.68}])
+
+    def test_coinmetrics_bitcoin_history_uses_binance_only_for_empty_bootstrap(self) -> None:
+        fallback = json.dumps([
+            {"date": "2026-08-01", "close": 62751.88},
+            {"date": "2026-08-02", "close": 63445.68},
+        ])
+        with (
+            patch.object(server, "fetch_upstream", return_value=(200, "application/json", b'{"data":[]}')),
+            patch.object(server, "binance_bitcoin_history_text", return_value=fallback) as binance,
+        ):
+            status, _content_type, body = server.fetch_market_history_payload(
+                "coinmetrics-crypto",
+                "BTC",
+                ttl_seconds=300,
+                force_refresh=True,
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(server.decode_body(body))[-1]["close"], 63445.68)
+        binance.assert_called_once_with(300, force_refresh=True)
+
+    def test_coinmetrics_failure_keeps_existing_canonical_history(self) -> None:
+        server.store_market_history(
+            "coinmetrics-crypto",
+            "BTC",
+            json.dumps({"data": [{
+                "time": "2026-08-01T00:00:00.000000000Z",
+                "PriceUSD": "62751.88",
+            }]}),
+        )
+        with (
+            patch.object(server, "fetch_upstream", return_value=(200, "application/json", b'{"data":[]}')),
+            patch.object(server, "binance_bitcoin_history_text") as binance,
+        ):
+            status, _content_type, _body = server.fetch_market_history_payload(
+                "coinmetrics-crypto",
+                "BTC",
+                ttl_seconds=300,
+                force_refresh=True,
+            )
+
+        self.assertEqual(status, 599)
+        binance.assert_not_called()
+
+    def test_market_history_refresh_waits_for_market_close(self) -> None:
+        server.ensure_market_calendar_seeded(2026)
+        server.store_market_history(
+            "sina-cn",
+            "sh000001",
+            '[{"day":"2026-05-25","close":"4000.00"}]',
+        )
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute(
+                "UPDATE market_history SET fetched_at = 0 WHERE source = ? AND symbol = ?",
+                ("sina-cn", "sh000001"),
+            )
+
+        before_close = datetime.fromisoformat("2026-05-26T10:00:00+08:00")
+        after_close = datetime.fromisoformat("2026-05-26T16:00:00+08:00")
+
+        self.assertFalse(server.market_history_should_refresh_for_returns(
+            "sina-cn", "sh000001", current=before_close
+        ))
+        self.assertTrue(server.market_history_should_refresh_for_returns(
+            "sina-cn", "sh000001", current=after_close
+        ))
+
+    def test_us_futures_history_rolls_after_daily_settlement(self) -> None:
+        server.ensure_market_calendar_seeded(2026)
+        before = datetime.fromisoformat("2026-05-26T16:30:00-04:00")
+        after = datetime.fromisoformat("2026-05-26T17:30:00-04:00")
+
+        self.assertEqual(server.latest_completed_trading_day("hf_GC", before), "2026-05-22")
+        self.assertEqual(server.latest_completed_trading_day("hf_GC", after), "2026-05-26")
+
     def test_twse_official_history_uses_non_redirecting_official_domain(self) -> None:
         url, referer = server.market_history_url("twse-official", "TWII")
 
@@ -1527,6 +1668,35 @@ class ServerDataRefreshTests(unittest.TestCase):
         changes = server.read_fx_changes(["USD", "EUR"], "2026-06-30", "2026-07-01")
         self.assertAlmostEqual(changes["USD"]["2026-07-01"], 0.0)
         self.assertAlmostEqual(changes["EUR"]["2026-07-01"], (7.77 / 7.7 - 1) * 100)
+
+    def test_configured_fx_history_backfills_when_existing_coverage_is_short(self) -> None:
+        short_summary = {
+            currency: {"startDate": "2026-06-25", "endDate": "2026-08-03", "count": 33}
+            for currency in ("USD", "EUR", "JPY", "KRW", "HKD")
+        }
+        with (
+            patch.object(server, "fx_history_summary", return_value=short_summary),
+            patch.object(server, "refresh_ecb_fx_history", return_value=5000) as refresh,
+        ):
+            rows = server.refresh_configured_fx_history(years=6)
+
+        self.assertEqual(rows, 5000)
+        self.assertIsNotNone(refresh.call_args.kwargs["start_date"])
+        self.assertTrue(refresh.call_args.kwargs["force_refresh"])
+
+    def test_configured_fx_history_uses_incremental_overlap_after_backfill(self) -> None:
+        complete_summary = {
+            currency: {"startDate": "2019-01-02", "endDate": "2026-08-03", "count": 1900}
+            for currency in ("USD", "EUR", "JPY", "KRW", "HKD")
+        }
+        with (
+            patch.object(server, "fx_history_summary", return_value=complete_summary),
+            patch.object(server, "refresh_ecb_fx_history", return_value=25) as refresh,
+        ):
+            rows = server.refresh_configured_fx_history(years=6)
+
+        self.assertEqual(rows, 25)
+        self.assertIsNone(refresh.call_args.kwargs["start_date"])
 
     def test_history_coverage_reports_missing_datasets_without_fetching_upstream(self) -> None:
         periods = expected_holding_periods(years=3, as_of=date(2026, 7, 3))

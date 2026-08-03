@@ -198,7 +198,7 @@ export interface SystemStatus {
 }
 
 export interface MarketHistoryConfig {
-  source: 'sina-cn' | 'sina-us' | 'sina-futures' | 'tencent-hk' | 'twse-official' | 'naver-korea';
+  source: 'sina-cn' | 'sina-us' | 'sina-futures' | 'tencent-hk' | 'twse-official' | 'naver-korea' | 'coinmetrics-crypto';
   symbol: string;
 }
 

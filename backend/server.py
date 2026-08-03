@@ -90,7 +90,15 @@ MARKET_HISTORY_SYMBOL_RE = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
 CN_ETF_HISTORY_SYMBOL_RE = re.compile(r"^(?:sh5\d{5}|sz159\d{3})$")
 MARKET_HISTORY_CORPORATE_ACTION_LOW_RATIO = 0.65
 MARKET_HISTORY_CORPORATE_ACTION_HIGH_RATIO = 1 / MARKET_HISTORY_CORPORATE_ACTION_LOW_RATIO
-MARKET_HISTORY_SOURCES = {"sina-cn", "sina-us", "sina-futures", "tencent-hk", "twse-official", "naver-korea"}
+MARKET_HISTORY_SOURCES = {
+    "sina-cn",
+    "sina-us",
+    "sina-futures",
+    "tencent-hk",
+    "twse-official",
+    "naver-korea",
+    "coinmetrics-crypto",
+}
 MAX_FUND_CODES_PER_REQUEST = 50
 MAX_SINA_SYMBOLS_PER_REQUEST = 160
 MAX_MARKET_STATE_SYMBOLS_PER_REQUEST = 160
@@ -105,9 +113,12 @@ FUND_HOLDINGS_REQUEST_DELAY_SECONDS = 0.25
 FUND_HOLDINGS_MAX_AGE_DAYS = 550
 MARKET_RETURNS_CACHE_TTL_SECONDS = 30 * 60
 FUND_NAV_CACHE_TTL_SECONDS = 60
+UPSTREAM_HEALTH_ISSUE_TTL_MS = int(os.environ.get("FUND_VALUATION_HEALTH_ISSUE_TTL_SECONDS", "3600")) * 1000
+FX_HISTORY_COVERAGE_YEARS = int(os.environ.get("FUND_VALUATION_FX_HISTORY_YEARS", "6"))
 BACKGROUND_REFRESH_INTERVAL_SECONDS = int(os.environ.get("FUND_VALUATION_REFRESH_INTERVAL", "900"))
 QUOTE_SNAPSHOT_RETENTION_DAYS = int(os.environ.get("FUND_VALUATION_SNAPSHOT_RETENTION_DAYS", "30"))
 BACKGROUND_JOB_NAME = "data-refresh"
+FUND_HISTORY_SYNC_SNAPSHOT_NAME = "fund-history-sync-status"
 
 # Some East Money reports omit an exchange link for overseas securities. Keep
 # the small alias table explicit so numeric Japanese tickers are not confused
@@ -1917,6 +1928,83 @@ def fetch_and_store_fund_history(code: str, target_count: int, *, refresh: bool)
             break
 
 
+def latest_fund_history_point(code: str) -> tuple[str, float, float] | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT date, nav, change_percent
+            FROM fund_nav_history
+            WHERE code = ?
+            ORDER BY date DESC
+            LIMIT 1
+            """,
+            (code,),
+        ).fetchone()
+    if not row:
+        return None
+    return str(row[0]), float(row[1]), float(row[2])
+
+
+def invalidate_fund_history_response_caches() -> None:
+    for prefix in (
+        "api:overview:",
+        "api:fundnav:",
+        "api:fundreturns:",
+        "api:fundestimates:",
+    ):
+        response_cache_clear_prefix(prefix)
+
+
+def refresh_latest_fund_history(
+    codes: list[str] | None = None,
+    *,
+    max_workers: int = 4,
+) -> dict[str, Any]:
+    normalized_codes = sorted(dict.fromkeys(codes or configured_fund_codes_from_constants()))
+    updated_codes: list[str] = []
+    errors: list[str] = []
+
+    def refresh_one(code: str) -> bool:
+        before = latest_fund_history_point(code)
+        rows, _total_count = fetch_fund_history_page(code, 1, 2, refresh=True)
+        if not rows:
+            raise RuntimeError("latest NAV response was empty")
+        store_fund_history(code, rows)
+        return latest_fund_history_point(code) != before
+
+    if normalized_codes:
+        with ThreadPoolExecutor(max_workers=min(max(max_workers, 1), len(normalized_codes))) as executor:
+            futures = {executor.submit(refresh_one, code): code for code in normalized_codes}
+            for future in as_completed(futures):
+                code = futures[future]
+                try:
+                    if future.result():
+                        updated_codes.append(code)
+                except Exception as exc:
+                    errors.append(f"{code}: {exc}")
+
+    latest_dates = [
+        point[0]
+        for code in normalized_codes
+        if (point := latest_fund_history_point(code)) is not None
+    ]
+    result = {
+        "checked": len(normalized_codes),
+        "updated": len(updated_codes),
+        "unchanged": max(len(normalized_codes) - len(updated_codes) - len(errors), 0),
+        "failed": len(errors),
+        "updatedCodes": sorted(updated_codes),
+        "latestDate": max(latest_dates) if latest_dates else "",
+        "errors": errors,
+    }
+    store_dashboard_snapshot(result, FUND_HISTORY_SYNC_SNAPSHOT_NAME)
+    if updated_codes:
+        reconcile_fund_estimate_snapshots(updated_codes)
+        invalidate_fund_history_response_caches()
+    response_cache_clear_prefix("api:datahealth")
+    return result
+
+
 def latest_fund_history_meta(code: str) -> tuple[str | None, int]:
     with get_conn() as conn:
         row = conn.execute(
@@ -1976,14 +2064,23 @@ def market_history_quote_symbol(source: str, symbol: str) -> str | None:
         if symbol == "NK":
             return "int_nikkei"
         return f"hf_{symbol}"
+    if source == "coinmetrics-crypto" and symbol == "BTC":
+        return "fx_sbtcusd"
     return None
 
 
 def latest_completed_trading_day(symbol: str, now: datetime | None = None) -> str | None:
     market = market_key_for_symbol(symbol)
+    current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+    if market == "us_futures":
+        local = current.astimezone(ZoneInfo("America/New_York"))
+        day = local.strftime("%Y-%m-%d")
+        row = market_calendar_row("us", day)
+        if row and row["status"] in {"open", "half_day"} and local.hour * 60 + local.minute >= 17 * 60:
+            return day
+        return previous_trading_day("us", local)
     if not market or market not in MARKET_CALENDARS:
         return None
-    current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
     calendar = MARKET_CALENDARS[market]
     local = current.astimezone(ZoneInfo(str(calendar["timezone"])))
     day = local.strftime("%Y-%m-%d")
@@ -2002,6 +2099,10 @@ def latest_completed_trading_day(symbol: str, now: datetime | None = None) -> st
 def market_history_is_stale(source: str, symbol: str, latest_date: str | None, now: datetime | None = None) -> bool:
     if not latest_date:
         return True
+    if source == "coinmetrics-crypto" and symbol == "BTC":
+        current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+        expected = (current.astimezone(ZoneInfo("UTC")).date() - timedelta(days=1)).isoformat()
+        return latest_date < expected
     quote_symbol = market_history_quote_symbol(source, symbol)
     expected = latest_completed_trading_day(quote_symbol, now) if quote_symbol else None
     return bool(expected) and latest_date < expected
@@ -2045,8 +2146,7 @@ def schedule_fund_history_refresh(codes: list[str], target_count: int) -> None:
                             fetch_and_store_fund_history(code, target_count, refresh=True)
                     except Exception as exc:
                         print(f"[fundhistory-refresh] failed for {code}: {exc}", flush=True)
-                response_cache_clear_prefix("api:overview:")
-                response_cache_clear_prefix("api:fundreturns:")
+                invalidate_fund_history_response_caches()
         finally:
             with _FUND_HISTORY_REFRESH_GUARD:
                 _FUND_HISTORY_REFRESHING.discard(refresh_key)
@@ -3116,6 +3216,25 @@ def refresh_ecb_fx_history(*, start_date: str | None = None, force_refresh: bool
     return store_ecb_reference_rates(decode_body(body), now_ms())
 
 
+def refresh_configured_fx_history(*, years: int | None = None) -> int:
+    coverage_years = max(years if years is not None else FX_HISTORY_COVERAGE_YEARS, 1)
+    target_start = (
+        datetime.now(ZoneInfo("Asia/Shanghai")).date() - timedelta(days=coverage_years * 366)
+    ).isoformat()
+    summary = fx_history_summary()
+    coverage_slack = (datetime.fromisoformat(target_start).date() + timedelta(days=14)).isoformat()
+    needs_backfill = any(
+        currency not in summary or str(summary[currency].get("startDate") or "") > coverage_slack
+        for currency in ("USD", "EUR", "JPY", "KRW", "HKD")
+    )
+    rows = refresh_ecb_fx_history(
+        start_date=target_start if needs_backfill else None,
+        force_refresh=True,
+    )
+    response_cache_clear_prefix("api:datahealth")
+    return rows
+
+
 def parse_default_fund_holdings_from_constants(code: str) -> list[dict[str, Any]]:
     return universe_fund_holdings(code)
 
@@ -3553,6 +3672,53 @@ def store_purchase_status(text: str) -> None:
         )
 
 
+def parse_coinmetrics_bitcoin_history(text: str) -> list[dict[str, Any]]:
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    data = parsed.get("data") if isinstance(parsed, dict) else None
+    if not isinstance(data, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        day = str(item.get("time") or "")[:10]
+        try:
+            close = float(item.get("PriceUSD") or 0)
+        except (TypeError, ValueError):
+            continue
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) and close > 0:
+            rows.append({"date": day, "close": close})
+    return rows
+
+
+def parse_binance_bitcoin_history(text: str, *, current_ms: int | None = None) -> list[dict[str, Any]]:
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    cutoff = current_ms if current_ms is not None else now_ms()
+    rows: list[dict[str, Any]] = []
+    for item in parsed:
+        if not isinstance(item, list) or len(item) < 7:
+            continue
+        try:
+            opened_at = int(item[0])
+            close = float(item[4])
+            closed_at = int(item[6])
+        except (TypeError, ValueError):
+            continue
+        if close <= 0 or closed_at > cutoff:
+            continue
+        day = datetime.fromtimestamp(opened_at / 1000, ZoneInfo("UTC")).strftime("%Y-%m-%d")
+        rows.append({"date": day, "close": close})
+    return rows
+
+
 def store_market_history(source: str, symbol: str, text: str) -> int:
     rows: list[dict[str, Any]] = []
     if source == "sina-cn":
@@ -3586,6 +3752,14 @@ def store_market_history(source: str, symbol: str, text: str) -> int:
                 })
     elif source == "naver-korea":
         rows = parse_naver_korea_history(text)
+    elif source == "coinmetrics-crypto" and symbol == "BTC":
+        rows = parse_coinmetrics_bitcoin_history(text)
+        if not rows:
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                parsed = None
+            rows = parsed if isinstance(parsed, list) else []
 
     points = []
     fetched_at = now_ms()
@@ -4127,9 +4301,16 @@ def latest_market_history_meta(source: str, symbol: str) -> tuple[str | None, in
     return (str(row[0]) if row and row[0] else None, int(row[1] if row and row[1] else 0))
 
 
-def auto_refresh_market_history_if_stale(source: str, symbol: str) -> bool:
+def auto_refresh_market_history_if_stale(
+    source: str,
+    symbol: str,
+    *,
+    current: datetime | None = None,
+) -> bool:
     latest_date, fetched_at = latest_market_history_meta(source, symbol)
-    if not history_needs_auto_refresh(latest_date, fetched_at):
+    if not market_history_is_stale(source, symbol, latest_date, current):
+        return False
+    if fetched_at and now_ms() - fetched_at <= HISTORY_AUTO_REFRESH_TTL_MS:
         return False
 
     try:
@@ -4146,10 +4327,10 @@ def auto_refresh_market_history_if_stale(source: str, symbol: str) -> bool:
         return False
 
 
-def ensure_market_history_for_returns(source: str, symbol: str) -> None:
+def ensure_market_history_for_returns(source: str, symbol: str, *, current: datetime | None = None) -> None:
     latest_date, fetched_at = latest_market_history_meta(source, symbol)
     if latest_date:
-        auto_refresh_market_history_if_stale(source, symbol)
+        auto_refresh_market_history_if_stale(source, symbol, current=current)
         return
 
     try:
@@ -4190,9 +4371,19 @@ def schedule_market_history_refresh(source: str, symbol: str) -> None:
     worker.start()
 
 
-def market_history_should_refresh_for_returns(source: str, symbol: str) -> bool:
+def market_history_should_refresh_for_returns(
+    source: str,
+    symbol: str,
+    *,
+    current: datetime | None = None,
+) -> bool:
     latest_date, fetched_at = latest_market_history_meta(source, symbol)
-    return not latest_date or history_needs_auto_refresh(latest_date, fetched_at)
+    if not latest_date:
+        return not fetched_at or now_ms() - fetched_at > HISTORY_AUTO_REFRESH_TTL_MS
+    return (
+        market_history_is_stale(source, symbol, latest_date, current)
+        and now_ms() - fetched_at > HISTORY_AUTO_REFRESH_TTL_MS
+    )
 
 
 def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, Any] | None:
@@ -4861,6 +5052,7 @@ def fund_history_health() -> dict[str, Any]:
         latest_dates.append(latest_date)
         if fund_history_is_stale(latest_date):
             stale.append(code)
+    sync = read_dashboard_snapshot(FUND_HISTORY_SYNC_SNAPSHOT_NAME) or {}
     return {
         "total": len(codes),
         "missing": len(missing),
@@ -4868,6 +5060,9 @@ def fund_history_health() -> dict[str, Any]:
         "sampleMissing": missing[:5],
         "sampleStale": stale[:5],
         "latestDate": max(latest_dates) if latest_dates else "",
+        "lastSyncAt": int(sync.get("generatedAt") or 0),
+        "lastSyncUpdated": int(sync.get("updated") or 0),
+        "lastSyncFailed": int(sync.get("failed") or 0),
     }
 
 
@@ -4898,22 +5093,29 @@ def market_history_health() -> dict[str, Any]:
 def upstream_health_snapshot() -> dict[str, Any]:
     with _UPSTREAM_HEALTH_GUARD:
         rows = sorted(_UPSTREAM_HEALTH.values(), key=lambda item: int(item.get("lastSeenAt", 0)), reverse=True)
-    stale_count = sum(1 for item in rows if item.get("source") == "stale")
-    fallback_count = sum(1 for item in rows if item.get("source") == "fallback")
-    error_count = sum(
-        1 for item in rows
-        if item.get("source") == "error" or (item.get("source") == "stale" and item.get("error"))
-    )
+    current = now_ms()
     issue_rows = [
         item for item in rows
         if item.get("source") in {"stale", "error", "fallback"}
+        and current - int(item.get("lastSeenAt", 0) or 0) <= UPSTREAM_HEALTH_ISSUE_TTL_MS
     ]
+    stale_count = sum(1 for item in issue_rows if item.get("source") == "stale")
+    fallback_count = sum(1 for item in issue_rows if item.get("source") == "fallback")
+    error_count = sum(
+        1 for item in issue_rows
+        if item.get("source") == "error" or (item.get("source") == "stale" and item.get("error"))
+    )
+    expired_issue_count = sum(
+        1 for item in rows
+        if item.get("source") in {"stale", "error", "fallback"} and item not in issue_rows
+    )
     return {
         "total": len(rows),
         "staleCount": stale_count,
         "fallbackCount": fallback_count,
         "errorCount": error_count,
         "issueCount": len(issue_rows),
+        "expiredIssueCount": expired_issue_count,
         "issues": issue_rows[:8],
         "recent": rows[:12],
     }
@@ -5125,11 +5327,12 @@ def refresh_configured_fund_history() -> list[str]:
                 fetch_and_store_fund_history(code, MAX_FUND_HISTORY_REFRESH_ROWS, refresh=True)
                 full_backfill_started = True
             elif latest_date:
-                auto_refresh_fund_history_if_stale(code, FUND_HISTORY_AUTO_REFRESH_ROWS)
+                fetch_and_store_fund_history(code, FUND_HISTORY_AUTO_REFRESH_ROWS, refresh=True)
             else:
                 fetch_and_store_fund_history(code, FUND_HISTORY_AUTO_REFRESH_ROWS, refresh=True)
         except Exception as exc:
             errors.append(f"fund {code}: {exc}")
+    invalidate_fund_history_response_caches()
     return errors
 
 
@@ -5139,6 +5342,8 @@ def refresh_configured_market_history() -> list[str]:
         try:
             source, symbol = item.split(":", 1)
             if source == "twse-official" and symbol == "TWII":
+                if not market_history_should_refresh_for_returns(source, symbol):
+                    continue
                 with get_conn() as conn:
                     row_count = int(conn.execute(
                         "SELECT COUNT(*) FROM market_history WHERE source = ? AND symbol = ?",
@@ -5164,7 +5369,11 @@ def run_background_refresh_once(owner: str = "manual") -> bool:
     mark_background_refresh(owner, lastRunAt=now, runCount=run_count)
 
     errors: list[str] = []
-    errors.extend(refresh_configured_fund_history())
+    try:
+        history_result = refresh_latest_fund_history()
+        errors.extend(f"fund-history-latest: {error}" for error in history_result["errors"])
+    except Exception as exc:
+        errors.append(f"fund-history-latest: {exc}")
     errors.extend(refresh_configured_market_history())
     try:
         prewarm_response_cache()
@@ -5224,6 +5433,11 @@ def prune_in_memory_caches() -> None:
             entry = _RESPONSE_CACHE.get(key)
             if entry and entry[0] <= now:
                 _RESPONSE_CACHE.pop(key, None)
+    health_cutoff = now_ms() - max(UPSTREAM_HEALTH_ISSUE_TTL_MS * 4, 24 * 60 * 60 * 1000)
+    with _UPSTREAM_HEALTH_GUARD:
+        for key in list(_UPSTREAM_HEALTH):
+            if int(_UPSTREAM_HEALTH[key].get("lastSeenAt", 0) or 0) < health_cutoff:
+                _UPSTREAM_HEALTH.pop(key, None)
     # Upstream locks: this dict grows by unique cache_key, but cache keys are
     # bounded by the configured symbol set (~160 symbols + a fixed set of fund
     # codes), so it does not grow unbounded in practice. We intentionally do NOT
@@ -5984,7 +6198,61 @@ def market_history_url(source: str, symbol: str) -> tuple[str, str]:
             f"https://api.finance.naver.com/siseJson.naver?{query}",
             "https://finance.naver.com/sise/sise_index.naver?code=KOSPI",
         )
+    if source == "coinmetrics-crypto" and symbol == "BTC":
+        query = urlencode({
+            "assets": "btc",
+            "metrics": "PriceUSD",
+            "frequency": "1d",
+            "start_time": "2010-01-01",
+            "end_time": datetime.now(ZoneInfo("UTC")).date().isoformat(),
+            "page_size": 10000,
+        })
+        return (
+            f"https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?{query}",
+            "https://docs.coinmetrics.io/",
+        )
     raise ValueError("Unsupported source")
+
+
+def binance_bitcoin_history_text(ttl_seconds: int, *, force_refresh: bool) -> str | None:
+    start = datetime(2010, 1, 1, tzinfo=ZoneInfo("UTC"))
+    current_ms = now_ms()
+    by_date: dict[str, dict[str, Any]] = {}
+    for _page in range(8):
+        start_ms = int(start.timestamp() * 1000)
+        query = urlencode({
+            "symbol": "BTCUSDT",
+            "interval": "1d",
+            "limit": 1000,
+            "startTime": start_ms,
+        })
+        status, _, body = fetch_upstream(
+            f"https://data-api.binance.vision/api/v3/klines?{query}",
+            referer="https://data.binance.vision/",
+            content_type="application/json; charset=utf-8",
+            cache_key=f"markethistory-fallback:binance:BTC:{start.strftime('%Y-%m-%d')}",
+            kind="markethistory-fallback",
+            ttl_seconds=ttl_seconds,
+            force_refresh=force_refresh,
+        )
+        if status >= 400:
+            break
+        try:
+            raw_rows = json.loads(decode_body(body))
+        except json.JSONDecodeError:
+            break
+        if not isinstance(raw_rows, list) or not raw_rows:
+            break
+        for row in parse_binance_bitcoin_history(decode_body(body), current_ms=current_ms):
+            by_date[str(row["date"])] = row
+        try:
+            next_open_ms = int(raw_rows[-1][0]) + 24 * 60 * 60 * 1000
+        except (IndexError, TypeError, ValueError):
+            break
+        if len(raw_rows) < 1000 or next_open_ms > current_ms:
+            break
+        start = datetime.fromtimestamp(next_open_ms / 1000, ZoneInfo("UTC"))
+    return json.dumps(list(by_date.values()), ensure_ascii=False) if by_date else None
 
 
 def eastmoney_kospi_history_text(ttl_seconds: int, *, force_refresh: bool) -> str | None:
@@ -6040,9 +6308,44 @@ def fetch_market_history_payload(
             force_refresh=force_refresh,
         )
     except Exception:
-        if source != "naver-korea":
+        if source not in {"naver-korea", "coinmetrics-crypto"}:
             raise
         status, content_type, body = 599, "application/json; charset=utf-8", b""
+
+    if source == "coinmetrics-crypto":
+        primary_rows = parse_coinmetrics_bitcoin_history(decode_body(body)) if status < 400 else []
+        if primary_rows:
+            return status, content_type, body
+        record_upstream_health(
+            cache_key=f"markethistory:{source}:{symbol}",
+            kind="markethistory",
+            url=url,
+            source="error",
+            status=status,
+            error="Coin Metrics returned no valid Bitcoin daily history",
+        )
+        if read_market_history_from_db(source, symbol):
+            return 599, content_type, body
+        fallback = binance_bitcoin_history_text(ttl_seconds, force_refresh=force_refresh)
+        if not fallback:
+            return 599, content_type, body
+        fallback_body = fallback.encode("utf-8")
+        cache_put(
+            f"markethistory:{source}:{symbol}",
+            "https://data-api.binance.vision/api/v3/klines?symbol=BTCUSDT&interval=1d",
+            200,
+            "application/json; charset=utf-8",
+            fallback_body,
+        )
+        record_upstream_health(
+            cache_key=f"markethistory:{source}:{symbol}",
+            kind="markethistory",
+            url="https://data-api.binance.vision/api/v3/klines",
+            source="fallback",
+            status=200,
+            error="Coin Metrics unavailable; initialized Bitcoin history from Binance BTCUSDT",
+        )
+        return 200, "application/json; charset=utf-8", fallback_body
 
     if source != "naver-korea" or (status < 400 and parse_naver_korea_history(decode_body(body))):
         return status, content_type, body
@@ -6125,7 +6428,7 @@ def market_history() -> Response:
     else:
         if stored_count == 0 and cached_rows:
             return json_response(read_market_history_from_db(source, symbol, adjust_corporate_actions=True) or cached_rows)
-        if source == "naver-korea":
+        if source in {"naver-korea", "coinmetrics-crypto"}:
             return json_response(read_market_history_from_db(source, symbol))
         if cn_etf_history_needs_adjustment(source, symbol):
             return json_response(read_market_history_from_db(source, symbol, adjust_corporate_actions=True))

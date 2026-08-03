@@ -35,4 +35,18 @@ describe('market universe configuration', () => {
       history: { source: 'tencent-hk', symbol: 'hkHSTECH' },
     });
   });
+
+  it('uses spot history for Hang Seng and daily USD history for Bitcoin', () => {
+    const overview = universe.indices as IndexConfig[];
+    const assets = universe.marketAssets as IndexConfig[];
+
+    expect(overview.find((item) => item.symbol === 'HSI')?.history).toEqual({
+      source: 'tencent-hk',
+      symbol: 'hkHSI',
+    });
+    expect(assets.find((item) => item.symbol === 'BTC')?.history).toEqual({
+      source: 'coinmetrics-crypto',
+      symbol: 'BTC',
+    });
+  });
 });

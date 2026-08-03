@@ -94,8 +94,8 @@
         "label": "恒指期货"
       },
       "history": {
-        "source": "sina-futures",
-        "symbol": "HSI"
+        "source": "tencent-hk",
+        "symbol": "hkHSI"
       }
     },
     {
@@ -161,7 +161,11 @@
     {
       "symbol": "BTC",
       "name": "比特币",
-      "sinaSymbol": "fx_sbtcusd"
+      "sinaSymbol": "fx_sbtcusd",
+      "history": {
+        "source": "coinmetrics-crypto",
+        "symbol": "BTC"
+      }
     }
   ],
   "etfAssets": [
