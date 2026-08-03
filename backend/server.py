@@ -3868,9 +3868,36 @@ def parse_naver_equity_history(text: str) -> list[dict[str, Any]]:
     return rows
 
 
+def parse_tencent_hk_equity_history(sina_symbol: str, text: str) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    data = payload.get("data") if isinstance(payload, dict) else None
+    symbol_data = data.get(sina_symbol) if isinstance(data, dict) else None
+    if not isinstance(symbol_data, dict):
+        return []
+    raw_rows = symbol_data.get("qfqday")
+    if not isinstance(raw_rows, list) or not raw_rows:
+        raw_rows = symbol_data.get("day")
+    if not isinstance(raw_rows, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for row in raw_rows:
+        if not isinstance(row, list) or len(row) < 3:
+            continue
+        date = str(row[0] or "")
+        close = safe_float(row[2])
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) and close and close > 0:
+            rows.append({"date": date, "close": close})
+    return rows
+
+
 def parse_stock_history_rows(sina_symbol: str, text: str) -> list[dict[str, Any]]:
-    if sina_symbol.startswith("gb_") or sina_symbol.startswith("hk"):
+    if sina_symbol.startswith("gb_"):
         return parse_sina_array_jsonp(text)
+    if sina_symbol.startswith("hk"):
+        return parse_sina_array_jsonp(text) or parse_tencent_hk_equity_history(sina_symbol, text)
     if re.match(r"^(sh|sz)\d{6}$", sina_symbol):
         parsed = json.loads(text)
         return parsed if isinstance(parsed, list) else []
@@ -3960,19 +3987,63 @@ def fetch_and_store_stock_history(sina_symbol: str, *, refresh: bool = False) ->
     if target is None:
         return False
     url, referer = target
-    status, _, body = fetch_upstream(
-        url,
-        referer=referer,
-        content_type="application/json; charset=utf-8",
-        cache_key=f"stockhistory:{sina_symbol}",
-        kind="stockhistory",
-        ttl_seconds=300,
-        force_refresh=refresh,
-    )
-    if status >= 400:
-        return False
+    primary_error = ""
     try:
-        return store_stock_history(sina_symbol, decode_body(body)) > 0
+        status, _, body = fetch_upstream(
+            url,
+            referer=referer,
+            content_type="application/json; charset=utf-8",
+            cache_key=f"stockhistory:{sina_symbol}",
+            kind="stockhistory",
+            ttl_seconds=300,
+            force_refresh=refresh,
+        )
+    except Exception as exc:
+        if not sina_symbol.startswith("hk"):
+            raise
+        primary_error = str(exc)
+    else:
+        if status < 400:
+            try:
+                if store_stock_history(sina_symbol, decode_body(body)) > 0:
+                    return True
+                primary_error = "no valid daily rows"
+            except Exception as exc:
+                primary_error = str(exc)
+        else:
+            primary_error = f"HTTP {status}"
+
+    if not sina_symbol.startswith("hk"):
+        return False
+
+    fallback_url = (
+        "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+        f"?param={quote(sina_symbol)},day,,,1023,qfq"
+    )
+    try:
+        fallback_status, _, fallback_body = fetch_upstream(
+            fallback_url,
+            referer="https://gu.qq.com/",
+            content_type="application/json; charset=utf-8",
+            cache_key=f"stockhistory-fallback:tencent:{sina_symbol}",
+            kind="stockhistory-fallback",
+            ttl_seconds=300,
+            force_refresh=refresh,
+        )
+        if fallback_status >= 400:
+            return False
+        stored = store_stock_history(sina_symbol, decode_body(fallback_body))
+        if stored <= 0:
+            return False
+        record_upstream_health(
+            cache_key=f"stockhistory:{sina_symbol}",
+            kind="stockhistory",
+            url=fallback_url,
+            source="fallback",
+            status=fallback_status,
+            error=f"Sina HK history unavailable ({primary_error}); used Tencent daily history",
+        )
+        return True
     except Exception:
         return False
 

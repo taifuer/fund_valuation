@@ -590,6 +590,74 @@ class ServerDataRefreshTests(unittest.TestCase):
             {"date": "2026-07-30", "close": 19570.0},
         ])
 
+    def test_tencent_hk_equity_history_parses_adjusted_daily_rows(self) -> None:
+        rows = server.parse_stock_history_rows("hk00522", json.dumps({
+            "code": 0,
+            "data": {
+                "hk00522": {
+                    "qfqday": [
+                        ["2026-07-31", "155.300", "151.300", "165.000", "149.100", "6786319"],
+                        ["2026-08-03", "147.600", "150.300", "151.900", "147.000", "2041281"],
+                    ],
+                },
+            },
+        }))
+
+        self.assertEqual(rows, [
+            {"date": "2026-07-31", "close": 151.3},
+            {"date": "2026-08-03", "close": 150.3},
+        ])
+
+    def test_hk_stock_history_falls_back_to_tencent_when_sina_has_no_rows(self) -> None:
+        tencent_payload = json.dumps({
+            "code": 0,
+            "data": {
+                "hk00522": {
+                    "day": [
+                        ["2026-07-31", "155.300", "151.300", "165.000", "149.100", "6786319"],
+                        ["2026-08-03", "147.600", "150.300", "151.900", "147.000", "2041281"],
+                    ],
+                },
+            },
+        }).encode()
+        calls: list[tuple[str, str]] = []
+
+        def fake_fetch(url: str, **kwargs: object) -> tuple[int, str, bytes]:
+            calls.append((url, str(kwargs.get("cache_key") or "")))
+            if "fqkline" in url:
+                return 200, "application/json; charset=utf-8", tencent_payload
+            return 200, "application/javascript; charset=utf-8", (
+                b'var _=({"__ERROR":3,"__ERRORMSG":"Service not valid"});'
+            )
+
+        with patch.object(server, "fetch_upstream", side_effect=fake_fetch):
+            updated = server.fetch_and_store_stock_history("hk00522", refresh=True)
+
+        self.assertTrue(updated)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1][1], "stockhistory-fallback:tencent:hk00522")
+        with sqlite3.connect(server.DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT date,close FROM stock_daily_history WHERE sina_symbol=? ORDER BY date",
+                ("hk00522",),
+            ).fetchall()
+        self.assertEqual(rows, [("2026-07-31", 151.3), ("2026-08-03", 150.3)])
+        health = server.upstream_health_snapshot()
+        self.assertEqual(health["fallbackCount"], 1)
+        self.assertIn("Tencent daily history", health["issues"][0]["error"])
+
+    def test_hk_stock_history_does_not_fetch_fallback_when_sina_is_valid(self) -> None:
+        sina_payload = b'var _=([{"d":"2026-08-03","c":"150.300"}]);'
+        with patch.object(
+            server,
+            "fetch_upstream",
+            return_value=(200, "application/javascript; charset=utf-8", sina_payload),
+        ) as fetch:
+            updated = server.fetch_and_store_stock_history("hk00522", refresh=True)
+
+        self.assertTrue(updated)
+        fetch.assert_called_once()
+
     def test_dashboard_aggregates_market_snapshot_and_uses_cache(self) -> None:
         quote_body = 'var hq_str_s_sh000001="上证指数,3000,10,0.33";'.encode("gb18030")
         fx_body = 'var hq_str_fx_susdcny="美元人民币,7.1000,0,0,0,0,0,0,0,09:30:00,0.12,2026-06-12";'.encode("gb18030")
