@@ -15,7 +15,14 @@ from backend.db_admin import (
     prune_raw_responses,
     restore_database,
 )
-from backend.storage import SCHEMA_VERSION, database_status, migrate_database
+from backend.storage import (
+    CACHE_BODY_COMPRESSION_MAGIC,
+    SCHEMA_VERSION,
+    database_status,
+    decode_cache_body,
+    encode_cache_body,
+    migrate_database,
+)
 
 
 class StorageMigrationTests(unittest.TestCase):
@@ -88,6 +95,47 @@ class StorageMigrationTests(unittest.TestCase):
             with sqlite3.connect(path) as conn:
                 columns = {row[1] for row in conn.execute("PRAGMA table_info(fund_estimate_snapshots)")}
             self.assertIn("raw_change", columns)
+
+    def test_schema_eight_removes_unused_history_fetched_indexes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "schema-seven.db"
+            migrate_database(path)
+            with sqlite3.connect(path) as conn:
+                conn.executescript(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_fund_nav_history_fetched
+                      ON fund_nav_history(fetched_at);
+                    CREATE INDEX IF NOT EXISTS idx_market_history_fetched
+                      ON market_history(fetched_at);
+                    CREATE INDEX IF NOT EXISTS idx_stock_daily_history_fetched
+                      ON stock_daily_history(fetched_at);
+                    CREATE INDEX IF NOT EXISTS idx_fx_daily_history_fetched
+                      ON fx_daily_history(fetched_at);
+                    PRAGMA user_version = 7;
+                    """
+                )
+
+            self.assertEqual(migrate_database(path), SCHEMA_VERSION)
+            with sqlite3.connect(path) as conn:
+                indexes = {
+                    row[0]
+                    for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
+                }
+            self.assertNotIn("idx_fund_nav_history_fetched", indexes)
+            self.assertNotIn("idx_market_history_fetched", indexes)
+            self.assertNotIn("idx_stock_daily_history_fetched", indexes)
+            self.assertNotIn("idx_fx_daily_history_fetched", indexes)
+
+    def test_response_cache_body_compression_is_transparent(self) -> None:
+        small = b"small response"
+        large = (b'{"prices":[123.45,678.90]}' * 2000)
+
+        self.assertEqual(encode_cache_body(small), small)
+        encoded = encode_cache_body(large)
+        self.assertTrue(encoded.startswith(CACHE_BODY_COMPRESSION_MAGIC))
+        self.assertLess(len(encoded), len(large))
+        self.assertEqual(decode_cache_body(encoded), large)
+        self.assertEqual(decode_cache_body(large), large)
 
     def test_scheduled_backup_respects_interval_and_prunes_expired_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -180,6 +228,49 @@ class StorageMigrationTests(unittest.TestCase):
             self.assertEqual(cache_keys, ["fresh"])
             self.assertEqual(snapshot_symbols, ["fresh"])
             self.assertEqual(nav_count, 1)
+
+    def test_optimize_compresses_cache_and_deduplicates_quote_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / "database.db"
+            raw = root / "raw"
+            migrate_database(database)
+            current = datetime(2026, 7, 17, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+            current_ms = int(current.timestamp() * 1000)
+            body = b'{"history":[1,2,3,4,5]}' * 2000
+            quote_line = 'var hq_str_test="test,1,1";'
+            with sqlite3.connect(database) as conn:
+                conn.execute(
+                    "INSERT INTO response_cache VALUES (?, ?, ?, ?, ?, ?)",
+                    ("large", "https://example.com/large", 200, "application/json", body, current_ms),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO market_quote_snapshots(
+                      symbol, bucket_at, captured_at, quote_time, market_state, source,
+                      price, previous_close, change_percent, validation_status,
+                      validation_message, raw_line, sanitized_line
+                    ) VALUES (?, ?, ?, '', 'closed', 'upstream', 1, 1, 0, 'ok', '', ?, ?)
+                    """,
+                    ("test", current_ms, current_ms, quote_line, quote_line),
+                )
+
+            result = optimize_database(database, raw_dir=raw, now=current)
+
+            with sqlite3.connect(database) as conn:
+                stored_body = bytes(
+                    conn.execute("SELECT body FROM response_cache WHERE cache_key = 'large'").fetchone()[0]
+                )
+                stored_raw_line = conn.execute(
+                    "SELECT raw_line FROM market_quote_snapshots WHERE symbol = 'test'"
+                ).fetchone()[0]
+            self.assertTrue(stored_body.startswith(CACHE_BODY_COMPRESSION_MAGIC))
+            self.assertEqual(decode_cache_body(stored_body), body)
+            self.assertEqual(stored_raw_line, "")
+            self.assertEqual(result["compressedResponseCacheRows"], 1)
+            self.assertGreater(result["compressedResponseCacheBytesSaved"], 0)
+            self.assertEqual(result["deduplicatedQuoteSnapshotRows"], 1)
+            self.assertEqual(result["deduplicatedQuoteSnapshotBytes"], len(quote_line))
 
     def test_raw_response_pruning_preserves_recent_and_unknown_directories(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

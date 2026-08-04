@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 import os
+import zlib
 from typing import Any
 
 
@@ -10,7 +11,9 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("FUND_VALUATION_DATA_DIR", ROOT_DIR / "data"))
 DB_PATH = DATA_DIR / "fund_valuation.db"
 RAW_DIR = DATA_DIR / "raw"
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
+CACHE_BODY_COMPRESSION_MAGIC = b"\x00FVCZ1"
+CACHE_BODY_COMPRESSION_MIN_BYTES = 16 * 1024
 
 
 MIGRATIONS: dict[int, str] = {
@@ -153,7 +156,30 @@ MIGRATIONS: dict[int, str] = {
     7: """
         SELECT 1;
     """,
+    8: """
+        DROP INDEX IF EXISTS idx_fund_nav_history_fetched;
+        DROP INDEX IF EXISTS idx_market_history_fetched;
+        DROP INDEX IF EXISTS idx_stock_daily_history_fetched;
+        DROP INDEX IF EXISTS idx_fx_daily_history_fetched;
+    """,
 }
+
+
+def encode_cache_body(body: bytes) -> bytes:
+    if len(body) < CACHE_BODY_COMPRESSION_MIN_BYTES or body.startswith(CACHE_BODY_COMPRESSION_MAGIC):
+        return body
+    compressed = zlib.compress(body, level=6)
+    encoded = CACHE_BODY_COMPRESSION_MAGIC + compressed
+    return encoded if len(encoded) < len(body) else body
+
+
+def decode_cache_body(body: bytes) -> bytes:
+    if not body.startswith(CACHE_BODY_COMPRESSION_MAGIC):
+        return body
+    try:
+        return zlib.decompress(body[len(CACHE_BODY_COMPRESSION_MAGIC):])
+    except zlib.error as exc:
+        raise ValueError("Invalid compressed response cache body") from exc
 
 
 def get_conn(path: Path | None = None) -> sqlite3.Connection:

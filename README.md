@@ -196,7 +196,7 @@ docker compose up --build -d
 
 默认访问 `http://localhost:8080`。`/api/health` 用于进程存活检查，`/api/ready` 同时检查 SQLite 是否可用。生产环境应通过 `.env` 或部署平台注入诊断令牌，不要写入仓库。基金管理默认关闭；同时设置 `FUND_VALUATION_ENABLE_FUND_MANAGEMENT=1` 和独立的 `FUND_VALUATION_FUND_MANAGEMENT_TOKEN` 后，基金页显示管理入口，用户输入令牌后可在当前浏览器维护基金列表。非默认基金请求由后端校验 `X-Fund-Management-Token`，关闭总开关后仍会被拒绝。`FUND_VALUATION_BAIDU_ANALYTICS_ID` 可选配置百度统计站点 ID。反向代理部署可将 `FUND_VALUATION_HTTP_HOST` 设为 `127.0.0.1`，国内服务器也可通过 `FUND_VALUATION_NPM_REGISTRY` 和 `FUND_VALUATION_PIP_INDEX_URL` 使用可信软件源镜像。
 
-Docker Worker 默认每天创建一次经过完整性校验的 SQLite 在线备份，保留 7 天且最多保留最新 3 份，文件位于数据卷的 `backups/`。可通过 `FUND_VALUATION_AUTO_BACKUP`、`FUND_VALUATION_BACKUP_INTERVAL_HOURS`、`FUND_VALUATION_BACKUP_RETENTION_DAYS` 和 `FUND_VALUATION_BACKUP_MAX_FILES` 调整；非 Docker 本地运行默认不自动备份。行情快照、上游响应缓存和原始响应均为可再生成数据，Docker 默认分别保留 7、14、7 天；Worker 会定期清理并执行非阻塞 WAL checkpoint 与 `PRAGMA optimize`，不会自动删除历史净值、日线或持仓数据。
+Docker Worker 默认每天创建一次经过完整性校验的 SQLite 在线备份，保留 7 天且最多保留最新 3 份。备份通过 `FUND_VALUATION_BACKUP_HOST_DIR` 写入宿主机目录，默认是项目下的 `data/backups`；生产环境应改为 Web 根目录之外、可被异地备份任务读取的位置，例如 `/www/backup/database/fund-valuation`。可通过 `FUND_VALUATION_AUTO_BACKUP`、`FUND_VALUATION_BACKUP_INTERVAL_HOURS`、`FUND_VALUATION_BACKUP_RETENTION_DAYS` 和 `FUND_VALUATION_BACKUP_MAX_FILES` 调整；非 Docker 本地运行默认不自动备份。行情快照、上游响应缓存和原始响应均为可再生成数据，Docker 默认分别保留 7、14、7 天；大型响应缓存会透明压缩，Worker 每天清理并执行非阻塞 WAL checkpoint 与 `PRAGMA optimize`，不会自动删除历史净值、日线或持仓数据。
 
 容器内数据库维护可使用工具 profile：
 

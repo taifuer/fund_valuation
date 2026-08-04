@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Callable
 from zoneinfo import ZoneInfo
 
@@ -30,7 +31,6 @@ from .server import (
     prewarm_response_cache,
     publish_dashboard_snapshot,
     prune_in_memory_caches,
-    prune_quote_snapshots,
     quote_group_refresh_interval,
     quote_symbol_groups,
     refresh_configured_fund_history,
@@ -223,8 +223,10 @@ def main() -> None:
                     errors.append(f"valuation-history: {exc}")
             if "backup" in flags and os.environ.get("FUND_VALUATION_AUTO_BACKUP", "0") == "1":
                 try:
+                    configured_backup_dir = os.environ.get("FUND_VALUATION_BACKUP_DIR", "").strip()
                     backup = ensure_recent_backup(
                         DB_PATH,
+                        backup_dir=Path(configured_backup_dir) if configured_backup_dir else None,
                         interval_hours=int(os.environ.get("FUND_VALUATION_BACKUP_INTERVAL_HOURS", "24")),
                         retention_days=int(os.environ.get("FUND_VALUATION_BACKUP_RETENTION_DAYS", "7")),
                         max_files=positive_int_env("FUND_VALUATION_BACKUP_MAX_FILES", 3),
@@ -235,7 +237,6 @@ def main() -> None:
                     errors.append(f"backup: {exc}")
             if "cleanup" in flags:
                 try:
-                    prune_quote_snapshots()
                     optimize_database(
                         DB_PATH,
                         response_cache_retention_days=positive_int_env("FUND_VALUATION_RESPONSE_CACHE_RETENTION_DAYS", 14),
@@ -317,7 +318,7 @@ def main() -> None:
                         "fx_history": 24 * 60 * 60,
                         "valuation_history": 24 * 60 * 60,
                         "backup": 60 * 60,
-                        "cleanup": 60 * 60,
+                        "cleanup": 24 * 60 * 60,
                     }
                     if current >= due["fund_history_latest"]:
                         maintenance_flags.add("fund_history_latest")

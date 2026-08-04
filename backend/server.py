@@ -45,7 +45,17 @@ from .contracts import API_SCHEMA_VERSION, DASHBOARD_SCHEMA_VERSION, validate_da
 from .observability import REQUEST_METRICS, log_event
 from .fx_history import fx_history_summary, latest_fx_history_date, store_ecb_reference_rates
 from .data_coverage import historical_data_coverage, missing_holding_requests
-from .storage import DATA_DIR, DB_PATH, RAW_DIR, ROOT_DIR, SCHEMA_VERSION, get_conn, ensure_storage as ensure_database_storage
+from .storage import (
+    DATA_DIR,
+    DB_PATH,
+    RAW_DIR,
+    ROOT_DIR,
+    SCHEMA_VERSION,
+    decode_cache_body,
+    encode_cache_body,
+    ensure_storage as ensure_database_storage,
+    get_conn,
+)
 
 
 DEFAULT_HEADERS = {
@@ -656,7 +666,13 @@ def cache_get(cache_key: str, max_age_seconds: int) -> tuple[int, str, bytes] | 
     status, content_type, body, fetched_at = row
     if max_age_seconds > 0 and now_ms() - int(fetched_at) > max_age_seconds * 1000:
         return None
-    return int(status), str(content_type), bytes(body)
+    try:
+        decoded_body = decode_cache_body(bytes(body))
+    except ValueError:
+        with get_conn() as conn:
+            conn.execute("DELETE FROM response_cache WHERE cache_key = ?", (cache_key,))
+        return None
+    return int(status), str(content_type), decoded_body
 
 
 def cache_put(cache_key: str, url: str, status: int, content_type: str, body: bytes) -> None:
@@ -673,7 +689,7 @@ def cache_put(cache_key: str, url: str, status: int, content_type: str, body: by
               body = excluded.body,
               fetched_at = excluded.fetched_at
             """,
-            (cache_key, url, status, content_type, body, fetched_at),
+            (cache_key, url, status, content_type, encode_cache_body(body), fetched_at),
         )
 
 
@@ -1515,10 +1531,11 @@ def store_quote_snapshots(
             source = "fallback"
         elif raw_line and raw_line != sanitized_line:
             source = "normalized"
+        stored_raw_line = "" if raw_line == sanitized_line else raw_line
         rows.append((
             symbol, bucket_at, captured_at, quote_time, str(state.get("state") or "unknown"), source,
             price, previous_close, change_percent, validation_status, validation_message,
-            raw_line, sanitized_line,
+            stored_raw_line, sanitized_line,
         ))
     if not rows:
         return 0

@@ -64,11 +64,13 @@ services:
       FUND_VALUATION_FX_HISTORY_YEARS: ${FUND_VALUATION_FX_HISTORY_YEARS:-6}
       FUND_VALUATION_HEALTH_ISSUE_TTL_SECONDS: ${FUND_VALUATION_HEALTH_ISSUE_TTL_SECONDS:-3600}
       FUND_VALUATION_AUTO_BACKUP: ${FUND_VALUATION_AUTO_BACKUP:-1}
+      FUND_VALUATION_BACKUP_DIR: /app/backups
       FUND_VALUATION_BACKUP_INTERVAL_HOURS: ${FUND_VALUATION_BACKUP_INTERVAL_HOURS:-24}
       FUND_VALUATION_BACKUP_RETENTION_DAYS: ${FUND_VALUATION_BACKUP_RETENTION_DAYS:-7}
       FUND_VALUATION_BACKUP_MAX_FILES: ${FUND_VALUATION_BACKUP_MAX_FILES:-3}
     volumes:
       - fund-data:/app/data
+      - ${FUND_VALUATION_BACKUP_HOST_DIR:-./data/backups}:/app/backups
     depends_on:
       backend:
         condition: service_healthy
@@ -84,10 +86,12 @@ services:
     command: ["python", "-m", "backend.db_admin", "status"]
     environment:
       FUND_VALUATION_DATA_DIR: /app/data
+      FUND_VALUATION_BACKUP_DIR: /app/backups
       FUND_VALUATION_RESPONSE_CACHE_RETENTION_DAYS: ${FUND_VALUATION_RESPONSE_CACHE_RETENTION_DAYS:-14}
       FUND_VALUATION_RAW_RETENTION_DAYS: ${FUND_VALUATION_RAW_RETENTION_DAYS:-7}
     volumes:
       - fund-data:/app/data
+      - ${FUND_VALUATION_BACKUP_HOST_DIR:-./data/backups}:/app/backups
     profiles: [tools]
 
 volumes:

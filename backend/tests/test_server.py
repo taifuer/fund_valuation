@@ -14,6 +14,7 @@ _TEMP_DATA = tempfile.TemporaryDirectory()
 os.environ["FUND_VALUATION_DATA_DIR"] = _TEMP_DATA.name
 
 from backend import server  # noqa: E402
+from backend.storage import CACHE_BODY_COMPRESSION_MAGIC  # noqa: E402
 from backend.fx_history import parse_ecb_reference_rates  # noqa: E402
 from backend.data_coverage import expected_holding_periods, historical_data_coverage  # noqa: E402
 
@@ -132,6 +133,47 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(refreshed[2], b"new")
         self.assertEqual(cached_after_refresh[2], b"new")
         self.assertEqual(len(calls), 2)
+
+    def test_cache_put_compresses_large_body_and_cache_get_decodes_it(self) -> None:
+        body = b'{"history":[123.45,678.90]}' * 2000
+
+        server.cache_put("large:test", "https://example.test/large", 200, "application/json", body)
+
+        with sqlite3.connect(server.DB_PATH) as conn:
+            stored = bytes(
+                conn.execute(
+                    "SELECT body FROM response_cache WHERE cache_key = ?",
+                    ("large:test",),
+                ).fetchone()[0]
+            )
+        self.assertTrue(stored.startswith(CACHE_BODY_COMPRESSION_MAGIC))
+        self.assertLess(len(stored), len(body))
+        self.assertEqual(server.cache_get("large:test", 3600), (200, "application/json", body))
+
+    def test_cache_get_discards_corrupt_compressed_body(self) -> None:
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute(
+                """
+                INSERT INTO response_cache(cache_key, url, status, content_type, body, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "corrupt:test",
+                    "https://example.test/corrupt",
+                    200,
+                    "application/json",
+                    CACHE_BODY_COMPRESSION_MAGIC + b"not-zlib",
+                    server.now_ms(),
+                ),
+            )
+
+        self.assertIsNone(server.cache_get("corrupt:test", 3600))
+        with sqlite3.connect(server.DB_PATH) as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM response_cache WHERE cache_key = ?",
+                ("corrupt:test",),
+            ).fetchone()[0]
+        self.assertEqual(count, 0)
 
     def test_fetch_upstream_records_stale_fallback_health(self) -> None:
         with sqlite3.connect(server.DB_PATH) as conn:
@@ -1251,6 +1293,12 @@ class ServerDataRefreshTests(unittest.TestCase):
         states = {"sh000001": {"state": "live", "lastTradingDay": "2026-06-29"}}
         server.store_quote_snapshots(line, line, ["sh000001"], states, now)
         with sqlite3.connect(server.DB_PATH) as conn:
+            raw_line, sanitized_line = conn.execute(
+                "SELECT raw_line, sanitized_line FROM market_quote_snapshots WHERE symbol = ?",
+                ("sh000001",),
+            ).fetchone()
+            self.assertEqual(raw_line, "")
+            self.assertEqual(sanitized_line, line)
             conn.execute(
                 "UPDATE market_quote_snapshots SET captured_at = ? WHERE symbol = ?",
                 (server.now_ms() - 3 * 60 * 1000, "sh000001"),
@@ -1290,10 +1338,10 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         with sqlite3.connect(server.DB_PATH) as conn:
             rows = conn.execute(
-                "SELECT source, validation_status FROM market_quote_snapshots WHERE symbol = ?",
+                "SELECT source, validation_status, raw_line FROM market_quote_snapshots WHERE symbol = ?",
                 ("sh000001",),
             ).fetchall()
-        self.assertEqual(rows, [("normalized", "ok")])
+        self.assertEqual(rows, [("normalized", "ok", raw)])
         self.assertEqual(server.prune_quote_snapshots(retention_days=1), 1)
 
     def test_snapshot_reader_rejects_expired_rows(self) -> None:

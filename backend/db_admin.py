@@ -9,7 +9,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .storage import DB_PATH, RAW_DIR, SCHEMA_VERSION, database_status, migrate_database
+from .storage import (
+    CACHE_BODY_COMPRESSION_MAGIC,
+    CACHE_BODY_COMPRESSION_MIN_BYTES,
+    DB_PATH,
+    RAW_DIR,
+    SCHEMA_VERSION,
+    database_status,
+    encode_cache_body,
+    migrate_database,
+)
 
 
 def positive_int_env(name: str, default: int) -> int:
@@ -69,6 +78,49 @@ def optimize_database(
             "DELETE FROM market_quote_snapshots WHERE captured_at < ?",
             (snapshot_cutoff_ms,),
         ).rowcount
+        duplicate_snapshot = conn.execute(
+            """
+            SELECT COUNT(*), COALESCE(SUM(length(raw_line)), 0)
+            FROM market_quote_snapshots
+            WHERE raw_line <> '' AND raw_line = sanitized_line
+            """
+        ).fetchone()
+        deduplicated_snapshot_rows = int(duplicate_snapshot[0])
+        deduplicated_snapshot_bytes = int(duplicate_snapshot[1])
+        if deduplicated_snapshot_rows:
+            conn.execute(
+                """
+                UPDATE market_quote_snapshots
+                SET raw_line = ''
+                WHERE raw_line <> '' AND raw_line = sanitized_line
+                """
+            )
+        cache_rows = conn.execute(
+            """
+            SELECT cache_key, body
+            FROM response_cache
+            WHERE length(body) >= ?
+              AND substr(body, 1, ?) <> ?
+            """,
+            (
+                CACHE_BODY_COMPRESSION_MIN_BYTES,
+                len(CACHE_BODY_COMPRESSION_MAGIC),
+                CACHE_BODY_COMPRESSION_MAGIC,
+            ),
+        ).fetchall()
+        compressed_rows: list[tuple[bytes, str]] = []
+        compressed_cache_bytes_saved = 0
+        for cache_key, body in cache_rows:
+            original = bytes(body)
+            encoded = encode_cache_body(original)
+            if encoded != original:
+                compressed_rows.append((encoded, str(cache_key)))
+                compressed_cache_bytes_saved += len(original) - len(encoded)
+        if compressed_rows:
+            conn.executemany(
+                "UPDATE response_cache SET body = ? WHERE cache_key = ?",
+                compressed_rows,
+            )
         conn.commit()
         conn.execute("PRAGMA optimize")
         checkpoint = tuple(int(value) for value in conn.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone())
@@ -81,6 +133,10 @@ def optimize_database(
     return {
         "deletedResponseCacheRows": max(deleted_cache_rows, 0),
         "deletedQuoteSnapshotRows": max(deleted_snapshot_rows, 0),
+        "deduplicatedQuoteSnapshotRows": deduplicated_snapshot_rows,
+        "deduplicatedQuoteSnapshotBytes": deduplicated_snapshot_bytes,
+        "compressedResponseCacheRows": len(compressed_rows),
+        "compressedResponseCacheBytesSaved": compressed_cache_bytes_saved,
         "raw": raw_result,
         "checkpoint": checkpoint,
         "pageCount": page_count,
@@ -117,7 +173,9 @@ def backup_database(source: Path, destination: Path) -> Path:
 
 def default_backup_path(source: Path) -> Path:
     stamp = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d-%H%M%S")
-    return source.parent / "backups" / f"{source.stem}-{stamp}.db"
+    configured = os.environ.get("FUND_VALUATION_BACKUP_DIR", "").strip()
+    directory = Path(configured) if configured else source.parent / "backups"
+    return directory / f"{source.stem}-{stamp}.db"
 
 
 def ensure_recent_backup(
@@ -130,7 +188,8 @@ def ensure_recent_backup(
     now: datetime | None = None,
 ) -> Path | None:
     current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
-    directory = backup_dir or source.parent / "backups"
+    configured = os.environ.get("FUND_VALUATION_BACKUP_DIR", "").strip()
+    directory = backup_dir or (Path(configured) if configured else source.parent / "backups")
     existing = sorted(directory.glob(f"{source.stem}-*.db"), key=lambda path: path.stat().st_mtime, reverse=True) if directory.exists() else []
     if existing:
         latest_age = current.timestamp() - existing[0].stat().st_mtime
