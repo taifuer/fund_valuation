@@ -2982,8 +2982,28 @@ def build_fund_estimates(
             else:
                 value = safe_float(raw.get("regularPrice")) if session in {"pre", "post"} else safe_float(raw.get("price"))
                 quote_time = str(raw.get("regularTime") or raw.get("time") or "")
-            expected_market_date = market_value_date_on_or_before(market_key_for_symbol(symbol) or "", target)
-            if not value or value <= 0 or quote_market_date(symbol, quote_time) != expected_market_date:
+            quote_day = quote_market_date(symbol, quote_time)
+            market = market_key_for_symbol(symbol) or ""
+            expected_dates: set[str] = set()
+            if include_extended:
+                if expected := expected_quote_date_for_symbol(symbol, now):
+                    expected_dates.add(expected)
+                state = states.get(symbol)
+                if isinstance(state, dict) and state.get("lastTradingDay"):
+                    expected_dates.add(str(state["lastTradingDay"]))
+                if session == "pre" and market in MARKET_CALENDARS:
+                    calendar = MARKET_CALENDARS[market]
+                    local = now.astimezone(ZoneInfo(str(calendar["timezone"])))
+                    local_day = local.strftime("%Y-%m-%d")
+                    row = market_calendar_row(market, local_day)
+                    if row and row["status"] in {"open", "half_day"}:
+                        expected_dates.add(local_day)
+            elif expected := market_value_date_on_or_before(market, target):
+                expected_dates.add(expected)
+            if not expected_dates:
+                if expected := market_value_date_on_or_before(market, target):
+                    expected_dates.add(expected)
+            if not value or value <= 0 or quote_day not in expected_dates:
                 return None
             return value
 

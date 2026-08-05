@@ -422,6 +422,86 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(result["preview"]["phase"], "LIVE")
         self.assertAlmostEqual(result["preview"]["estimatedNav"], 1.20)
 
+    def test_post_market_preview_carries_completed_us_session_into_next_valuation_day(self) -> None:
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.executemany(
+                "INSERT INTO fund_nav_history VALUES (?, ?, ?, ?, ?)",
+                [
+                    ("017436", "2026-07-31", 1.0, 0, 1),
+                    ("017436", "2026-08-03", 1.0, 0, 2),
+                ],
+            )
+            conn.execute(
+                "INSERT INTO stock_daily_history VALUES (?, ?, ?, ?, ?)",
+                ("gb_aapl", "2026-08-03", 100, 0, 1),
+            )
+            conn.executemany(
+                "INSERT INTO fx_daily_history VALUES (?, ?, ?, ?, ?)",
+                [
+                    ("USD", "2026-08-03", 7.0, 0, 1),
+                    ("USD", "2026-08-04", 7.0, 0, 2),
+                    ("USD", "2026-08-05", 7.0, 0, 3),
+                ],
+            )
+            conn.execute(
+                "INSERT INTO market_history VALUES (?, ?, ?, ?, ?)",
+                ("sina-us", ".NDX", "2026-08-03", 100, 1),
+            )
+        dashboard = {
+            "generatedAt": 123456,
+            "fxText": 'var hq_str_fx_susdcny="美元人民币,7.0,0,0,0,0,0,0,0,07:55:00,0,2026-08-05";',
+            "quotes": {
+                "gb_aapl": {
+                    "price": 111,
+                    "previousClose": 100,
+                    "changePercent": 11,
+                    "time": "2026-08-05 07:55:00",
+                    "dateReliable": True,
+                    "session": "post",
+                    "regularPrice": 110,
+                    "regularTime": "2026-08-05 04:00:00",
+                },
+                "gb_ndx": {
+                    "price": 105,
+                    "previousClose": 100,
+                    "changePercent": 5,
+                    "time": "2026-08-05 04:00:00",
+                    "dateReliable": True,
+                    "session": "regular",
+                },
+            },
+            "marketStates": {
+                "gb_aapl": {
+                    "state": "closed",
+                    "lastTradingDay": "2026-08-04",
+                },
+            },
+        }
+        holdings = [{
+            "sinaSymbol": "gb_aapl",
+            "weight": 0.6,
+            "currency": "USD",
+            "reportDate": "2026-06-30",
+        }]
+        current = datetime(2026, 8, 5, 7, 55, tzinfo=ZoneInfo("Asia/Shanghai"))
+        with (
+            patch.object(server, "read_fund_holdings_from_db", return_value=holdings),
+            patch.object(server, "universe_fund_benchmark", return_value={
+                "source": "sina-us", "symbol": ".NDX", "currency": "USD",
+            }),
+        ):
+            payload = server.build_fund_estimates(
+                ["017436"], current=current, dashboard_payload=dashboard,
+            )
+
+        result = payload["017436"]
+        self.assertEqual(result["pending"]["targetDate"], "2026-08-04")
+        self.assertAlmostEqual(result["pending"]["estimatedNav"], 1.08)
+        self.assertEqual(result["preview"]["targetDate"], "2026-08-05")
+        self.assertEqual(result["preview"]["phase"], "POST")
+        self.assertAlmostEqual(result["preview"]["estimatedNav"], 1.086)
+        self.assertAlmostEqual(result["preview"]["changePercent"], 0.5556)
+
     def test_valuation_cycle_rolls_after_the_us_session_closes(self) -> None:
         server.ensure_market_calendar_seeded(2026)
         before_roll = datetime(2026, 7, 31, 1, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
