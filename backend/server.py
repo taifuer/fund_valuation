@@ -1163,7 +1163,9 @@ def parse_localized_number(value: Any) -> float | None:
     return safe_float(str(value or "").replace(",", "").strip())
 
 
-def naver_equity_url(symbol: str, endpoint: str) -> str | None:
+def naver_market_url(symbol: str, endpoint: str) -> str | None:
+    if symbol == "b_KOSPI":
+        return f"https://m.stock.naver.com/api/index/KOSPI/{endpoint}"
     if re.fullmatch(r"kr\d{6}", symbol):
         return f"https://m.stock.naver.com/api/stock/{symbol[2:]}/{endpoint}"
     if re.fullmatch(r"jp[A-Za-z0-9]{4}", symbol):
@@ -1171,28 +1173,28 @@ def naver_equity_url(symbol: str, endpoint: str) -> str | None:
     return None
 
 
-def naver_equity_quote_line(symbol: str) -> str | None:
-    url = naver_equity_url(symbol, "basic")
+def naver_market_quote_line(symbol: str) -> str | None:
+    url = naver_market_url(symbol, "basic")
     if not url:
         return None
     status, _, body = fetch_upstream(
         url,
         referer="https://m.stock.naver.com/",
         content_type="application/json; charset=utf-8",
-        cache_key=f"naver-equity:{symbol}",
-        kind="naver-equity",
+        cache_key=f"naver-market:{symbol}",
+        kind="naver-market",
         ttl_seconds=30,
     )
     if status >= 400:
-        record_quote_health(symbol, "error", f"Naver equity quote HTTP {status}")
+        record_quote_health(symbol, "error", f"Naver market quote HTTP {status}")
         return None
     try:
         payload = json.loads(decode_body(body))
     except json.JSONDecodeError as exc:
-        record_quote_health(symbol, "error", f"invalid Naver equity quote: {exc}")
+        record_quote_health(symbol, "error", f"invalid Naver market quote: {exc}")
         return None
     if not isinstance(payload, dict):
-        record_quote_health(symbol, "error", "invalid Naver equity quote payload")
+        record_quote_health(symbol, "error", "invalid Naver market quote payload")
         return None
 
     price = parse_localized_number(payload.get("closePrice"))
@@ -1209,11 +1211,11 @@ def naver_equity_quote_line(symbol: str) -> str | None:
         if direction_name in {"FALLING", "LOWER_LIMIT"}:
             change_percent = -change_percent
     if not price or price <= 0 or change is None:
-        record_quote_health(symbol, "error", "Naver equity quote missing price or change")
+        record_quote_health(symbol, "error", "Naver market quote missing price or change")
         return None
     previous_close = price - change
     if previous_close <= 0:
-        record_quote_health(symbol, "error", "Naver equity quote has invalid previous close")
+        record_quote_health(symbol, "error", "Naver market quote has invalid previous close")
         return None
     if change_percent is None:
         change_percent = change / previous_close * 100
@@ -1222,11 +1224,11 @@ def naver_equity_quote_line(symbol: str) -> str | None:
     try:
         updated_at = datetime.fromisoformat(raw_time)
         if updated_at.tzinfo is None:
-            market_timezone = "Asia/Seoul" if symbol.startswith("kr") else "Asia/Tokyo"
+            market_timezone = "Asia/Seoul" if symbol.startswith("kr") or symbol == "b_KOSPI" else "Asia/Tokyo"
             updated_at = updated_at.replace(tzinfo=ZoneInfo(market_timezone))
         updated_at = updated_at.astimezone(ZoneInfo("Asia/Shanghai"))
     except ValueError:
-        record_quote_health(symbol, "error", "Naver equity quote missing exchange timestamp")
+        record_quote_health(symbol, "error", "Naver market quote missing exchange timestamp")
         return None
     name = str(payload.get("stockNameEng") or payload.get("stockName") or symbol)
     name = name.replace(",", " ").replace('"', "'")
@@ -1238,9 +1240,16 @@ def naver_equity_quote_line(symbol: str) -> str | None:
 
 def fetch_market_quote_text(symbols: list[str]) -> tuple[int, str]:
     normalized = sorted(dict.fromkeys(symbols))
-    adapted = [symbol for symbol in normalized if symbol.startswith(("jp", "kr"))]
+    adapted = [
+        symbol for symbol in normalized
+        if symbol.startswith(("jp", "kr")) or symbol == "b_KOSPI"
+    ]
+    # Naver publishes an exchange timestamp and is preferred because Sina can
+    # retain the previous close for several minutes after the Korean market
+    # opens. Sina is requested for KOSPI only when the Naver adapter fails.
     sina_symbols = [symbol for symbol in normalized if symbol not in adapted]
     lines: list[str] = []
+    adapted_lines: dict[str, str] = {}
     status = 200
 
     if sina_symbols:
@@ -1258,16 +1267,39 @@ def fetch_market_quote_text(symbols: list[str]) -> tuple[int, str]:
 
     if adapted:
         with ThreadPoolExecutor(max_workers=min(6, len(adapted))) as executor:
-            futures = {executor.submit(naver_equity_quote_line, symbol): symbol for symbol in adapted}
+            futures = {executor.submit(naver_market_quote_line, symbol): symbol for symbol in adapted}
             for future in as_completed(futures):
                 symbol = futures[future]
                 try:
                     line = future.result()
                 except Exception as exc:
-                    record_quote_health(symbol, "error", f"Naver equity quote failed: {exc}")
+                    record_quote_health(symbol, "error", f"Naver market quote failed: {exc}")
                     line = None
                 if line:
-                    lines.append(line)
+                    adapted_lines[symbol] = line
+
+    if adapted_lines:
+        lines = [
+            line for line in lines
+            if not (
+                (match := re.match(r'^var\s+hq_str_(\w+)="', line.strip()))
+                and match.group(1) in adapted_lines
+            )
+        ]
+        lines.extend(adapted_lines[symbol] for symbol in sorted(adapted_lines))
+
+    if "b_KOSPI" in adapted and "b_KOSPI" not in adapted_lines:
+        fallback_status, _, fallback_body = fetch_upstream(
+            "https://hq.sinajs.cn/list=b_KOSPI",
+            referer="https://finance.sina.com.cn/",
+            content_type="text/plain; charset=utf-8",
+            cache_key="sina:b_KOSPI",
+            kind="sina",
+            ttl_seconds=30,
+        )
+        status = fallback_status
+        if fallback_status < 400:
+            lines.extend(line for line in decode_body(fallback_body).splitlines() if line.strip())
 
     text = "\n".join(lines)
     return (200 if text else status), text + ("\n" if text else "")

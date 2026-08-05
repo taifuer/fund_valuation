@@ -651,13 +651,35 @@ class ServerDataRefreshTests(unittest.TestCase):
             "fetch_upstream",
             return_value=(200, "application/json; charset=utf-8", payload),
         ) as fetch:
-            line = server.naver_equity_quote_line("kr000660")
+            line = server.naver_market_quote_line("kr000660")
 
         self.assertEqual(
             line,
             'var hq_str_kr000660="SK Hynix,350500.0000,-4500.0000,-1.2700,2026-07-31,14:30:00";',
         )
         self.assertIn("/api/stock/000660/basic", fetch.call_args.args[0])
+
+    def test_naver_kospi_adapter_normalizes_index_quote_and_beijing_time(self) -> None:
+        payload = json.dumps({
+            "stockName": "코스피",
+            "closePrice": "6,628.68",
+            "compareToPreviousClosePrice": "269.73",
+            "fluctuationsRatio": "4.24",
+            "compareToPreviousPrice": {"name": "RISING"},
+            "localTradedAt": "2026-08-05T09:22:00+09:00",
+        }).encode()
+        with patch.object(
+            server,
+            "fetch_upstream",
+            return_value=(200, "application/json; charset=utf-8", payload),
+        ) as fetch:
+            line = server.naver_market_quote_line("b_KOSPI")
+
+        self.assertEqual(
+            line,
+            'var hq_str_b_KOSPI="코스피,6628.6800,269.7300,4.2400,2026-08-05,08:22:00";',
+        )
+        self.assertIn("/api/index/KOSPI/basic", fetch.call_args.args[0])
 
     def test_market_quote_adapter_combines_sina_and_naver_lines(self) -> None:
         def fake_fetch(url: str, **_kwargs: object) -> tuple[int, str, bytes]:
@@ -679,6 +701,36 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertIn("hq_str_gb_nvda", text)
         self.assertIn("hq_str_jp6857", text)
         self.assertIn("2026-07-31,14:30:00", text)
+
+    def test_market_quote_adapter_prefers_naver_kospi_and_keeps_sina_fallback(self) -> None:
+        def fake_fetch(url: str, **_kwargs: object) -> tuple[int, str, bytes]:
+            return 200, "application/json", json.dumps({
+                "stockName": "코스피",
+                "closePrice": "6,628.68",
+                "compareToPreviousClosePrice": "269.73",
+                "fluctuationsRatio": "4.24",
+                "compareToPreviousPrice": {"name": "RISING"},
+                "localTradedAt": "2026-08-05T09:22:00+09:00",
+            }).encode()
+
+        with patch.object(server, "fetch_upstream", side_effect=fake_fetch):
+            status, text = server.fetch_market_quote_text(["b_KOSPI"])
+
+        self.assertEqual(status, 200)
+        self.assertEqual(text.count("hq_str_b_KOSPI"), 1)
+        self.assertIn("6628.6800", text)
+        self.assertIn("2026-08-05,08:22:00", text)
+
+        with patch.object(server, "fetch_upstream", side_effect=[
+            (599, "application/json", b""),
+            (200, "text/plain", (
+                'var hq_str_b_KOSPI="韩国KOSPI指数,6358.95,0,0,2:27 AM,14:27:00,'
+                '2026-08-04,14:30:00,6358.95,6358.95";'
+            ).encode()),
+        ]):
+            _status, fallback_text = server.fetch_market_quote_text(["b_KOSPI"])
+
+        self.assertIn("2026-08-04,14:30:00", fallback_text)
 
     def test_japanese_and_korean_holding_symbols_are_classified_for_quotes(self) -> None:
         self.assertEqual(
