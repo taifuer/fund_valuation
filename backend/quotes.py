@@ -101,11 +101,13 @@ def normalize_quote_line(symbol: str, line: str, captured_at: int) -> dict[str, 
                 price = extended_price
                 quote_time = extended_time
                 session = extended_session
-                if extended_session == "pre":
+                if regular_price:
                     previous_close = regular_price
-                    change_percent = extended_change
-                elif previous_close:
-                    change_percent = (extended_price - previous_close) / previous_close * 100
+                    change_percent = (
+                        extended_change
+                        if extended_change is not None
+                        else (extended_price - regular_price) / regular_price * 100
+                    )
     elif symbol.startswith("s_") and len(fields) >= 4:
         price = number(fields[1])
         change = number(fields[2])

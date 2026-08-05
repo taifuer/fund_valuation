@@ -58,9 +58,26 @@ export interface FundValuationBasis {
 
 export type FundEstimatePhase = 'LIVE' | 'PRE' | 'POST' | 'PARTIAL' | 'CLOSED';
 
+export interface FundHoldingContribution {
+  sinaSymbol: string;
+  symbol: string;
+  name: string;
+  weight: number;
+  currency: Holding['currency'];
+  basePrice: number;
+  targetPrice: number;
+  priceChangePercent: number;
+  baseFxRate: number;
+  targetFxRate: number;
+  fxChangePercent: number;
+  combinedChangePercent: number;
+  contributionPercent: number;
+}
+
 export interface FundEstimateProjection {
   kind: 'pending' | 'preview';
   targetDate: string;
+  comparisonDate?: string;
   estimatedNav: number;
   changePercent: number;
   rawChangePercent: number;
@@ -72,6 +89,12 @@ export interface FundEstimateProjection {
   missingQuoteCount: number;
   benchmarkSource: string;
   benchmarkSymbol: string;
+  holdingContributions?: FundHoldingContribution[];
+  holdingContributionPercent?: number;
+  residualContributionPercent?: number;
+  benchmarkChangePercent?: number;
+  benchmarkFxChangePercent?: number;
+  calibrationContributionPercent?: number;
   model: 'holdingsBenchmark' | 'coverageNormalizedFallback';
   calibration: {
     applied: boolean;

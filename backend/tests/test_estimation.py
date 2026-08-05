@@ -33,6 +33,9 @@ class EstimateCalculationTests(unittest.TestCase):
         assert result is not None
         self.assertAlmostEqual(result["return"], 0.08)
         self.assertEqual(result["model"], "holdingsBenchmark")
+        self.assertAlmostEqual(result["components"][0]["contribution"], 0.06)
+        self.assertAlmostEqual(result["components"][0]["targetPrice"], 110)
+        self.assertAlmostEqual(result["benchmarkComponent"]["contribution"], 0.02)
 
     def test_falls_back_to_coverage_normalization_without_benchmark(self) -> None:
         prices = {("gb_a", "a"): 100, ("gb_a", "b"): 110}
@@ -47,6 +50,8 @@ class EstimateCalculationTests(unittest.TestCase):
         assert result is not None
         self.assertAlmostEqual(result["return"], 0.10)
         self.assertEqual(result["model"], "coverageNormalizedFallback")
+        self.assertAlmostEqual(result["components"][0]["contribution"], 0.10)
+        self.assertIsNone(result["benchmarkComponent"])
 
     def test_calibration_requires_samples_and_validation_improvement(self) -> None:
         self.assertFalse(select_calibration([(0.01, 0.02)] * 10)["applied"])

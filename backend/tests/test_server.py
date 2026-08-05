@@ -497,10 +497,34 @@ class ServerDataRefreshTests(unittest.TestCase):
         result = payload["017436"]
         self.assertEqual(result["pending"]["targetDate"], "2026-08-04")
         self.assertAlmostEqual(result["pending"]["estimatedNav"], 1.08)
+        self.assertEqual(result["pending"]["comparisonDate"], "2026-08-03")
+        self.assertAlmostEqual(result["pending"]["holdingContributionPercent"], 6.0)
+        self.assertAlmostEqual(result["pending"]["residualContributionPercent"], 2.0)
+        self.assertAlmostEqual(
+            result["pending"]["holdingContributionPercent"]
+            + result["pending"]["residualContributionPercent"]
+            + result["pending"]["calibrationContributionPercent"],
+            result["pending"]["changePercent"],
+        )
         self.assertEqual(result["preview"]["targetDate"], "2026-08-05")
         self.assertEqual(result["preview"]["phase"], "POST")
         self.assertAlmostEqual(result["preview"]["estimatedNav"], 1.086)
         self.assertAlmostEqual(result["preview"]["changePercent"], 0.5556)
+        self.assertEqual(result["preview"]["comparisonDate"], "2026-08-04")
+        self.assertAlmostEqual(result["preview"]["holdingContributionPercent"], 0.5556)
+        self.assertAlmostEqual(result["preview"]["residualContributionPercent"], 0.0)
+        self.assertAlmostEqual(
+            result["preview"]["holdingContributionPercent"]
+            + result["preview"]["residualContributionPercent"]
+            + result["preview"]["calibrationContributionPercent"],
+            result["preview"]["changePercent"],
+        )
+        contribution = result["preview"]["holdingContributions"][0]
+        self.assertEqual(contribution["sinaSymbol"], "gb_aapl")
+        self.assertAlmostEqual(contribution["basePrice"], 110)
+        self.assertAlmostEqual(contribution["targetPrice"], 111)
+        self.assertAlmostEqual(contribution["priceChangePercent"], 0.9091)
+        self.assertAlmostEqual(contribution["contributionPercent"], 0.5556)
 
     def test_valuation_cycle_rolls_after_the_us_session_closes(self) -> None:
         server.ensure_market_calendar_seeded(2026)

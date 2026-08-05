@@ -40,6 +40,7 @@ def estimate_cumulative_return(
     local_contribution = 0.0
     covered_weight = 0.0
     priced_count = 0
+    components: list[dict[str, Any]] = []
 
     for holding in holdings:
         symbol = str(holding.get("sinaSymbol") or "")
@@ -47,25 +48,42 @@ def estimate_cumulative_return(
         currency = str(holding.get("currency") or "CNY")
         if not symbol or weight <= 0:
             continue
-        price_return = relative_change(
-            price_lookup(symbol, target_date),
-            price_lookup(symbol, base_date),
-        )
+        base_price = price_lookup(symbol, base_date)
+        target_price = price_lookup(symbol, target_date)
+        price_return = relative_change(target_price, base_price)
         if price_return is None:
             continue
+        base_fx = 1.0
+        target_fx = 1.0
         fx_return = 0.0
         if currency != "CNY":
-            resolved_fx = relative_change(
-                fx_lookup(currency, target_date),
-                fx_lookup(currency, base_date),
-            )
+            base_fx = fx_lookup(currency, base_date)
+            target_fx = fx_lookup(currency, target_date)
+            resolved_fx = relative_change(target_fx, base_fx)
             if resolved_fx is None:
                 continue
             fx_return = resolved_fx
+        combined = compounded_return(price_return, fx_return)
         local_contribution += weight * price_return
-        contribution += weight * compounded_return(price_return, fx_return)
+        weighted_contribution = weight * combined
+        contribution += weighted_contribution
         covered_weight += weight
         priced_count += 1
+        components.append({
+            "sinaSymbol": symbol,
+            "symbol": str(holding.get("symbol") or ""),
+            "name": str(holding.get("name") or ""),
+            "weight": weight,
+            "currency": currency,
+            "basePrice": float(base_price),
+            "targetPrice": float(target_price),
+            "baseFxRate": float(base_fx),
+            "targetFxRate": float(target_fx),
+            "priceReturn": price_return,
+            "fxReturn": fx_return,
+            "combinedReturn": combined,
+            "weightedContribution": weighted_contribution,
+        })
 
     if covered_weight <= 0:
         return None
@@ -75,30 +93,54 @@ def estimate_cumulative_return(
     benchmark_source = ""
     benchmark_symbol = ""
     benchmark_currency = "CNY"
+    benchmark_component: dict[str, Any] | None = None
     if benchmark and benchmark_lookup:
         benchmark_source = str(benchmark.get("source") or "")
         benchmark_symbol = str(benchmark.get("symbol") or "")
         benchmark_currency = str(benchmark.get("currency") or "CNY")
-        benchmark_return = relative_change(
-            benchmark_lookup(benchmark_source, benchmark_symbol, target_date),
-            benchmark_lookup(benchmark_source, benchmark_symbol, base_date),
-        )
+        benchmark_base = benchmark_lookup(benchmark_source, benchmark_symbol, base_date)
+        benchmark_target = benchmark_lookup(benchmark_source, benchmark_symbol, target_date)
+        benchmark_price_return = relative_change(benchmark_target, benchmark_base)
+        benchmark_return = benchmark_price_return
+        benchmark_base_fx = 1.0
+        benchmark_target_fx = 1.0
+        benchmark_fx_return = 0.0
         if benchmark_return is not None and benchmark_currency != "CNY":
-            benchmark_fx_return = relative_change(
-                fx_lookup(benchmark_currency, target_date),
-                fx_lookup(benchmark_currency, base_date),
-            )
+            benchmark_base_fx = fx_lookup(benchmark_currency, base_date)
+            benchmark_target_fx = fx_lookup(benchmark_currency, target_date)
+            benchmark_fx_return = relative_change(benchmark_target_fx, benchmark_base_fx)
             if benchmark_fx_return is None:
                 benchmark_return = None
             else:
                 benchmark_return = compounded_return(benchmark_return, benchmark_fx_return)
+        if benchmark_return is not None:
+            benchmark_component = {
+                "source": benchmark_source,
+                "symbol": benchmark_symbol,
+                "currency": benchmark_currency,
+                "weight": residual_weight,
+                "baseValue": float(benchmark_base),
+                "targetValue": float(benchmark_target),
+                "baseFxRate": float(benchmark_base_fx),
+                "targetFxRate": float(benchmark_target_fx),
+                "priceReturn": float(benchmark_price_return),
+                "fxReturn": float(benchmark_fx_return),
+                "combinedReturn": benchmark_return,
+                "weightedContribution": residual_weight * benchmark_return,
+            }
 
     if benchmark_return is not None:
         estimated_return = contribution + residual_weight * benchmark_return
         model = "holdingsBenchmark"
+        for component in components:
+            component["contribution"] = component["weightedContribution"]
+        if benchmark_component:
+            benchmark_component["contribution"] = benchmark_component["weightedContribution"]
     else:
         estimated_return = contribution / covered_weight
         model = "coverageNormalizedFallback"
+        for component in components:
+            component["contribution"] = component["weightedContribution"] / covered_weight
 
     return {
         "return": estimated_return,
@@ -110,6 +152,8 @@ def estimate_cumulative_return(
         "benchmarkReturn": benchmark_return,
         "benchmarkSource": benchmark_source,
         "benchmarkSymbol": benchmark_symbol,
+        "components": components,
+        "benchmarkComponent": benchmark_component,
         "model": model,
     }
 

@@ -309,6 +309,7 @@ const FundCard = memo(function FundCard({
                 staleQuoteCount={staleQuoteCount}
                 missingFxCount={missingFxCount}
                 currencyChanges={currencyChanges}
+                projection={projection}
                 marketStates={marketStates}
               />
             )}

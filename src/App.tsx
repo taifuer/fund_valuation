@@ -1,5 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuotes, type FundEstimate } from './hooks/useQuotes';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuotes } from './hooks/useQuotes';
 import { useHeaderFxRates, useOverviewData, useRankingMarketData, useSystemStatus } from './hooks/usePageData';
 import { fetchApiMeta, fetchFundNavs, fetchSinaFundNavs, verifyFundManagementToken } from './api';
 import {
@@ -9,6 +9,11 @@ import {
   type FundManagementMode,
 } from './fundManagementAuth';
 import { FUNDS } from './constants';
+import {
+  rankFundEstimates,
+  type FundSortDirection,
+  type FundSortMode,
+} from './fundSorting';
 import {
   PAGE_PATHS,
   canonicalPathForPage,
@@ -27,9 +32,6 @@ const RankingPage = lazy(() => import('./components/RankingPage'));
 const RiskPage = lazy(() => import('./components/RiskPage'));
 const AboutPage = lazy(() => import('./components/AboutPage'));
 const DiagnosticsPage = lazy(() => import('./components/DiagnosticsPage'));
-
-type SortMode = 'pending' | 'preview' | 'official';
-type SortDirection = 'desc' | 'asc';
 
 const FUND_SECTION_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_section';
 const FUND_SUMMARY_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_summary';
@@ -115,20 +117,6 @@ function toCustomFund(fund: { code: string; name: string }): Fund {
     name: fund.name,
     holdings: [],
   };
-}
-
-function sortValue(estimate: FundEstimate, mode: SortMode): number | null {
-  if (mode === 'official') {
-    return estimate.officialNAV?.officialChange ?? null;
-  }
-  const projection = mode === 'preview'
-    ? estimate.projections?.preview ?? estimate.projections?.pending
-    : estimate.projections?.pending ?? estimate.projections?.preview;
-  if (projection) return projection.changePercent;
-  // Compatibility fallback for custom funds and servers not yet exposing the
-  // date-aligned endpoint.
-  if (estimate.normalizedNAVLocal === null) return null;
-  return estimate.normalizedChange;
 }
 
 function formatDate(yyyymmdd: string): string {
@@ -275,8 +263,8 @@ export default function App() {
     : activePage === 'ranking'
       ? marketPageData.error
       : null;
-  const [sortMode, setSortMode] = useState<SortMode>('pending');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [sortMode, setSortMode] = useState<FundSortMode>('preview');
+  const [sortDirection, setSortDirection] = useState<FundSortDirection>('desc');
   const [fundCollapsed, setFundCollapsed] = useState(() => readCollapsedFlag(FUND_SECTION_COLLAPSED_KEY));
   const [fundSummaryCollapsed, setFundSummaryCollapsed] = useState(() => readCollapsedFlag(FUND_SUMMARY_COLLAPSED_KEY));
   const [fundSearchQuery, setFundSearchQuery] = useState('');
@@ -355,31 +343,14 @@ export default function App() {
   }, [fundManagerOpen]);
 
   const sortedEstimates = useMemo(() => {
-    const sorted = [...fundEstimates].sort((a, b) => {
-      const aValue = sortValue(a, sortMode);
-      const bValue = sortValue(b, sortMode);
-      if (aValue === null && bValue === null) return 0;
-      if (aValue === null) return 1;
-      if (bValue === null) return -1;
-      return sortDirection === 'desc' ? bValue - aValue : aValue - bValue;
-    });
-    // Keep the original estimate object reference intact (do not spread) so that
-    // memoized FundCard children skip re-rendering when only sort order changed.
-    return sorted.map((estimate, i) => ({ estimate, rank: i + 1 }));
+    return rankFundEstimates(fundEstimates, sortMode, sortDirection);
   }, [fundEstimates, sortMode, sortDirection]);
-
-  useEffect(() => {
-    if (fundLoading || sortMode !== 'pending' || fundEstimates.length === 0) return;
-    const hasPending = fundEstimates.some((estimate) => estimate.projections?.pending);
-    const hasPreview = fundEstimates.some((estimate) => estimate.projections?.preview);
-    if (!hasPending && hasPreview) setSortMode('preview');
-  }, [fundEstimates, fundLoading, sortMode]);
 
   const sortLabel = sortMode === 'official'
     ? '按最新净值涨跌排序'
     : sortMode === 'preview'
       ? '按实时参考（含汇率）涨跌排序'
-      : '按待公布估值（含汇率）涨跌排序';
+      : '待公布优先 · 各组按涨跌排序';
   const overviewFundSummaries = useMemo(() => {
     const items = funds.map((fund) => ({ fund, nav: overviewData.fundSummaries.get(fund.code) ?? null }));
     return items.sort((a, b) => {
@@ -761,18 +732,26 @@ export default function App() {
             {!fundCollapsed && sortedEstimates.map((est) => {
               const fund = est.estimate.fund;
               return (
-                <FundCard
-                  key={fund.code}
-                  fund={fund}
-                  estimate={est.estimate}
-                  rank={est.rank}
-                  sortMode={sortMode}
-                  loading={false}
-                  marketStates={marketStates}
-                  onRemove={fundManagementGranted ? removeFund : undefined}
-                  expanded={expandedCode === fund.code}
-                  onExpandedChange={handleFundExpandedChange}
-                />
+                <Fragment key={fund.code}>
+                  {sortMode === 'pending' && est.groupStart && (
+                    <div className={styles.fundSortGroup}>
+                      <span>{est.group === 'pending' ? '待公布' : '已公布'}</span>
+                      <span>· {est.groupCount}</span>
+                      {est.group === 'published' && <span>· 按实时参考排序</span>}
+                    </div>
+                  )}
+                  <FundCard
+                    fund={fund}
+                    estimate={est.estimate}
+                    rank={est.rank}
+                    sortMode={sortMode}
+                    loading={false}
+                    marketStates={marketStates}
+                    onRemove={fundManagementGranted ? removeFund : undefined}
+                    expanded={expandedCode === fund.code}
+                    onExpandedChange={handleFundExpandedChange}
+                  />
+                </Fragment>
               );
             })}
           </div>

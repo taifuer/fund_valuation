@@ -163,20 +163,18 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
       regularTime = date;
       if (fields.length > 29) {
         const extendedPrice = parseFloat(fields[21]) || 0;
-        const extendedPct = parseFloat(fields[22]) || 0;
+        const parsedExtendedPct = parseFloat(fields[22]);
         const extendedTime = fields[24] || '';
         const extendedSession = usExtendedSession(extendedTime);
-        if (extendedPrice > 0 && extendedSession === 'pre') {
-          previousClose = price;
+        if (extendedPrice > 0 && (extendedSession === 'pre' || extendedSession === 'post')) {
+          const extendedBasePrice = price;
+          previousClose = extendedBasePrice;
           price = extendedPrice;
-          changePct = extendedPct;
+          changePct = Number.isFinite(parsedExtendedPct)
+            ? parsedExtendedPct
+            : extendedBasePrice > 0 ? ((extendedPrice - extendedBasePrice) / extendedBasePrice) * 100 : 0;
           date = usExtendedBeijingDatetime(extendedTime, fields[29] || date.slice(0, 4));
-          session = 'pre';
-        } else if (extendedPrice > 0 && extendedSession === 'post') {
-          price = extendedPrice;
-          changePct = previousClose ? ((extendedPrice - previousClose) / previousClose) * 100 : 0;
-          date = usExtendedBeijingDatetime(extendedTime, fields[29] || date.slice(0, 4));
-          session = 'post';
+          session = extendedSession;
         }
       }
       if (!date) {

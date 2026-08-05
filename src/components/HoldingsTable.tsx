@@ -1,4 +1,4 @@
-import type { Holding, MarketStateData, QuoteData } from '../types';
+import type { FundEstimateProjection, Holding, MarketStateData, QuoteData } from '../types';
 import {
   displayStateLabel,
   quoteDisplayState,
@@ -20,6 +20,7 @@ interface Props {
   staleQuoteCount: number;
   missingFxCount: number;
   currencyChanges: Record<string, number>;
+  projection?: FundEstimateProjection | null;
   marketStates?: Map<string, MarketStateData>;
 }
 
@@ -28,6 +29,15 @@ function stateClassName(state: QuoteDisplayState): string {
   if (state === 'pre' || state === 'post' || state === 'futuresLive') return styles.stateExtended;
   if (state === 'stale') return styles.stateStale;
   return styles.stateClosed;
+}
+
+function shortDate(value: string): string {
+  const match = value.match(/^\d{4}-(\d{2})-(\d{2})$/);
+  return match ? `${match[1]}/${match[2]}` : value;
+}
+
+function signedPercent(value: number): string {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
 
 export function formatHoldingPeriod(holdings: Holding[]): string {
@@ -55,10 +65,20 @@ export default function HoldingsTable({
   staleQuoteCount,
   missingFxCount,
   currencyChanges,
+  projection = null,
   marketStates = new Map(),
 }: Props) {
   const quoteMap = new Map(quotes.map((q) => [q.symbol, q]));
-  const coveragePct = totalConfiguredWeight > 0 ? (quoteCoverage / totalConfiguredWeight) * 100 : 0;
+  const contributionMap = new Map(
+    (projection?.holdingContributions ?? []).map((item) => [item.sinaSymbol, item]),
+  );
+  const coveragePct = projection
+    ? projection.coverage * 100
+    : totalConfiguredWeight > 0 ? (quoteCoverage / totalConfiguredWeight) * 100 : 0;
+  const estimateChange = projection?.changePercent ?? normalizedChange;
+  const holdingContribution = projection?.holdingContributionPercent ?? computedChange;
+  const residualContribution = projection?.residualContributionPercent ?? 0;
+  const calibrationContribution = projection?.calibrationContributionPercent ?? 0;
   const holdingPeriod = formatHoldingPeriod(holdings);
   const unsupportedQuoteCount = holdings.filter((holding) => (
     !isHoldingQuoteSupported(holding.sinaSymbol, holding.quoteSupported)
@@ -96,17 +116,25 @@ export default function HoldingsTable({
           {holdings.map((h) => {
             const quoteSupported = isHoldingQuoteSupported(h.sinaSymbol, h.quoteSupported);
             const q = quoteSupported ? quoteMap.get(h.sinaSymbol) : undefined;
-            const up = (q?.changePercent ?? 0) >= 0;
-            const fxChange = currencyChanges[h.currency] ?? 0;
-            const rmbChange = q
-              ? ((1 + q.changePercent / 100) * (1 + fxChange / 100) - 1) * 100
-              : 0;
-            const contrib = q ? rmbChange * h.weight : 0;
+            const contribution = contributionMap.get(h.sinaSymbol);
+            const priceChange = contribution?.priceChangePercent ?? q?.changePercent ?? null;
+            const up = (priceChange ?? 0) >= 0;
+            const fxChange = contribution?.fxChangePercent ?? currencyChanges[h.currency] ?? 0;
+            const rmbChange = priceChange == null
+              ? 0
+              : ((1 + priceChange / 100) * (1 + fxChange / 100) - 1) * 100;
+            const contrib = contribution?.contributionPercent ?? (q ? rmbChange * h.weight : 0);
             const marketState = quoteMarketState(h.sinaSymbol, marketStates);
             const displayState = q ? quoteDisplayState({ quote: q, marketState }) : marketState;
-            const displayTime = q && quoteSupported
+            const contributionIsClosed = Boolean(contribution && projection?.complete);
+            const effectiveState: QuoteDisplayState = contributionIsClosed ? 'closed' : displayState;
+            const displayTime = contributionIsClosed
+              ? { label: shortDate(projection?.targetDate ?? ''), estimated: false }
+              : q && quoteSupported
               ? quoteDisplayTime(q, displayState, { useCloseTimeWhenClosed: true })
               : null;
+            const displayPrice = contribution?.targetPrice ?? q?.price ?? null;
+            const hasValue = contribution != null || q != null;
             return (
               <tr key={h.symbol}>
                 <td className={styles.stockCell}>
@@ -120,21 +148,21 @@ export default function HoldingsTable({
                 <td className={`${styles.right} ${displayTime?.estimated ? styles.estimatedDate : ''}`}>
                   {displayTime?.label ?? '-'}
                 </td>
-                <td className={styles.right}>{q ? q.price : '-'}</td>
+                <td className={styles.right}>{displayPrice ?? '-'}</td>
                 <td className={`${styles.right} ${up ? styles.up : styles.down}`}>
-                  {q ? `${up ? '+' : ''}${q.changePercent}%` : '-'}
+                  {priceChange == null ? '-' : signedPercent(priceChange)}
                 </td>
                 <td className={`${styles.right} ${fxChange >= 0 ? styles.up : styles.down}`}>
-                  {h.currency === 'CNY' ? '-' : `${fxChange >= 0 ? '+' : ''}${fxChange.toFixed(2)}%`}
+                  {h.currency === 'CNY' ? '-' : signedPercent(fxChange)}
                 </td>
                 <td className={`${styles.right} ${contrib >= 0 ? styles.up : styles.down}`}>
-                  {q ? `${contrib >= 0 ? '+' : ''}${contrib.toFixed(2)}%` : '-'}
+                  {hasValue ? signedPercent(contrib) : '-'}
                 </td>
                 <td className={styles.right}>
                   <span
-                    className={`${styles.stateTag} ${quoteSupported ? stateClassName(displayState) : styles.stateUnavailable}`}
+                    className={`${styles.stateTag} ${quoteSupported ? stateClassName(effectiveState) : styles.stateUnavailable}`}
                   >
-                    {quoteSupported ? displayStateLabel(displayState) : '暂无行情'}
+                    {quoteSupported ? displayStateLabel(effectiveState) : '暂无行情'}
                   </span>
                 </td>
               </tr>
@@ -143,12 +171,15 @@ export default function HoldingsTable({
         </tbody>
       </table>
       <div className={styles.footer}>
-        估算涨跌（按覆盖权重归一化）
-        <span className={`${styles.footerStrong} ${normalizedChange >= 0 ? styles.up : styles.down}`}>
-          {normalizedChange >= 0 ? '+' : ''}{normalizedChange.toFixed(2)}%
+        估算涨跌
+        <span className={`${styles.footerStrong} ${estimateChange >= 0 ? styles.up : styles.down}`}>
+          {signedPercent(estimateChange)}
         </span>
         <span style={{ fontSize: 11, color: '#94a3b8' }}>
-          （覆盖 {coveragePct.toFixed(0)}%；原始加权 {computedChange >= 0 ? '+' : ''}{computedChange.toFixed(2)}%；外币持仓已并入兑 CNY 汇率）
+          （覆盖 {coveragePct.toFixed(0)}%；持仓 {signedPercent(holdingContribution)}
+          {projection?.model === 'holdingsBenchmark' && `；未披露仓位 ${signedPercent(residualContribution)}`}
+          {Math.abs(calibrationContribution) >= 0.005 && `；校准 ${signedPercent(calibrationContribution)}`}
+          ；外币已折算）
         </span>
       </div>
       <div className={styles.notes}>

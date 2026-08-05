@@ -81,6 +81,36 @@ describe('dashboard API contract', () => {
     expect(parsed?.data.time).toBe('2026-07-02 14:33:00');
   });
 
+  it('uses the regular close as the US post-market change basis', () => {
+    const parsed = parseSinaVar(
+      'var hq_str_gb_amd="AMD,518.5800,7.00,2026-08-05 08:14:57,33.9400,504.0000,'
+      + '530.1300,502.2000,584.7300,149.2200,48463564,29657103,845596879891,3.08,'
+      + '168.370000,0.00,0.00,0.00,0.00,1630600640,73,472.8504,-8.82,-45.73,'
+      + 'Aug 04 07:59PM EDT,Aug 04 04:00PM EDT,484.6400,11354303,1,2026,0,0,0,0,0,0";',
+      new Date('2026-08-05T08:15:00+08:00').getTime(),
+    );
+
+    expect(parsed?.data).toMatchObject({
+      price: 472.85,
+      previousClose: 518.58,
+      changePercent: -8.82,
+      regularPrice: 518.58,
+      session: 'post',
+    });
+  });
+
+  it('computes the US post-market change when the upstream percent is missing', () => {
+    const parsed = parseSinaVar(
+      'var hq_str_gb_amd="AMD,518.5800,7.00,2026-08-05 08:14:57,33.9400,504.0000,'
+      + '530.1300,502.2000,584.7300,149.2200,48463564,29657103,845596879891,3.08,'
+      + '168.370000,0.00,0.00,0.00,0.00,1630600640,73,472.8504,,-45.73,'
+      + 'Aug 04 07:59PM EDT,Aug 04 04:00PM EDT,484.6400,11354303,1,2026,0,0,0,0,0,0";',
+      new Date('2026-08-05T08:15:00+08:00').getTime(),
+    );
+
+    expect(parsed?.data.changePercent).toBeCloseTo((472.8504 / 518.58 - 1) * 100);
+  });
+
   it('parses backend-adapted Japanese and Korean equity quotes', () => {
     const japanese = parseSinaVar(
       'var hq_str_jp6857="Advantest,19320.0000,-250.0000,-1.2775,2026-07-31,14:30:00";',

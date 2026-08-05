@@ -39,7 +39,7 @@ from .config import (
     fund_benchmark as universe_fund_benchmark,
     quote_supported_symbol as universe_quote_supported_symbol,
 )
-from .estimation import estimate_cumulative_return, select_calibration
+from .estimation import compounded_return, estimate_cumulative_return, select_calibration
 from .quotes import normalize_quote_text
 from .contracts import API_SCHEMA_VERSION, DASHBOARD_SCHEMA_VERSION, validate_dashboard_payload
 from .observability import REQUEST_METRICS, log_event
@@ -3160,6 +3160,7 @@ def build_fund_estimates(
                     return None
                 previous_target = previous_cn_valuation_day(target)
                 previous_return = 0.0
+                previous_result: dict[str, Any] | None = None
                 if previous_target and previous_target > base_date:
                     previous_result = estimate_cumulative_return(
                         supported,
@@ -3181,6 +3182,95 @@ def build_fund_estimates(
                     calibrated_return = float(calibration["alpha"]) + float(calibration["beta"]) * raw_daily_return
                 estimated_nav = previous_nav * (1 + calibrated_return)
                 calibrated_cumulative = estimated_nav / base_nav - 1
+                contribution_denominator = 1 + previous_return
+                previous_components = {
+                    str(component.get("sinaSymbol") or ""): component
+                    for component in (previous_result or {}).get("components", [])
+                    if isinstance(component, dict)
+                }
+                holding_contributions: list[dict[str, Any]] = []
+                for component in cumulative.get("components", []):
+                    if not isinstance(component, dict):
+                        continue
+                    symbol = str(component.get("sinaSymbol") or "")
+                    previous_component = previous_components.get(symbol)
+                    comparison_price = safe_float(
+                        previous_component.get("targetPrice") if previous_component else component.get("basePrice")
+                    )
+                    target_price = safe_float(component.get("targetPrice"))
+                    comparison_fx = safe_float(
+                        previous_component.get("targetFxRate") if previous_component else component.get("baseFxRate")
+                    )
+                    target_fx = safe_float(component.get("targetFxRate"))
+                    price_change = (
+                        target_price / comparison_price - 1
+                        if target_price and comparison_price and comparison_price > 0
+                        else 0.0
+                    )
+                    fx_change = (
+                        target_fx / comparison_fx - 1
+                        if target_fx and comparison_fx and comparison_fx > 0
+                        else 0.0
+                    )
+                    previous_contribution = float(previous_component.get("contribution") or 0) if previous_component else 0.0
+                    target_contribution = float(component.get("contribution") or 0)
+                    daily_contribution = (
+                        (target_contribution - previous_contribution) / contribution_denominator
+                        if contribution_denominator > 0
+                        else target_contribution
+                    )
+                    holding_contributions.append({
+                        "sinaSymbol": symbol,
+                        "symbol": str(component.get("symbol") or ""),
+                        "name": str(component.get("name") or ""),
+                        "weight": round(float(component.get("weight") or 0), 6),
+                        "currency": str(component.get("currency") or "CNY"),
+                        "basePrice": round(float(comparison_price or 0), 6),
+                        "targetPrice": round(float(target_price or 0), 6),
+                        "priceChangePercent": round(price_change * 100, 4),
+                        "baseFxRate": round(float(comparison_fx or 0), 10),
+                        "targetFxRate": round(float(target_fx or 0), 10),
+                        "fxChangePercent": round(fx_change * 100, 4),
+                        "combinedChangePercent": round(compounded_return(price_change, fx_change) * 100, 4),
+                        "contributionPercent": round(daily_contribution * 100, 4),
+                    })
+                previous_benchmark = (previous_result or {}).get("benchmarkComponent")
+                target_benchmark = cumulative.get("benchmarkComponent")
+                residual_contribution = 0.0
+                benchmark_change = 0.0
+                benchmark_fx_change = 0.0
+                if isinstance(target_benchmark, dict):
+                    previous_benchmark_contribution = (
+                        float(previous_benchmark.get("contribution") or 0)
+                        if isinstance(previous_benchmark, dict)
+                        else 0.0
+                    )
+                    residual_contribution = (
+                        (float(target_benchmark.get("contribution") or 0) - previous_benchmark_contribution)
+                        / contribution_denominator
+                        if contribution_denominator > 0
+                        else float(target_benchmark.get("contribution") or 0)
+                    )
+                    comparison_benchmark = safe_float(
+                        previous_benchmark.get("targetValue")
+                        if isinstance(previous_benchmark, dict)
+                        else target_benchmark.get("baseValue")
+                    )
+                    target_benchmark_value = safe_float(target_benchmark.get("targetValue"))
+                    if comparison_benchmark and target_benchmark_value and comparison_benchmark > 0:
+                        benchmark_change = target_benchmark_value / comparison_benchmark - 1
+                    comparison_benchmark_fx = safe_float(
+                        previous_benchmark.get("targetFxRate")
+                        if isinstance(previous_benchmark, dict)
+                        else target_benchmark.get("baseFxRate")
+                    )
+                    target_benchmark_fx = safe_float(target_benchmark.get("targetFxRate"))
+                    if comparison_benchmark_fx and target_benchmark_fx and comparison_benchmark_fx > 0:
+                        benchmark_fx_change = target_benchmark_fx / comparison_benchmark_fx - 1
+                holding_contribution = sum(
+                    float(component["contributionPercent"]) for component in holding_contributions
+                )
+                calibration_contribution = (calibrated_return - raw_daily_return) * 100
                 complete = all(market_completed_valuation_date(market, target, now) for market in required_markets)
                 quote_sessions = {
                     str(raw.get("session") or "regular")
@@ -3205,6 +3295,7 @@ def build_fund_estimates(
                 return {
                     "kind": kind,
                     "targetDate": target,
+                    "comparisonDate": previous_target if previous_result is not None else base_date,
                     "estimatedNav": round(estimated_nav, 4),
                     "changePercent": round(calibrated_return * 100, 4),
                     "rawChangePercent": round(raw_daily_return * 100, 4),
@@ -3216,6 +3307,12 @@ def build_fund_estimates(
                     "missingQuoteCount": max(len(holdings) - int(cumulative["pricedHoldingCount"]), 0),
                     "benchmarkSource": str(cumulative["benchmarkSource"]),
                     "benchmarkSymbol": str(cumulative["benchmarkSymbol"]),
+                    "holdingContributions": holding_contributions,
+                    "holdingContributionPercent": round(holding_contribution, 4),
+                    "residualContributionPercent": round(residual_contribution * 100, 4),
+                    "benchmarkChangePercent": round(benchmark_change * 100, 4),
+                    "benchmarkFxChangePercent": round(benchmark_fx_change * 100, 4),
+                    "calibrationContributionPercent": round(calibration_contribution, 4),
                     "model": str(cumulative["model"]),
                     "calibration": calibration,
                     "phase": phase,
