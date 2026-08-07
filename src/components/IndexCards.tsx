@@ -84,7 +84,7 @@ function Card({
     wasUsingFuturesRef.current = useFutures;
   }, [useFutures]);
 
-  if (loading) {
+  if (loading && !data && !futuresData) {
     return (
       <div className={`${styles.card} ${idx.history ? styles.cardClickable : ''}`}>
         <div className={styles.label}>{idx.name}</div>

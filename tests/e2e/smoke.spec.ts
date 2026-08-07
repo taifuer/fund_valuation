@@ -1,5 +1,39 @@
 import { expect, test } from '@playwright/test';
 
+function overviewPayload(price: number, generatedAt: number, fundCodes: string[]) {
+  return {
+    schemaVersion: 1,
+    generatedAt,
+    quotes: {
+      sh000001: {
+        symbol: 'sh000001',
+        price,
+        previousClose: 3190,
+        change: price - 3190,
+        changePercent: ((price - 3190) / 3190) * 100,
+        time: '2026-08-07 15:00:00',
+        fetchedAt: generatedAt,
+      },
+    },
+    quotesText: '',
+    fxText: '',
+    marketStates: {
+      sh000001: {
+        symbol: 'sh000001',
+        market: 'cn',
+        state: 'closed',
+        source: 'test',
+      },
+    },
+    fundSummaries: Object.fromEntries(fundCodes.map((code) => [code, {
+      code,
+      navDate: '2026-08-06',
+      nav: 1.2,
+      officialChange: 0.5,
+    }])),
+  };
+}
+
 for (const [path, activeLabel] of [['/', '概览'], ['/funds', '基金'], ['/returns', '收益'], ['/risk', '风险'], ['/about', '关于']] as const) {
   test(`${path} survives direct navigation`, async ({ page }) => {
     await page.goto(path);
@@ -37,6 +71,50 @@ test('mobile navigation keeps the active style after client-side navigation', as
   expect(backgroundAfterClick).toBe('rgb(15, 23, 42)');
   expect(backgroundAfterReload).toBe(backgroundAfterClick);
 });
+
+for (const returnVia of ['navigation', 'brand'] as const) {
+  test(`returning to overview via ${returnVia} keeps cached market cards visible`, async ({ page }) => {
+    let holdRefresh = false;
+    let refreshRequested = false;
+    let releaseRefresh: () => void = () => undefined;
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    await page.route('**/api/overview?*', async (route) => {
+      const isRefresh = holdRefresh;
+      if (isRefresh) {
+        refreshRequested = true;
+        await refreshGate;
+      }
+      const fundCodes = new URL(route.request().url()).searchParams.get('fundCodes')?.split(',') ?? [];
+      await route.fulfill({
+        json: isRefresh
+          ? overviewPayload(3210, 200, fundCodes)
+          : overviewPayload(3200, 100, fundCodes),
+      });
+    });
+
+    await page.goto('/');
+    const navigation = page.getByRole('navigation', { name: '页面切换' });
+    const shanghaiCard = page.getByRole('button').filter({ hasText: '上证指数' }).first();
+    await expect(shanghaiCard).toContainText('3,200');
+
+    await navigation.getByRole('button', { name: '基金', exact: true }).click();
+    await expect(page).toHaveURL(/\/funds$/);
+    holdRefresh = true;
+    if (returnVia === 'navigation') {
+      await navigation.getByRole('button', { name: '概览', exact: true }).click();
+    } else {
+      await page.getByRole('button', { name: '全球资产看板', exact: true }).click();
+    }
+    await expect(page).toHaveURL(/\/$/);
+    await expect.poll(() => refreshRequested).toBe(true);
+
+    await expect(shanghaiCard).toContainText('3,200');
+    releaseRefresh();
+    await expect(shanghaiCard).toContainText('3,210');
+  });
+}
 
 test('mobile return and risk tables keep every column in a horizontal scroller', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile-chromium', 'Mobile table behavior');

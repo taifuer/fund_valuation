@@ -182,8 +182,11 @@ export function useOverviewData(funds: Fund[], enabled: boolean) {
     let cancelled = false;
     async function loadOverview(showLoading = false) {
       if (showLoading) {
-        setLoading(true);
-        setFundLoading(true);
+        // Keep the last successful snapshot visible when the user returns to
+        // the overview. A refresh may deliberately wait for the next worker
+        // snapshot, but that should not replace usable cards with skeletons.
+        setLoading(quotes.size === 0);
+        setFundLoading(fundSummaries.size === 0);
       }
       setError(null);
       try {
