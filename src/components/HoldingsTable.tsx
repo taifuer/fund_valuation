@@ -184,6 +184,9 @@ export default function HoldingsTable({
       </div>
       <div className={styles.notes}>
         <div>{holdingPeriod}</div>
+        {projection?.model === 'coverageNormalizedFallback' && (
+          <div>未披露仓位暂无稳定基准，本次估算按已覆盖持仓权重归一化。</div>
+        )}
         {unsupportedQuoteCount > 0 && (
           <div>
             {unsupportedQuoteCount} 项持仓的数据源暂不支持行情，已从T日持仓估算覆盖权重中排除。

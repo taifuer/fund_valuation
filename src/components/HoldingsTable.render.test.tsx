@@ -90,4 +90,24 @@ describe('HoldingsTable projection details', () => {
     expect(screen.getByText(/未披露仓位 -0.10%/)).toBeInTheDocument();
     expect(screen.queryByText('+7.00%')).not.toBeInTheDocument();
   });
+
+  it('explains when the estimate falls back to normalized covered holdings', () => {
+    render(
+      <HoldingsTable
+        holdings={[holding]}
+        quotes={[quote]}
+        computedChange={0.7}
+        normalizedChange={7}
+        quoteCoverage={0.1}
+        totalConfiguredWeight={0.1}
+        missingQuoteCount={0}
+        staleQuoteCount={0}
+        missingFxCount={0}
+        currencyChanges={{ USD: 0 }}
+        projection={{ ...projection, model: 'coverageNormalizedFallback' }}
+      />,
+    );
+
+    expect(screen.getByText('未披露仓位暂无稳定基准，本次估算按已覆盖持仓权重归一化。')).toBeInTheDocument();
+  });
 });

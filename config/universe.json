@@ -2046,6 +2046,12 @@
       "symbol": "539002",
       "name": "建信新兴市场混合",
       "code": "539002",
+      "benchmark": {
+        "source": "sina-us",
+        "symbol": "EEM",
+        "sinaSymbol": "gb_eem",
+        "currency": "USD"
+      },
       "profile": {
         "inceptionDate": "2011-06-21",
         "assetScale": "11.20亿元",

@@ -50,9 +50,7 @@ class ServerDataRefreshTests(unittest.TestCase):
                 DELETE FROM market_calendar;
                 DELETE FROM stock_daily_history;
                 DELETE FROM fx_daily_history;
-                DELETE FROM fund_estimate_backtest;
                 DELETE FROM fund_estimate_snapshots;
-                DELETE FROM fund_backtest_summaries;
                 DELETE FROM market_quote_snapshots;
                 DELETE FROM dashboard_snapshots;
                 DELETE FROM background_jobs;
@@ -726,6 +724,50 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertIn("hq_str_jp6857", text)
         self.assertIn("2026-07-31,14:30:00", text)
 
+    def test_binance_bitcoin_adapter_uses_utc_daily_open_and_beijing_timestamp(self) -> None:
+        payload = json.dumps([[1786060800000, "64323.61", "65390.99", "64166.00", "64948.00", "10.5", 1786147199999]])
+        captured_at = int(datetime.fromisoformat("2026-08-07T23:15:00+08:00").timestamp() * 1000)
+
+        line = server.parse_binance_bitcoin_quote_line(payload, captured_at)
+        quote = server.normalize_quote_text(line or "", captured_at)["fx_sbtcusd"]
+
+        self.assertIn("Binance BTCUSDT", line or "")
+        self.assertAlmostEqual(quote["price"], 64948.0)
+        self.assertAlmostEqual(quote["previousClose"], 64323.61)
+        self.assertAlmostEqual(quote["changePercent"], (64948 / 64323.61 - 1) * 100, places=3)
+        self.assertEqual(quote["time"], "2026-08-07 23:15:00")
+        self.assertIsNone(server.parse_binance_bitcoin_quote_line(
+            json.dumps([[1786060800000, "64323.61", "64000", "64166", "64948", "10.5", 1786147199999]]),
+            captured_at,
+        ))
+
+    def test_market_quote_adapter_prefers_binance_and_falls_back_to_sina(self) -> None:
+        binance = json.dumps([[1786060800000, "64323.61", "65390.99", "64166.00", "64948.00", "10.5", 1786147199999]]).encode()
+        captured_at = int(datetime.fromisoformat("2026-08-07T23:15:00+08:00").timestamp() * 1000)
+        with (
+            patch.object(server, "now_ms", return_value=captured_at),
+            patch.object(server, "fetch_upstream", return_value=(200, "application/json", binance)) as fetch,
+        ):
+            status, text = server.fetch_market_quote_text(["fx_sbtcusd"])
+
+        self.assertEqual(status, 200)
+        self.assertIn("64948.00000000", text)
+        self.assertEqual(fetch.call_count, 1)
+        self.assertIn("data-api.binance.vision", fetch.call_args.args[0])
+
+        sina = (
+            'var hq_str_fx_sbtcusd="23:15:00,65000,65000,64000,1,64000,66000,63000,'
+            '65000,Bitcoin,1.00,650,1,Sina,0,0,,2026-08-07";'
+        ).encode()
+        with patch.object(server, "fetch_upstream", side_effect=[
+            (599, "application/json", b""),
+            (200, "text/plain", sina),
+        ]):
+            fallback_status, fallback_text = server.fetch_market_quote_text(["fx_sbtcusd"])
+
+        self.assertEqual(fallback_status, 200)
+        self.assertIn("65000", fallback_text)
+
     def test_market_quote_adapter_prefers_naver_kospi_and_keeps_sina_fallback(self) -> None:
         def fake_fetch(url: str, **_kwargs: object) -> tuple[int, str, bytes]:
             return 200, "application/json", json.dumps({
@@ -878,6 +920,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         with patch.object(server, "fetch_upstream", side_effect=AssertionError("request path must not fetch upstream")):
             first = client.get(url)
             second = client.get(url)
+            refreshed = client.get(f"{url}&refresh=1")
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
@@ -890,7 +933,15 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(payload["marketStates"]["s_sh000001"]["state"], "live")
         self.assertEqual(first.headers.get("X-Cache"), "MISS")
         self.assertEqual(second.headers.get("X-Cache"), "HIT")
+        self.assertEqual(refreshed.status_code, 200)
+        self.assertEqual(refreshed.headers.get("Cache-Control"), "no-store")
+        self.assertIsNone(refreshed.headers.get("X-Cache"))
         self.assertEqual(len(calls), 2)
+
+    def test_legacy_fund_backtest_endpoint_is_removed(self) -> None:
+        response = server.app.test_client().get("/api/fundbacktest?codes=016664")
+
+        self.assertEqual(response.status_code, 404)
 
     def test_overview_aggregates_market_fx_and_fund_summary(self) -> None:
         server.store_fund_history(
@@ -1388,18 +1439,6 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("X-Cache"), "HIT")
         self.assertIn(code, response.get_json())
-
-    def test_prewarm_fund_backtest_cache_uses_configured_codes(self) -> None:
-        with (
-            patch.object(server, "configured_fund_codes_from_constants", return_value=["016664", "016664", "017436"]),
-            patch.object(server, "compute_fund_backtest", return_value={"sampleCount": 12}) as compute,
-        ):
-            errors = server.prewarm_fund_backtest_cache(days=30)
-
-        self.assertEqual(errors, [])
-        self.assertEqual(compute.call_count, 2)
-        compute.assert_any_call("016664", 30, refresh=False, use_persisted=False)
-        compute.assert_any_call("017436", 30, refresh=False, use_persisted=False)
 
     def test_market_states_marks_weekend_separately(self) -> None:
         response = server.app.test_client().get(
@@ -1902,6 +1941,13 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertIn("hkHSTECH", server.configured_sina_symbols_from_constants())
         self.assertIn("kr000660", server.configured_sina_symbols_from_constants())
         self.assertIn("kr005930", server.configured_sina_symbols_from_constants())
+        self.assertIn("sina-us:EEM", server.configured_market_return_items_from_constants())
+        self.assertIn("gb_eem", server.configured_sina_symbols_from_constants())
+        self.assertEqual(server.universe_fund_benchmark("539002"), {
+            "source": "sina-us",
+            "symbol": "EEM",
+            "currency": "USD",
+        })
         self.assertEqual(server.configured_unsupported_quote_symbols(), [])
 
     def test_history_health_uses_disclosure_lag_and_completed_market_sessions(self) -> None:
@@ -1915,12 +1961,17 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(server.latest_completed_trading_day("gb_inx", before_us_open), "2026-07-23")
         self.assertEqual(server.latest_completed_trading_day("gb_inx", after_us_close), "2026-07-24")
 
-    def test_fx_daily_history_is_persisted_for_backtests(self) -> None:
+    def test_fx_daily_history_is_persisted_for_valuation_basis(self) -> None:
         text = 'var hq_str_fx_susdcny="美元人民币,7.1000,0,0,0,0,0,0,0,09:30:00,0.12,2026-06-29";'
 
         self.assertEqual(server.store_fx_daily_history(text), 1)
-        changes = server.read_fx_changes(["USD"], "2026-06-01", "2026-06-30")
-        self.assertAlmostEqual(changes["USD"]["2026-06-29"], 0.12)
+        basis = server.read_fund_valuation_basis([{
+            "code": "000001",
+            "navDate": "2026-06-30",
+            "symbols": [],
+            "currencies": ["USD"],
+        }])
+        self.assertAlmostEqual(basis["000001"]["fxRates"]["USD"]["rate"], 7.1)
 
     def test_ecb_reference_rates_are_crossed_to_cny_and_stored_with_daily_changes(self) -> None:
         text = "\n".join([
@@ -1937,9 +1988,16 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertIn(("EUR", "2026-06-30", 7.7), parsed)
         self.assertIn(("USD", "2026-06-30", 7.0), parsed)
         self.assertEqual(server.store_ecb_reference_rates(text, 123), 6)
-        changes = server.read_fx_changes(["USD", "EUR"], "2026-06-30", "2026-07-01")
-        self.assertAlmostEqual(changes["USD"]["2026-07-01"], 0.0)
-        self.assertAlmostEqual(changes["EUR"]["2026-07-01"], (7.77 / 7.7 - 1) * 100)
+        with sqlite3.connect(server.DB_PATH) as conn:
+            changes = {
+                (currency, day): change
+                for currency, day, change in conn.execute(
+                    "SELECT currency, date, change_percent FROM fx_daily_history WHERE date = ?",
+                    ("2026-07-01",),
+                ).fetchall()
+            }
+        self.assertAlmostEqual(changes[("USD", "2026-07-01")], 0.0)
+        self.assertAlmostEqual(changes[("EUR", "2026-07-01")], (7.77 / 7.7 - 1) * 100)
 
     def test_configured_fx_history_backfills_when_existing_coverage_is_short(self) -> None:
         short_summary = {
@@ -2032,7 +2090,6 @@ class ServerDataRefreshTests(unittest.TestCase):
             )
 
         self.assertEqual(server.read_fund_holdings_from_db("017091"), [])
-        self.assertEqual(server.read_fund_holding_snapshots("017091"), [])
 
     def test_current_fund_holdings_ignore_stale_but_valid_reports(self) -> None:
         server.store_fund_holdings(
@@ -2045,8 +2102,6 @@ class ServerDataRefreshTests(unittest.TestCase):
         )
 
         self.assertEqual(server.read_fund_holdings_from_db("501312"), [])
-        snapshots = server.read_fund_holding_snapshots("501312")
-        self.assertEqual(snapshots[0][0], "2023-09-30")
 
     def test_latest_holding_refresh_updates_only_valid_quarterly_reports(self) -> None:
         valid_rows = [{
@@ -2537,43 +2592,6 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload["457001"][0]["sinaSymbol"], "gb_tsm")
-
-    def test_fund_backtest_uses_cached_stock_history(self) -> None:
-        server.store_fund_history(
-            "016664",
-            [
-                {"FSRQ": "2026-05-19", "DWJZ": "1.0000", "JZZZL": "1.00"},
-                {"FSRQ": "2026-05-20", "DWJZ": "1.0200", "JZZZL": "2.00"},
-                {"FSRQ": "2026-05-21", "DWJZ": "1.0098", "JZZZL": "-1.00"},
-            ],
-        )
-        server.store_stock_history(
-            "gb_nvda",
-            'var _=([{"d":"2026-05-18","c":"100"},{"d":"2026-05-19","c":"102"},'
-            '{"d":"2026-05-20","c":"105"},{"d":"2026-05-21","c":"103"}]);',
-        )
-        server.store_stock_history(
-            "gb_tsm",
-            'var _=([{"d":"2026-05-18","c":"50"},{"d":"2026-05-19","c":"51"},'
-            '{"d":"2026-05-20","c":"52"},{"d":"2026-05-21","c":"51"}]);',
-        )
-
-        response = server.app.test_client().get("/api/fundbacktest?codes=016664&days=3")
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.get_json()
-        result = payload["016664"]
-        self.assertEqual(result["sampleCount"], 3)
-        self.assertEqual(result["modelVersion"], server.BACKTEST_MODEL_VERSION)
-        self.assertGreater(result["coverageAvg"], 0)
-        self.assertIn("mae", result["raw"])
-        self.assertIn("beta", result["fit"])
-
-    def test_fund_backtest_rejects_invalid_codes(self) -> None:
-        response = server.app.test_client().get("/api/fundbacktest?codes=abc123")
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Invalid fund code", response.get_data(as_text=True))
 
     def test_market_history_without_refresh_reads_sqlite(self) -> None:
         server.store_market_history("sina-us", ".INX", 'var _=([{"d":"2026-05-14","c":"7501.24"}]);')

@@ -88,6 +88,11 @@ def configured_sina_symbols() -> list[str]:
     for fund in payload["funds"]:
         if not isinstance(fund, dict):
             continue
+        benchmark = fund.get("benchmark")
+        if isinstance(benchmark, dict):
+            benchmark_quote_symbol = str(benchmark.get("sinaSymbol") or "")
+            if SINA_SYMBOL_RE.fullmatch(benchmark_quote_symbol):
+                symbols.append(benchmark_quote_symbol)
         for holding in fund.get("holdings", []):
             if not isinstance(holding, dict):
                 continue
@@ -126,6 +131,14 @@ def configured_market_return_items() -> list[str]:
             symbol = str(history.get("symbol") or "")
             if source in HISTORY_SOURCES and HISTORY_SYMBOL_RE.fullmatch(symbol):
                 items.append(f"{source}:{symbol}")
+    for fund in payload["funds"]:
+        benchmark = fund.get("benchmark") if isinstance(fund, dict) else None
+        if not isinstance(benchmark, dict):
+            continue
+        source = str(benchmark.get("source") or "")
+        symbol = str(benchmark.get("symbol") or "")
+        if source in HISTORY_SOURCES and HISTORY_SYMBOL_RE.fullmatch(symbol):
+            items.append(f"{source}:{symbol}")
     return sorted(dict.fromkeys(items))
 
 

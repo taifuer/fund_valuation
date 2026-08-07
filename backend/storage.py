@@ -11,7 +11,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("FUND_VALUATION_DATA_DIR", ROOT_DIR / "data"))
 DB_PATH = DATA_DIR / "fund_valuation.db"
 RAW_DIR = DATA_DIR / "raw"
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 CACHE_BODY_COMPRESSION_MAGIC = b"\x00FVCZ1"
 CACHE_BODY_COMPRESSION_MIN_BYTES = 16 * 1024
 
@@ -54,13 +54,6 @@ MIGRATIONS: dict[int, str] = {
           change_percent REAL NOT NULL, fetched_at INTEGER NOT NULL,
           PRIMARY KEY (currency, date)
         );
-        CREATE TABLE IF NOT EXISTS fund_estimate_backtest (
-          code TEXT NOT NULL, date TEXT NOT NULL, model_version TEXT NOT NULL,
-          predicted_change REAL NOT NULL, fitted_change REAL NOT NULL,
-          actual_change REAL NOT NULL, error REAL NOT NULL, fitted_error REAL NOT NULL,
-          coverage REAL NOT NULL, fetched_at INTEGER NOT NULL,
-          PRIMARY KEY (code, date, model_version)
-        );
         CREATE TABLE IF NOT EXISTS market_calendar (
           market TEXT NOT NULL, date TEXT NOT NULL, status TEXT NOT NULL,
           sessions TEXT NOT NULL, timezone TEXT NOT NULL, source TEXT NOT NULL,
@@ -102,14 +95,7 @@ MIGRATIONS: dict[int, str] = {
         );
     """,
     4: """
-        CREATE TABLE IF NOT EXISTS fund_backtest_summaries (
-          code TEXT NOT NULL,
-          days INTEGER NOT NULL,
-          model_version TEXT NOT NULL,
-          payload TEXT NOT NULL,
-          generated_at INTEGER NOT NULL,
-          PRIMARY KEY (code, days, model_version)
-        );
+        SELECT 1;
     """,
     5: """
         CREATE TABLE IF NOT EXISTS fund_profiles (
@@ -161,6 +147,10 @@ MIGRATIONS: dict[int, str] = {
         DROP INDEX IF EXISTS idx_market_history_fetched;
         DROP INDEX IF EXISTS idx_stock_daily_history_fetched;
         DROP INDEX IF EXISTS idx_fx_daily_history_fetched;
+    """,
+    9: """
+        DROP TABLE IF EXISTS fund_estimate_backtest;
+        DROP TABLE IF EXISTS fund_backtest_summaries;
     """,
 }
 

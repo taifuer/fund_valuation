@@ -484,6 +484,7 @@ export async function fetchFxRates(currencies: string[]): Promise<Map<string, Fx
 }
 
 export interface DashboardSnapshot {
+  generatedAt: number;
   quotes: Map<string, QuoteData>;
   fxRates: Map<string, FxRateData>;
   marketStates: Map<string, MarketStateData>;
@@ -544,7 +545,10 @@ export interface DataHealth {
 
 const dashboardSnapshotPending = new Map<string, Promise<DashboardSnapshot | null>>();
 const overviewSnapshotPending = new Map<string, Promise<OverviewSnapshot | null>>();
+const dashboardSnapshotGeneratedAt = new Map<string, number>();
+const overviewSnapshotGeneratedAt = new Map<string, number>();
 const DASHBOARD_BROWSER_CACHE_TTL_MS = 2 * 60 * 1000;
+const DASHBOARD_STALE_RETRY_DELAY_MS = 15_000;
 
 function dashboardStorageKey(cacheKey: string): string {
   let hash = 5381;
@@ -590,10 +594,14 @@ async function fetchWithTimeout(url: string, timeoutMs = 4_000, init: RequestIni
 }
 
 export function parseDashboardSnapshotPayload(
-  json: { schemaVersion?: unknown; quotes?: unknown; quotesText?: unknown; fxText?: unknown; marketStates?: Record<string, MarketStateData> },
+  json: { generatedAt?: unknown; schemaVersion?: unknown; quotes?: unknown; quotesText?: unknown; fxText?: unknown; marketStates?: Record<string, MarketStateData> },
   symbols: string[],
   fetchedAt: number,
 ): DashboardSnapshot {
+  const generatedAtValue = Number(json.generatedAt);
+  const generatedAt = Number.isFinite(generatedAtValue) && generatedAtValue > 0
+    ? generatedAtValue
+    : 0;
   const quotes = new Map<string, QuoteData>();
   const fxRates = new Map<string, FxRateData>([[
     'CNY',
@@ -651,7 +659,36 @@ export function parseDashboardSnapshotPayload(
     if (raw) marketStates.set(symbol, raw);
   }
 
-  return { quotes, fxRates, marketStates };
+  return { generatedAt, quotes, fxRates, marketStates };
+}
+
+function hasLiveMarket(snapshot: DashboardSnapshot): boolean {
+  return [...snapshot.marketStates.values()].some(
+    (state) => state.state === 'live' && state.market !== 'crypto',
+  );
+}
+
+function waitForDashboardRetry(): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, DASHBOARD_STALE_RETRY_DELAY_MS));
+}
+
+async function retryUnchangedSnapshot<T extends DashboardSnapshot>(
+  snapshot: T,
+  previousGeneratedAt: number,
+  requestFresh: () => Promise<T | null>,
+): Promise<T> {
+  if (
+    previousGeneratedAt <= 0
+    || snapshot.generatedAt <= 0
+    || snapshot.generatedAt > previousGeneratedAt
+    || !hasLiveMarket(snapshot)
+  ) {
+    return snapshot;
+  }
+
+  await waitForDashboardRetry();
+  const refreshed = await requestFresh();
+  return refreshed && refreshed.generatedAt > snapshot.generatedAt ? refreshed : snapshot;
 }
 
 export async function fetchDashboardSnapshot(
@@ -663,6 +700,7 @@ export async function fetchDashboardSnapshot(
   if (uniqueSymbols.length > 160) return null;
   if (uniqueSymbols.length === 0) {
     return {
+      generatedAt: 0,
       quotes: new Map(),
       fxRates: await fetchFxRates(uniqueCurrencies),
       marketStates: new Map(),
@@ -682,12 +720,25 @@ export async function fetchDashboardSnapshot(
       symbols: uniqueSymbols.join(','),
       currencies: uniqueCurrencies.join(','),
     });
-    const res = await fetchWithTimeout(apiUrl(`/api/dashboard?${params.toString()}`));
-    if (!res.ok) return storedSnapshot;
-    const json = await res.json();
-    storeDashboard(cacheKey, json);
-    const fetchedAt = Date.now();
-    return parseDashboardSnapshotPayload(json, uniqueSymbols, fetchedAt);
+    const requestSnapshot = async (refresh = false): Promise<DashboardSnapshot | null> => {
+      if (refresh) params.set('refresh', '1');
+      const res = await fetchWithTimeout(apiUrl(`/api/dashboard?${params.toString()}`));
+      if (!res.ok) return null;
+      const json = await res.json();
+      storeDashboard(cacheKey, json);
+      return parseDashboardSnapshotPayload(json, uniqueSymbols, Date.now());
+    };
+
+    const snapshot = await requestSnapshot();
+    if (!snapshot) return storedSnapshot;
+    const previousGeneratedAt = dashboardSnapshotGeneratedAt.get(cacheKey) ?? 0;
+    const selected = await retryUnchangedSnapshot(
+      snapshot,
+      previousGeneratedAt,
+      () => requestSnapshot(true),
+    );
+    if (selected.generatedAt > 0) dashboardSnapshotGeneratedAt.set(cacheKey, selected.generatedAt);
+    return selected;
   })().catch(() => storedSnapshot).finally(() => {
     dashboardSnapshotPending.delete(cacheKey);
   });
@@ -720,32 +771,45 @@ export async function fetchOverviewSnapshot(
       currencies: uniqueCurrencies.join(','),
       fundCodes: uniqueFundCodes.join(','),
     });
-    const res = await fetchWithTimeout(
-      apiUrl(`/api/overview?${params.toString()}`),
-      4_000,
-      { headers: fundManagementHeaders() },
+    const requestSnapshot = async (refresh = false): Promise<OverviewSnapshot | null> => {
+      if (refresh) params.set('refresh', '1');
+      const res = await fetchWithTimeout(
+        apiUrl(`/api/overview?${params.toString()}`),
+        4_000,
+        { headers: fundManagementHeaders() },
+      );
+      if (!res.ok) return null;
+      const json = await res.json();
+      storeDashboard(dashboardCacheKey, json);
+      const snapshot = parseDashboardSnapshotPayload(json, uniqueSymbols, Date.now());
+      const fundSummaries = new Map<string, FundNavData>();
+      for (const code of uniqueFundCodes) {
+        const raw = json.fundSummaries?.[code];
+        if (!raw) continue;
+        const nav = Number(raw.nav);
+        fundSummaries.set(code, {
+          code,
+          name: code,
+          navDate: String(raw.navDate ?? ''),
+          nav: Number.isFinite(nav) ? nav : 0,
+          officialChange: Number(raw.officialChange) || 0,
+          estimatedNav: Number.isFinite(nav) ? nav : 0,
+          estimatedChange: 0,
+        });
+      }
+      return { ...snapshot, fundSummaries };
+    };
+
+    const snapshot = await requestSnapshot();
+    if (!snapshot) return storedSnapshot ? { ...storedSnapshot, fundSummaries: new Map() } : null;
+    const previousGeneratedAt = overviewSnapshotGeneratedAt.get(cacheKey) ?? 0;
+    const selected = await retryUnchangedSnapshot(
+      snapshot,
+      previousGeneratedAt,
+      () => requestSnapshot(true),
     );
-    if (!res.ok) return storedSnapshot ? { ...storedSnapshot, fundSummaries: new Map() } : null;
-    const json = await res.json();
-    storeDashboard(dashboardCacheKey, json);
-    const fetchedAt = Date.now();
-    const snapshot = parseDashboardSnapshotPayload(json, uniqueSymbols, fetchedAt);
-    const fundSummaries = new Map<string, FundNavData>();
-    for (const code of uniqueFundCodes) {
-      const raw = json.fundSummaries?.[code];
-      if (!raw) continue;
-      const nav = Number(raw.nav);
-      fundSummaries.set(code, {
-        code,
-        name: code,
-        navDate: String(raw.navDate ?? ''),
-        nav: Number.isFinite(nav) ? nav : 0,
-        officialChange: Number(raw.officialChange) || 0,
-        estimatedNav: Number.isFinite(nav) ? nav : 0,
-        estimatedChange: 0,
-      });
-    }
-    return { ...snapshot, fundSummaries };
+    if (selected.generatedAt > 0) overviewSnapshotGeneratedAt.set(cacheKey, selected.generatedAt);
+    return selected;
   })().catch(() => storedSnapshot ? { ...storedSnapshot, fundSummaries: new Map() } : null).finally(() => {
     overviewSnapshotPending.delete(cacheKey);
   });

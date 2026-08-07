@@ -11,7 +11,7 @@ It uses a local Flask backend to fetch upstream public data and persist raw resp
 - `src/api.ts` handles upstream data fetching and parsing.
 - `src/constants.ts` stores index and fund holding configuration.
 - `src/marketHours.ts` contains market session logic in Beijing time.
-- `backend/server.py` defines the local Flask data backend for `/api/sina`, `/api/dashboard`, `/api/overview`, `/api/fundnav`, `/api/fundhistory`, `/api/fundholdings`, `/api/fundestimates`, `/api/fundreturns`, `/api/markethistory`, `/api/marketreturns`, `/api/marketstates`, `/api/fundbacktest`, and `/api/datahealth`.
+- `backend/server.py` defines the local Flask data backend for `/api/sina`, `/api/dashboard`, `/api/overview`, `/api/fundnav`, `/api/fundhistory`, `/api/fundholdings`, `/api/fundestimates`, `/api/fundreturns`, `/api/markethistory`, `/api/marketreturns`, `/api/marketstates`, and `/api/datahealth`.
 - `backend/estimation.py` contains date-aligned fund return, benchmark residual, and calibration-gate calculations.
 - `data/` is local runtime storage for SQLite and raw upstream responses; it is intentionally git-ignored.
 - `demo/` stores screenshots used by the README; update them when visible dashboard output changes.

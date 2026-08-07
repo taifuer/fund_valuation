@@ -22,6 +22,21 @@ function dashboardPayload(price: number) {
   };
 }
 
+function liveDashboardPayload(price: number, generatedAt: number) {
+  return {
+    ...dashboardPayload(price),
+    generatedAt,
+    marketStates: {
+      s_sh000001: {
+        symbol: 's_sh000001',
+        market: 'CN',
+        state: 'live',
+        source: 'calendar',
+      },
+    },
+  };
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
@@ -178,6 +193,29 @@ describe('dashboard API contract', () => {
     expect(second?.quotes.get('s_sh000001')?.price).toBe(3210);
     expect(fallback?.quotes.get('s_sh000001')?.price).toBe(3210);
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('retries an unchanged live snapshot once without blocking the first load', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => liveDashboardPayload(3200, 100) })
+        .mockResolvedValueOnce({ ok: true, json: async () => liveDashboardPayload(3200, 100) })
+        .mockResolvedValueOnce({ ok: true, json: async () => liveDashboardPayload(3210, 200) });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const first = await fetchDashboardSnapshot(['s_sh000001'], []);
+      const pendingSecond = fetchDashboardSnapshot(['s_sh000001'], []);
+      await vi.advanceTimersByTimeAsync(15_000);
+      const second = await pendingSecond;
+
+      expect(first?.quotes.get('s_sh000001')?.price).toBe(3200);
+      expect(second?.quotes.get('s_sh000001')?.price).toBe(3210);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock.mock.calls[2]?.[0]).toContain('refresh=1');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('loads a currencies-only snapshot without sending an empty dashboard request', async () => {

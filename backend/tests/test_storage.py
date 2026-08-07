@@ -40,6 +40,8 @@ class StorageMigrationTests(unittest.TestCase):
             self.assertIn("fund_nav_history", tables)
             self.assertIn("market_quote_snapshots", tables)
             self.assertIn("fund_estimate_snapshots", tables)
+            self.assertNotIn("fund_estimate_backtest", tables)
+            self.assertNotIn("fund_backtest_summaries", tables)
 
     def test_backup_and_confirmed_restore_preserve_data(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -125,6 +127,25 @@ class StorageMigrationTests(unittest.TestCase):
             self.assertNotIn("idx_market_history_fetched", indexes)
             self.assertNotIn("idx_stock_daily_history_fetched", indexes)
             self.assertNotIn("idx_fx_daily_history_fetched", indexes)
+
+    def test_schema_nine_drops_legacy_backtest_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "schema-eight.db"
+            migrate_database(path)
+            with sqlite3.connect(path) as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE fund_estimate_backtest(code TEXT);
+                    CREATE TABLE fund_backtest_summaries(code TEXT);
+                    PRAGMA user_version = 8;
+                    """
+                )
+
+            self.assertEqual(migrate_database(path), SCHEMA_VERSION)
+            with sqlite3.connect(path) as conn:
+                tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+            self.assertNotIn("fund_estimate_backtest", tables)
+            self.assertNotIn("fund_backtest_summaries", tables)
 
     def test_response_cache_body_compression_is_transparent(self) -> None:
         small = b"small response"
