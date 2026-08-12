@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from backend.estimation import estimate_cumulative_return, select_calibration
+from backend.estimation import estimate_cumulative_return, linear_fit, select_calibration
 
 
 class EstimateCalculationTests(unittest.TestCase):
@@ -59,6 +59,25 @@ class EstimateCalculationTests(unittest.TestCase):
         selected = select_calibration(pairs)
         self.assertTrue(selected["applied"])
         self.assertGreater(selected["improvement"], 0.1)
+
+    def test_validated_calibration_refits_all_available_samples(self) -> None:
+        pairs = []
+        for index in range(40):
+            predicted = (index + 1) / 1000
+            actual = (
+                0.001 + 1.1 * predicted
+                if index < 28
+                else 0.002 + 1.2 * predicted
+            )
+            pairs.append((predicted, actual))
+
+        selected = select_calibration(pairs)
+        expected_alpha, expected_beta = linear_fit(pairs)
+
+        self.assertTrue(selected["applied"])
+        self.assertAlmostEqual(selected["alpha"], expected_alpha)
+        self.assertAlmostEqual(selected["beta"], expected_beta)
+        self.assertNotAlmostEqual(selected["beta"], selected["validationBeta"])
 
 
 if __name__ == "__main__":

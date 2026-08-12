@@ -11,7 +11,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("FUND_VALUATION_DATA_DIR", ROOT_DIR / "data"))
 DB_PATH = DATA_DIR / "fund_valuation.db"
 RAW_DIR = DATA_DIR / "raw"
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 11
 CACHE_BODY_COMPRESSION_MAGIC = b"\x00FVCZ1"
 CACHE_BODY_COMPRESSION_MIN_BYTES = 16 * 1024
 
@@ -152,6 +152,12 @@ MIGRATIONS: dict[int, str] = {
         DROP TABLE IF EXISTS fund_estimate_backtest;
         DROP TABLE IF EXISTS fund_backtest_summaries;
     """,
+    10: """
+        SELECT 1;
+    """,
+    11: """
+        SELECT 1;
+    """,
 }
 
 
@@ -207,6 +213,36 @@ def migrate_database(path: Path | None = None) -> int:
                 }
                 if "raw_change" not in columns:
                     script += "\nALTER TABLE fund_estimate_snapshots ADD COLUMN raw_change REAL NOT NULL DEFAULT 0;"
+            if version == 10:
+                columns = {
+                    str(row[1])
+                    for row in conn.execute("PRAGMA table_info(fund_estimate_snapshots)").fetchall()
+                }
+                audit_columns = {
+                    "comparison_date": "TEXT NOT NULL DEFAULT ''",
+                    "holding_report_date": "TEXT NOT NULL DEFAULT ''",
+                    "estimate_model": "TEXT NOT NULL DEFAULT ''",
+                    "holding_contribution": "REAL NOT NULL DEFAULT 0",
+                    "residual_contribution": "REAL NOT NULL DEFAULT 0",
+                    "calibration_contribution": "REAL NOT NULL DEFAULT 0",
+                    "residual_weight": "REAL NOT NULL DEFAULT 0",
+                    "priced_holding_count": "INTEGER NOT NULL DEFAULT 0",
+                }
+                for column, declaration in audit_columns.items():
+                    if column not in columns:
+                        script += f"\nALTER TABLE fund_estimate_snapshots ADD COLUMN {column} {declaration};"
+            if version == 11:
+                columns = {
+                    str(row[1])
+                    for row in conn.execute("PRAGMA table_info(fund_estimate_snapshots)").fetchall()
+                }
+                audit_columns = {
+                    "input_signature": "TEXT NOT NULL DEFAULT ''",
+                    "details_json": "TEXT NOT NULL DEFAULT '{}'",
+                }
+                for column, declaration in audit_columns.items():
+                    if column not in columns:
+                        script += f"\nALTER TABLE fund_estimate_snapshots ADD COLUMN {column} {declaration};"
             conn.executescript(
                 "BEGIN IMMEDIATE;\n"
                 + script

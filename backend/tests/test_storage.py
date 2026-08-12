@@ -37,9 +37,14 @@ class StorageMigrationTests(unittest.TestCase):
             self.assertEqual(status["integrity"], "ok")
             with sqlite3.connect(path) as conn:
                 tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+                estimate_columns = {
+                    row[1] for row in conn.execute("PRAGMA table_info(fund_estimate_snapshots)")
+                }
             self.assertIn("fund_nav_history", tables)
             self.assertIn("market_quote_snapshots", tables)
             self.assertIn("fund_estimate_snapshots", tables)
+            self.assertIn("holding_report_date", estimate_columns)
+            self.assertIn("holding_contribution", estimate_columns)
             self.assertNotIn("fund_estimate_backtest", tables)
             self.assertNotIn("fund_backtest_summaries", tables)
 
@@ -146,6 +151,57 @@ class StorageMigrationTests(unittest.TestCase):
                 tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
             self.assertNotIn("fund_estimate_backtest", tables)
             self.assertNotIn("fund_backtest_summaries", tables)
+
+    def test_schema_eleven_adds_estimate_audit_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "schema-nine.db"
+            with sqlite3.connect(path) as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE fund_estimate_snapshots(code TEXT);
+                    PRAGMA user_version = 9;
+                    """
+                )
+
+            self.assertEqual(migrate_database(path), SCHEMA_VERSION)
+            with sqlite3.connect(path) as conn:
+                columns = {row[1] for row in conn.execute("PRAGMA table_info(fund_estimate_snapshots)")}
+            self.assertTrue({
+                "comparison_date",
+                "holding_report_date",
+                "estimate_model",
+                "holding_contribution",
+                "residual_contribution",
+                "calibration_contribution",
+                "residual_weight",
+                "priced_holding_count",
+                "input_signature",
+                "details_json",
+            }.issubset(columns))
+
+    def test_schema_eleven_completes_an_existing_schema_ten_database(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "schema-ten.db"
+            with sqlite3.connect(path) as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE fund_estimate_snapshots(code TEXT);
+                    ALTER TABLE fund_estimate_snapshots ADD COLUMN comparison_date TEXT NOT NULL DEFAULT '';
+                    ALTER TABLE fund_estimate_snapshots ADD COLUMN holding_report_date TEXT NOT NULL DEFAULT '';
+                    ALTER TABLE fund_estimate_snapshots ADD COLUMN estimate_model TEXT NOT NULL DEFAULT '';
+                    ALTER TABLE fund_estimate_snapshots ADD COLUMN holding_contribution REAL NOT NULL DEFAULT 0;
+                    ALTER TABLE fund_estimate_snapshots ADD COLUMN residual_contribution REAL NOT NULL DEFAULT 0;
+                    ALTER TABLE fund_estimate_snapshots ADD COLUMN calibration_contribution REAL NOT NULL DEFAULT 0;
+                    ALTER TABLE fund_estimate_snapshots ADD COLUMN residual_weight REAL NOT NULL DEFAULT 0;
+                    ALTER TABLE fund_estimate_snapshots ADD COLUMN priced_holding_count INTEGER NOT NULL DEFAULT 0;
+                    PRAGMA user_version = 10;
+                    """
+                )
+
+            self.assertEqual(migrate_database(path), SCHEMA_VERSION)
+            with sqlite3.connect(path) as conn:
+                columns = {row[1] for row in conn.execute("PRAGMA table_info(fund_estimate_snapshots)")}
+            self.assertTrue({"input_signature", "details_json"}.issubset(columns))
 
     def test_response_cache_body_compression_is_transparent(self) -> None:
         small = b"small response"

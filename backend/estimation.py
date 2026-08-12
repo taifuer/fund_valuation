@@ -178,6 +178,11 @@ def mean_absolute_error(pairs: list[tuple[float, float]], alpha: float = 0.0, be
     return sum(abs((alpha + beta * predicted) - actual) for predicted, actual in pairs) / len(pairs)
 
 
+def bounded_linear_fit(pairs: list[tuple[float, float]]) -> tuple[float, float]:
+    alpha, beta = linear_fit(pairs)
+    return max(min(alpha, 0.005), -0.005), max(min(beta, 1.5), 0.5)
+
+
 def select_calibration(
     pairs: list[tuple[float, float]],
     *,
@@ -192,18 +197,19 @@ def select_calibration(
         return {"applied": False, "sampleCount": len(pairs), "reason": "insufficientValidation"}
     train = pairs[:split]
     validation = pairs[split:]
-    alpha, beta = linear_fit(train)
-    alpha = max(min(alpha, 0.005), -0.005)
-    beta = max(min(beta, 1.5), 0.5)
+    validation_alpha, validation_beta = bounded_linear_fit(train)
     raw_mae = mean_absolute_error(validation)
-    fitted_mae = mean_absolute_error(validation, alpha, beta)
+    fitted_mae = mean_absolute_error(validation, validation_alpha, validation_beta)
     improvement = (raw_mae - fitted_mae) / raw_mae if raw_mae > 0 else 0.0
     applied = fitted_mae < raw_mae and improvement >= minimum_improvement
+    alpha, beta = bounded_linear_fit(pairs) if applied else (validation_alpha, validation_beta)
     return {
         "applied": applied,
         "sampleCount": len(pairs),
         "alpha": alpha,
         "beta": beta,
+        "validationAlpha": validation_alpha,
+        "validationBeta": validation_beta,
         "rawMae": raw_mae,
         "fittedMae": fitted_mae,
         "improvement": improvement,

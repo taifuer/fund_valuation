@@ -200,6 +200,7 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
 
 FUND_ESTIMATE_MODEL_VERSION = "date_aligned_benchmark_v1"
 FUND_ESTIMATE_SNAPSHOT_NAME = "fund-estimates"
+FUND_ESTIMATE_CALIBRATION_MAX_SAMPLES = 120
 EASTMONEY_GLOBAL_QUOTES: dict[str, tuple[str, str]] = {
     "int_nikkei": ("100.N225", "日经指数"),
 }
@@ -2833,17 +2834,63 @@ def parse_dashboard_fx_rates(text: str) -> dict[str, dict[str, Any]]:
     return results
 
 
-def fund_estimate_calibration(code: str) -> dict[str, Any]:
+def fund_estimate_input_signature(holding_report_date: str, cumulative: dict[str, Any]) -> str:
+    components = sorted(
+        (
+            str(component.get("sinaSymbol") or ""),
+            round(float(component.get("weight") or 0), 8),
+            str(component.get("currency") or "CNY"),
+        )
+        for component in cumulative.get("components", [])
+        if isinstance(component, dict)
+    )
+    payload = {
+        "holdingReportDate": holding_report_date,
+        "model": str(cumulative.get("model") or ""),
+        "benchmarkSource": str(cumulative.get("benchmarkSource") or ""),
+        "benchmarkSymbol": str(cumulative.get("benchmarkSymbol") or ""),
+        "components": components,
+    }
+    encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()[:24]
+
+
+def fund_estimate_calibration(
+    code: str,
+    *,
+    benchmark_source: str,
+    benchmark_symbol: str,
+    estimate_model: str,
+    holding_report_date: str,
+    input_signature: str,
+) -> dict[str, Any]:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT raw_change, actual_change
-            FROM fund_estimate_snapshots
-            WHERE code = ? AND estimate_kind = 'pending'
-              AND actual_change IS NOT NULL
+            SELECT raw_change, actual_change FROM (
+              SELECT target_date, raw_change, actual_change
+              FROM fund_estimate_snapshots
+              WHERE code = ? AND estimate_kind = 'pending'
+                AND model_version = ?
+                AND benchmark_source = ? AND benchmark_symbol = ?
+                AND estimate_model = ? AND holding_report_date = ?
+                AND input_signature = ?
+                AND complete = 1 AND actual_change IS NOT NULL
+              ORDER BY target_date DESC
+              LIMIT ?
+            )
             ORDER BY target_date ASC
             """,
-            (code,),
+            (
+                code,
+                FUND_ESTIMATE_MODEL_VERSION,
+                benchmark_source,
+                benchmark_symbol,
+                estimate_model,
+                holding_report_date,
+                input_signature,
+                FUND_ESTIMATE_CALIBRATION_MAX_SAMPLES,
+            ),
         ).fetchall()
     pairs = [(float(predicted) / 100, float(actual) / 100) for predicted, actual in rows]
     return select_calibration(pairs)
@@ -2911,6 +2958,20 @@ def store_fund_estimate_snapshots(payload: dict[str, Any]) -> int:
                 str(projection.get("phase") or "CLOSED"),
                 int(bool(projection.get("complete"))),
                 int(projection.get("asOf") or now_ms()),
+                str(projection.get("comparisonDate") or ""),
+                str(result.get("holdingReportDate") or ""),
+                str(projection.get("model") or ""),
+                float(projection.get("holdingContributionPercent") or 0),
+                float(projection.get("residualContributionPercent") or 0),
+                float(projection.get("calibrationContributionPercent") or 0),
+                float(projection.get("residualWeight") or 0),
+                int(projection.get("pricedHoldingCount") or 0),
+                str(projection.get("inputSignature") or ""),
+                json.dumps({
+                    "holdingContributions": projection.get("holdingContributions") or [],
+                    "benchmarkChangePercent": float(projection.get("benchmarkChangePercent") or 0),
+                    "benchmarkFxChangePercent": float(projection.get("benchmarkFxChangePercent") or 0),
+                }, ensure_ascii=False, separators=(",", ":")),
             ))
     if not rows:
         return 0
@@ -2921,8 +2982,11 @@ def store_fund_estimate_snapshots(payload: dict[str, Any]) -> int:
               code, target_date, estimate_kind, model_version,
               base_nav_date, base_nav, estimated_nav, raw_change, estimated_change,
               cumulative_change, coverage, benchmark_source, benchmark_symbol,
-              phase, complete, as_of
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              phase, complete, as_of, comparison_date, holding_report_date,
+              estimate_model, holding_contribution, residual_contribution,
+              calibration_contribution, residual_weight, priced_holding_count,
+              input_signature, details_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(code, target_date, estimate_kind, model_version) DO UPDATE SET
               base_nav_date = excluded.base_nav_date,
               base_nav = excluded.base_nav,
@@ -2935,7 +2999,17 @@ def store_fund_estimate_snapshots(payload: dict[str, Any]) -> int:
               benchmark_symbol = excluded.benchmark_symbol,
               phase = excluded.phase,
               complete = excluded.complete,
-              as_of = excluded.as_of
+              as_of = excluded.as_of,
+              comparison_date = excluded.comparison_date,
+              holding_report_date = excluded.holding_report_date,
+              estimate_model = excluded.estimate_model,
+              holding_contribution = excluded.holding_contribution,
+              residual_contribution = excluded.residual_contribution,
+              calibration_contribution = excluded.calibration_contribution,
+              residual_weight = excluded.residual_weight,
+              priced_holding_count = excluded.priced_holding_count,
+              input_signature = excluded.input_signature,
+              details_json = excluded.details_json
             """,
             rows,
         )
@@ -3180,8 +3254,6 @@ def build_fund_estimates(
                 if not candidate:
                     break
 
-            calibration = fund_estimate_calibration(code)
-
             def projection(target: str, kind: str) -> dict[str, Any] | None:
                 is_preview = kind == "preview"
                 price_lookup = preview_stock if is_preview else settled_stock
@@ -3198,6 +3270,16 @@ def build_fund_estimates(
                 )
                 if cumulative is None:
                     return None
+                holding_report_date = str(supported[0].get("reportDate") or "")
+                input_signature = fund_estimate_input_signature(holding_report_date, cumulative)
+                calibration = fund_estimate_calibration(
+                    code,
+                    benchmark_source=str(cumulative["benchmarkSource"]),
+                    benchmark_symbol=str(cumulative["benchmarkSymbol"]),
+                    estimate_model=str(cumulative["model"]),
+                    holding_report_date=holding_report_date,
+                    input_signature=input_signature,
+                )
                 previous_target = previous_cn_valuation_day(target)
                 previous_return = 0.0
                 previous_result: dict[str, Any] | None = None
@@ -3354,6 +3436,7 @@ def build_fund_estimates(
                     "benchmarkFxChangePercent": round(benchmark_fx_change * 100, 4),
                     "calibrationContributionPercent": round(calibration_contribution, 4),
                     "model": str(cumulative["model"]),
+                    "inputSignature": input_signature,
                     "calibration": calibration,
                     "phase": phase,
                     "complete": complete,

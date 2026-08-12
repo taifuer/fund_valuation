@@ -419,6 +419,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertFalse(result["preview"]["complete"])
         self.assertEqual(result["preview"]["phase"], "LIVE")
         self.assertAlmostEqual(result["preview"]["estimatedNav"], 1.20)
+        self.assertEqual(len(result["preview"]["inputSignature"]), 24)
 
     def test_post_market_preview_carries_completed_us_session_into_next_valuation_day(self) -> None:
         with sqlite3.connect(server.DB_PATH) as conn:
@@ -537,14 +538,27 @@ class ServerDataRefreshTests(unittest.TestCase):
             "017436": {
                 "officialNavDate": "2026-07-29",
                 "officialNav": 1.0,
+                "holdingReportDate": "2026-06-30",
                 "pending": {
                     "targetDate": "2026-07-30",
+                    "comparisonDate": "2026-07-29",
                     "estimatedNav": 1.08,
+                    "rawChangePercent": 7.5,
                     "changePercent": 8.0,
                     "cumulativeChangePercent": 8.0,
                     "coverage": 0.6,
+                    "residualWeight": 0.4,
+                    "pricedHoldingCount": 10,
                     "benchmarkSource": "sina-us",
                     "benchmarkSymbol": ".NDX",
+                    "model": "holdingsBenchmark",
+                    "holdingContributionPercent": 5.0,
+                    "residualContributionPercent": 2.5,
+                    "calibrationContributionPercent": 0.5,
+                    "inputSignature": "test-input-signature",
+                    "holdingContributions": [{"sinaSymbol": "gb_aapl", "contributionPercent": 5.0}],
+                    "benchmarkChangePercent": 6.25,
+                    "benchmarkFxChangePercent": -0.1,
                     "phase": "CLOSED",
                     "complete": True,
                     "asOf": 123,
@@ -561,10 +575,184 @@ class ServerDataRefreshTests(unittest.TestCase):
         server.reconcile_fund_estimate_snapshots(["017436"])
         with sqlite3.connect(server.DB_PATH) as conn:
             row = conn.execute(
-                "SELECT actual_nav, actual_change, error FROM fund_estimate_snapshots WHERE code = ?",
+                """
+                SELECT actual_nav, actual_change, error, comparison_date,
+                       holding_report_date, estimate_model, holding_contribution,
+                       residual_contribution, calibration_contribution,
+                       residual_weight, priced_holding_count, input_signature,
+                       details_json
+                FROM fund_estimate_snapshots WHERE code = ?
+                """,
                 ("017436",),
             ).fetchone()
-        self.assertEqual(row, (1.07, 7.0, 1.0))
+        self.assertEqual(row[:-1], (
+            1.07, 7.0, 1.0, "2026-07-29", "2026-06-30", "holdingsBenchmark",
+            5.0, 2.5, 0.5, 0.4, 10, "test-input-signature",
+        ))
+        self.assertEqual(json.loads(row[-1]), {
+            "holdingContributions": [{"sinaSymbol": "gb_aapl", "contributionPercent": 5.0}],
+            "benchmarkChangePercent": 6.25,
+            "benchmarkFxChangePercent": -0.1,
+        })
+
+    def test_fund_estimate_input_signature_is_stable_and_input_sensitive(self) -> None:
+        cumulative = {
+            "model": "holdingsBenchmark",
+            "benchmarkSource": "sina-us",
+            "benchmarkSymbol": ".NDX",
+            "components": [
+                {"sinaSymbol": "gb_msft", "weight": 0.2, "currency": "USD"},
+                {"sinaSymbol": "gb_aapl", "weight": 0.3, "currency": "USD"},
+            ],
+        }
+        reordered = {**cumulative, "components": list(reversed(cumulative["components"]))}
+        changed = {
+            **cumulative,
+            "components": [
+                {"sinaSymbol": "gb_msft", "weight": 0.2, "currency": "USD"},
+                {"sinaSymbol": "gb_aapl", "weight": 0.31, "currency": "USD"},
+            ],
+        }
+
+        signature = server.fund_estimate_input_signature("2026-06-30", cumulative)
+
+        self.assertEqual(signature, server.fund_estimate_input_signature("2026-06-30", reordered))
+        self.assertNotEqual(signature, server.fund_estimate_input_signature("2026-06-30", changed))
+        self.assertNotEqual(signature, server.fund_estimate_input_signature("2026-03-31", cumulative))
+
+    def test_fund_estimate_calibration_uses_recent_matching_complete_snapshots(self) -> None:
+        rows = []
+        start = date(2025, 1, 1)
+        for index in range(130):
+            target = (start + timedelta(days=index)).isoformat()
+            raw_change = (index + 1) / 10
+            actual_change = 0.1 + 1.2 * raw_change
+            rows.append((
+                "017436", target, "pending", server.FUND_ESTIMATE_MODEL_VERSION,
+                "2024-12-31", 1.0, 1.0, raw_change, raw_change, raw_change,
+                0.6, "sina-us", ".NDX", "CLOSED", 1, index,
+                1.0, actual_change, raw_change - actual_change,
+            ))
+        rows.extend([
+            (
+                "017436", "2024-01-01", "pending", server.FUND_ESTIMATE_MODEL_VERSION,
+                "2023-12-31", 1.0, 1.0, 10.0, 10.0, 10.0,
+                0.6, "sina-us", ".INX", "CLOSED", 1, 1, 1.0, -10.0, 20.0,
+            ),
+            (
+                "017436", "2025-01-01", "pending", "older-model",
+                "2024-12-31", 1.0, 1.0, 10.0, 10.0, 10.0,
+                0.6, "sina-us", ".NDX", "CLOSED", 1, 1, 1.0, -10.0, 20.0,
+            ),
+            (
+                "017436", "2024-01-02", "pending", server.FUND_ESTIMATE_MODEL_VERSION,
+                "2024-01-01", 1.0, 1.0, 10.0, 10.0, 10.0,
+                0.6, "sina-us", ".NDX", "LIVE", 0, 1, 1.0, -10.0, 20.0,
+            ),
+            (
+                "017436", "2026-01-01", "pending", server.FUND_ESTIMATE_MODEL_VERSION,
+                "2024-12-31", 1.0, 1.0, 10.0, 10.0, 10.0,
+                0.6, "sina-us", ".NDX", "CLOSED", 1, 1, 1.0, -10.0, 20.0,
+            ),
+            (
+                "017436", "2026-01-02", "pending", server.FUND_ESTIMATE_MODEL_VERSION,
+                "2024-12-31", 1.0, 1.0, 10.0, 10.0, 10.0,
+                0.6, "sina-us", ".NDX", "CLOSED", 1, 1, 1.0, -10.0, 20.0,
+            ),
+            (
+                "017436", "2026-01-03", "pending", server.FUND_ESTIMATE_MODEL_VERSION,
+                "2024-12-31", 1.0, 1.0, 10.0, 10.0, 10.0,
+                0.6, "sina-us", ".NDX", "CLOSED", 1, 1, 1.0, -10.0, 20.0,
+            ),
+        ])
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.executemany(
+                """
+                INSERT INTO fund_estimate_snapshots(
+                  code, target_date, estimate_kind, model_version,
+                  base_nav_date, base_nav, estimated_nav, raw_change,
+                  estimated_change, cumulative_change, coverage,
+                  benchmark_source, benchmark_symbol, phase, complete, as_of,
+                  actual_nav, actual_change, error
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+            conn.execute(
+                "UPDATE fund_estimate_snapshots SET estimate_model = 'other' WHERE target_date = '2026-01-01'"
+            )
+            conn.execute(
+                "UPDATE fund_estimate_snapshots SET holding_report_date = '2025-03-31' WHERE target_date = '2026-01-02'"
+            )
+            conn.execute(
+                "UPDATE fund_estimate_snapshots SET input_signature = 'other' WHERE target_date = '2026-01-03'"
+            )
+
+        calibration = server.fund_estimate_calibration(
+            "017436",
+            benchmark_source="sina-us",
+            benchmark_symbol=".NDX",
+            estimate_model="",
+            holding_report_date="",
+            input_signature="",
+        )
+
+        self.assertEqual(calibration["sampleCount"], server.FUND_ESTIMATE_CALIBRATION_MAX_SAMPLES)
+        self.assertTrue(calibration["applied"])
+        self.assertAlmostEqual(calibration["alpha"], 0.001)
+        self.assertAlmostEqual(calibration["beta"], 1.2)
+
+    def test_fund_estimate_calibration_keeps_coverage_fallback_samples_separate(self) -> None:
+        rows = []
+        start = date(2025, 1, 1)
+        for index in range(40):
+            target = (start + timedelta(days=index)).isoformat()
+            raw_change = (index + 1) / 10
+            actual_change = 0.1 + 1.2 * raw_change
+            rows.append((
+                "539002", target, "pending", server.FUND_ESTIMATE_MODEL_VERSION,
+                "2024-12-31", 1.0, 1.0, raw_change, raw_change, raw_change,
+                0.6, "", "", "CLOSED", 1, index,
+                1.0, actual_change, raw_change - actual_change,
+            ))
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.executemany(
+                """
+                INSERT INTO fund_estimate_snapshots(
+                  code, target_date, estimate_kind, model_version,
+                  base_nav_date, base_nav, estimated_nav, raw_change,
+                  estimated_change, cumulative_change, coverage,
+                  benchmark_source, benchmark_symbol, phase, complete, as_of,
+                  actual_nav, actual_change, error
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+
+        fallback = server.fund_estimate_calibration(
+            "539002",
+            benchmark_source="",
+            benchmark_symbol="",
+            estimate_model="",
+            holding_report_date="",
+            input_signature="",
+        )
+        eem = server.fund_estimate_calibration(
+            "539002",
+            benchmark_source="sina-us",
+            benchmark_symbol="EEM",
+            estimate_model="",
+            holding_report_date="",
+            input_signature="",
+        )
+
+        self.assertEqual(fallback["sampleCount"], 40)
+        self.assertTrue(fallback["applied"])
+        self.assertEqual(eem, {
+            "applied": False,
+            "sampleCount": 0,
+            "reason": "insufficientSamples",
+        })
 
     def test_available_fund_estimates_reads_worker_snapshot(self) -> None:
         expected = {"code": "017436", "officialNavDate": "2026-07-30"}
