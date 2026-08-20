@@ -53,6 +53,75 @@ class EstimateCalculationTests(unittest.TestCase):
         self.assertAlmostEqual(result["components"][0]["contribution"], 0.10)
         self.assertIsNone(result["benchmarkComponent"])
 
+    def test_uses_weighted_composite_benchmark_for_undisclosed_weight(self) -> None:
+        prices = {
+            ("gb_a", "a"): 100,
+            ("gb_a", "b"): 110,
+        }
+        fx = {
+            ("USD", "a"): 7.0,
+            ("USD", "b"): 7.1,
+            ("HKD", "a"): 0.9,
+            ("HKD", "b"): 0.9,
+        }
+        benchmark_values = {
+            ("sina-us", "IXJ", "a"): 100,
+            ("sina-us", "IXJ", "b"): 105,
+            ("tencent-hk", "hk03069", "a"): 100,
+            ("tencent-hk", "hk03069", "b"): 90,
+        }
+        benchmark = {
+            "source": "composite",
+            "symbol": "global-healthcare-v1",
+            "name": "全球医疗复合代理",
+            "components": [
+                {"source": "sina-us", "symbol": "IXJ", "currency": "USD", "weight": 0.7},
+                {"source": "tencent-hk", "symbol": "hk03069", "currency": "HKD", "weight": 0.1},
+                {"kind": "stable", "symbol": "BOND_CASH", "currency": "CNY", "weight": 0.2},
+            ],
+        }
+
+        result = estimate_cumulative_return(
+            [{"sinaSymbol": "gb_a", "weight": 0.5, "currency": "USD"}],
+            base_date="a",
+            target_date="b",
+            price_lookup=lambda symbol, day: prices.get((symbol, day)),
+            fx_lookup=lambda currency, day: fx.get((currency, day)),
+            benchmark=benchmark,
+            benchmark_lookup=lambda source, symbol, day: benchmark_values.get((source, symbol, day)),
+        )
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        stock_return = (1.1 * (7.1 / 7.0)) - 1
+        global_healthcare_return = (1.05 * (7.1 / 7.0)) - 1
+        composite_return = 0.7 * global_healthcare_return + 0.1 * -0.1
+        self.assertAlmostEqual(result["return"], 0.5 * stock_return + 0.5 * composite_return)
+        self.assertEqual(result["model"], "holdingsCompositeBenchmark")
+        self.assertEqual(result["benchmarkName"], "全球医疗复合代理")
+        self.assertEqual(len(result["benchmarkComponent"]["components"]), 3)
+        self.assertAlmostEqual(result["benchmarkComponent"]["components"][2]["combinedReturn"], 0)
+
+    def test_does_not_normalize_holdings_when_composite_history_is_missing(self) -> None:
+        result = estimate_cumulative_return(
+            [{"sinaSymbol": "gb_a", "weight": 0.5, "currency": "CNY"}],
+            base_date="a",
+            target_date="b",
+            price_lookup=lambda _symbol, day: 100 if day == "a" else 110,
+            fx_lookup=lambda _currency, _day: None,
+            benchmark={
+                "source": "composite",
+                "symbol": "medical-v1",
+                "components": [
+                    {"source": "sina-us", "symbol": "IXJ", "currency": "USD", "weight": 0.8},
+                    {"kind": "stable", "symbol": "CASH", "currency": "CNY", "weight": 0.2},
+                ],
+            },
+            benchmark_lookup=lambda _source, _symbol, _day: None,
+        )
+
+        self.assertIsNone(result)
+
     def test_calibration_requires_samples_and_validation_improvement(self) -> None:
         self.assertFalse(select_calibration([(0.01, 0.02)] * 10)["applied"])
         pairs = [(index / 1000, 0.001 + 1.2 * index / 1000) for index in range(40)]

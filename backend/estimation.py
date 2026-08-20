@@ -26,7 +26,7 @@ def estimate_cumulative_return(
     target_date: str,
     price_lookup: PriceLookup,
     fx_lookup: FxLookup,
-    benchmark: dict[str, str] | None = None,
+    benchmark: dict[str, Any] | None = None,
     benchmark_lookup: BenchmarkLookup | None = None,
 ) -> dict[str, Any] | None:
     """Estimate cumulative CNY return between two fund valuation dates.
@@ -93,49 +93,134 @@ def estimate_cumulative_return(
     benchmark_source = ""
     benchmark_symbol = ""
     benchmark_currency = "CNY"
+    benchmark_name = ""
     benchmark_component: dict[str, Any] | None = None
     if benchmark and benchmark_lookup:
         benchmark_source = str(benchmark.get("source") or "")
         benchmark_symbol = str(benchmark.get("symbol") or "")
         benchmark_currency = str(benchmark.get("currency") or "CNY")
-        benchmark_base = benchmark_lookup(benchmark_source, benchmark_symbol, base_date)
-        benchmark_target = benchmark_lookup(benchmark_source, benchmark_symbol, target_date)
-        benchmark_price_return = relative_change(benchmark_target, benchmark_base)
-        benchmark_return = benchmark_price_return
-        benchmark_base_fx = 1.0
-        benchmark_target_fx = 1.0
-        benchmark_fx_return = 0.0
-        if benchmark_return is not None and benchmark_currency != "CNY":
-            benchmark_base_fx = fx_lookup(benchmark_currency, base_date)
-            benchmark_target_fx = fx_lookup(benchmark_currency, target_date)
-            benchmark_fx_return = relative_change(benchmark_target_fx, benchmark_base_fx)
-            if benchmark_fx_return is None:
-                benchmark_return = None
-            else:
-                benchmark_return = compounded_return(benchmark_return, benchmark_fx_return)
-        if benchmark_return is not None:
-            benchmark_component = {
-                "source": benchmark_source,
-                "symbol": benchmark_symbol,
-                "currency": benchmark_currency,
-                "weight": residual_weight,
-                "baseValue": float(benchmark_base),
-                "targetValue": float(benchmark_target),
-                "baseFxRate": float(benchmark_base_fx),
-                "targetFxRate": float(benchmark_target_fx),
-                "priceReturn": float(benchmark_price_return),
-                "fxReturn": float(benchmark_fx_return),
-                "combinedReturn": benchmark_return,
-                "weightedContribution": residual_weight * benchmark_return,
-            }
+        benchmark_name = str(benchmark.get("name") or "")
+        configured_components = benchmark.get("components")
+        if isinstance(configured_components, list):
+            component_rows: list[dict[str, Any]] = []
+            composite_return = 0.0
+            composite_available = True
+            for raw_component in configured_components:
+                if not isinstance(raw_component, dict):
+                    composite_available = False
+                    break
+                kind = str(raw_component.get("kind") or "market")
+                weight = float(raw_component.get("weight") or 0)
+                source = str(raw_component.get("source") or "stable")
+                symbol = str(raw_component.get("symbol") or "STABLE")
+                currency = str(raw_component.get("currency") or "CNY")
+                base_value = 1.0
+                target_value = 1.0
+                base_fx = 1.0
+                target_fx = 1.0
+                price_return = 0.0
+                fx_return = 0.0
+                combined = 0.0
+                if kind != "stable":
+                    resolved_base = benchmark_lookup(source, symbol, base_date)
+                    resolved_target = benchmark_lookup(source, symbol, target_date)
+                    resolved_price_return = relative_change(resolved_target, resolved_base)
+                    if resolved_price_return is None:
+                        composite_available = False
+                        break
+                    base_value = float(resolved_base)
+                    target_value = float(resolved_target)
+                    price_return = resolved_price_return
+                    if currency != "CNY":
+                        resolved_base_fx = fx_lookup(currency, base_date)
+                        resolved_target_fx = fx_lookup(currency, target_date)
+                        resolved_fx_return = relative_change(resolved_target_fx, resolved_base_fx)
+                        if resolved_fx_return is None:
+                            composite_available = False
+                            break
+                        base_fx = float(resolved_base_fx)
+                        target_fx = float(resolved_target_fx)
+                        fx_return = resolved_fx_return
+                    combined = compounded_return(price_return, fx_return)
+                weighted_return = weight * combined
+                composite_return += weighted_return
+                component_rows.append({
+                    "kind": kind,
+                    "source": source,
+                    "symbol": symbol,
+                    "label": str(raw_component.get("label") or symbol),
+                    "currency": currency,
+                    "weight": weight,
+                    "baseValue": base_value,
+                    "targetValue": target_value,
+                    "baseFxRate": base_fx,
+                    "targetFxRate": target_fx,
+                    "priceReturn": price_return,
+                    "fxReturn": fx_return,
+                    "combinedReturn": combined,
+                    "weightedReturn": weighted_return,
+                    "weightedContribution": residual_weight * weighted_return,
+                })
+            if composite_available and component_rows:
+                benchmark_return = composite_return
+                benchmark_component = {
+                    "source": benchmark_source,
+                    "symbol": benchmark_symbol,
+                    "label": benchmark_name or benchmark_symbol,
+                    "currency": "CNY",
+                    "weight": residual_weight,
+                    "baseValue": 1.0,
+                    "targetValue": 1.0 + composite_return,
+                    "baseFxRate": 1.0,
+                    "targetFxRate": 1.0,
+                    "priceReturn": composite_return,
+                    "fxReturn": 0.0,
+                    "combinedReturn": composite_return,
+                    "weightedContribution": residual_weight * composite_return,
+                    "components": component_rows,
+                }
+        else:
+            benchmark_base = benchmark_lookup(benchmark_source, benchmark_symbol, base_date)
+            benchmark_target = benchmark_lookup(benchmark_source, benchmark_symbol, target_date)
+            benchmark_price_return = relative_change(benchmark_target, benchmark_base)
+            benchmark_return = benchmark_price_return
+            benchmark_base_fx = 1.0
+            benchmark_target_fx = 1.0
+            benchmark_fx_return = 0.0
+            if benchmark_return is not None and benchmark_currency != "CNY":
+                benchmark_base_fx = fx_lookup(benchmark_currency, base_date)
+                benchmark_target_fx = fx_lookup(benchmark_currency, target_date)
+                benchmark_fx_return = relative_change(benchmark_target_fx, benchmark_base_fx)
+                if benchmark_fx_return is None:
+                    benchmark_return = None
+                else:
+                    benchmark_return = compounded_return(benchmark_return, benchmark_fx_return)
+            if benchmark_return is not None:
+                benchmark_component = {
+                    "source": benchmark_source,
+                    "symbol": benchmark_symbol,
+                    "label": benchmark_name or benchmark_symbol,
+                    "currency": benchmark_currency,
+                    "weight": residual_weight,
+                    "baseValue": float(benchmark_base),
+                    "targetValue": float(benchmark_target),
+                    "baseFxRate": float(benchmark_base_fx),
+                    "targetFxRate": float(benchmark_target_fx),
+                    "priceReturn": float(benchmark_price_return),
+                    "fxReturn": float(benchmark_fx_return),
+                    "combinedReturn": benchmark_return,
+                    "weightedContribution": residual_weight * benchmark_return,
+                }
+        if benchmark_return is not None and benchmark_component is not None:
+            benchmark_component["contribution"] = benchmark_component["weightedContribution"]
 
     if benchmark_return is not None:
         estimated_return = contribution + residual_weight * benchmark_return
-        model = "holdingsBenchmark"
+        model = "holdingsCompositeBenchmark" if benchmark_source == "composite" else "holdingsBenchmark"
         for component in components:
             component["contribution"] = component["weightedContribution"]
-        if benchmark_component:
-            benchmark_component["contribution"] = benchmark_component["weightedContribution"]
+    elif benchmark_source == "composite":
+        return None
     else:
         estimated_return = contribution / covered_weight
         model = "coverageNormalizedFallback"
@@ -152,6 +237,7 @@ def estimate_cumulative_return(
         "benchmarkReturn": benchmark_return,
         "benchmarkSource": benchmark_source,
         "benchmarkSymbol": benchmark_symbol,
+        "benchmarkName": benchmark_name,
         "components": components,
         "benchmarkComponent": benchmark_component,
         "model": model,

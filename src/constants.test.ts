@@ -49,4 +49,27 @@ describe('market universe configuration', () => {
       symbol: 'BTC',
     });
   });
+
+  it('classifies every default fund and configures a composite healthcare benchmark', () => {
+    const funds = universe.funds as Array<{
+      code: string;
+      strategy?: string;
+      estimateMode?: string;
+      benchmark?: { id?: string; components?: unknown[] };
+      holdings?: unknown[];
+    }>;
+    const healthcare = funds.find((fund) => fund.code === '004877');
+
+    expect(funds).toHaveLength(18);
+    expect(funds.every((fund) => Boolean(fund.strategy))).toBe(true);
+    expect(healthcare).toMatchObject({
+      strategy: 'healthcare',
+      benchmark: {
+        id: 'global-healthcare-v1',
+      },
+    });
+    expect(healthcare?.estimateMode).toBeUndefined();
+    expect(healthcare?.benchmark?.components).toHaveLength(3);
+    expect(healthcare?.holdings).toHaveLength(10);
+  });
 });

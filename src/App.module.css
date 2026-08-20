@@ -265,9 +265,42 @@
 }
 
 .sortControls {
+  align-items: center;
   display: inline-flex;
   flex: 0 0 auto;
   gap: 6px;
+}
+
+.strategySelect {
+  appearance: none;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #475569;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  height: 30px;
+  line-height: 28px;
+  padding: 0 25px 0 10px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #94a3b8 50%),
+    linear-gradient(135deg, #94a3b8 50%, transparent 50%);
+  background-position:
+    calc(100% - 13px) 12px,
+    calc(100% - 9px) 12px;
+  background-repeat: no-repeat;
+  background-size: 4px 4px, 4px 4px;
+}
+
+.strategySelect:hover {
+  border-color: #94a3b8;
+}
+
+.strategySelect:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
 }
 
 .sortToggle {
@@ -593,8 +626,18 @@
   }
 
   .fundToolbar .sortButton,
-  .fundToolbar .managerTrigger {
+  .fundToolbar .managerTrigger,
+  .fundToolbar .strategySelect {
     white-space: nowrap;
+  }
+
+  .fundToolbar .strategySelect {
+    flex: 0 0 auto;
+    height: 36px;
+    line-height: 34px;
+    background-position:
+      calc(100% - 13px) 15px,
+      calc(100% - 9px) 15px;
   }
 
   .fundToolbar .managerTrigger {
@@ -621,6 +664,21 @@
 
   .summaryGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summaryCard {
+    min-height: 92px;
+    padding-top: 7px;
+  }
+
+  .summaryName {
+    display: -webkit-box;
+    min-height: 32px;
+    padding: 0 34px;
+    text-overflow: clip;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
   .summaryHeader {

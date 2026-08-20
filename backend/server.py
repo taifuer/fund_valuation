@@ -38,6 +38,7 @@ from .config import (
     configured_unsupported_quote_symbols as universe_unsupported_quote_symbols,
     default_fund_holdings as universe_fund_holdings,
     fund_benchmark as universe_fund_benchmark,
+    fund_estimate_enabled as universe_fund_estimate_enabled,
     quote_supported_symbol as universe_quote_supported_symbol,
 )
 from .estimation import compounded_return, estimate_cumulative_return, select_calibration
@@ -2844,11 +2845,28 @@ def fund_estimate_input_signature(holding_report_date: str, cumulative: dict[str
         for component in cumulative.get("components", [])
         if isinstance(component, dict)
     )
+    benchmark_component = cumulative.get("benchmarkComponent")
+    benchmark_components = sorted(
+        (
+            str(component.get("kind") or "market"),
+            str(component.get("source") or ""),
+            str(component.get("symbol") or ""),
+            round(float(component.get("weight") or 0), 8),
+            str(component.get("currency") or "CNY"),
+        )
+        for component in (
+            benchmark_component.get("components", [])
+            if isinstance(benchmark_component, dict)
+            else []
+        )
+        if isinstance(component, dict)
+    )
     payload = {
         "holdingReportDate": holding_report_date,
         "model": str(cumulative.get("model") or ""),
         "benchmarkSource": str(cumulative.get("benchmarkSource") or ""),
         "benchmarkSymbol": str(cumulative.get("benchmarkSymbol") or ""),
+        "benchmarkComponents": benchmark_components,
         "components": components,
     }
     encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode()
@@ -2971,6 +2989,8 @@ def store_fund_estimate_snapshots(payload: dict[str, Any]) -> int:
                     "holdingContributions": projection.get("holdingContributions") or [],
                     "benchmarkChangePercent": float(projection.get("benchmarkChangePercent") or 0),
                     "benchmarkFxChangePercent": float(projection.get("benchmarkFxChangePercent") or 0),
+                    "benchmarkLabel": str(projection.get("benchmarkLabel") or ""),
+                    "benchmarkComponents": projection.get("benchmarkComponents") or [],
                 }, ensure_ascii=False, separators=(",", ":")),
             ))
     if not rows:
@@ -3025,7 +3045,10 @@ def build_fund_estimates(
 ) -> dict[str, Any]:
     ensure_market_calendar_seeded()
     now = current or datetime.now(ZoneInfo("Asia/Shanghai"))
-    normalized_codes = sorted(dict.fromkeys(codes or configured_fund_codes_from_constants()))
+    normalized_codes = [
+        code for code in sorted(dict.fromkeys(codes or configured_fund_codes_from_constants()))
+        if universe_fund_estimate_enabled(code)
+    ]
     dashboard = dashboard_payload or read_dashboard_snapshot() or {}
     quotes = dashboard.get("quotes") if isinstance(dashboard.get("quotes"), dict) else {}
     states = dashboard.get("marketStates") if isinstance(dashboard.get("marketStates"), dict) else {}
@@ -3237,10 +3260,18 @@ def build_fund_estimates(
                 if (market := market_key_for_symbol(str(holding.get("sinaSymbol") or ""))) in MARKET_CALENDARS
             }
             if benchmark:
-                benchmark_quote_symbol = market_history_quote_symbol(benchmark["source"], benchmark["symbol"])
-                benchmark_market = market_key_for_symbol(benchmark_quote_symbol or "")
-                if benchmark_market in MARKET_CALENDARS:
-                    required_markets.add(str(benchmark_market))
+                benchmark_components = benchmark.get("components")
+                benchmark_items = benchmark_components if isinstance(benchmark_components, list) else [benchmark]
+                for benchmark_item in benchmark_items:
+                    if not isinstance(benchmark_item, dict) or benchmark_item.get("kind") == "stable":
+                        continue
+                    benchmark_quote_symbol = market_history_quote_symbol(
+                        str(benchmark_item.get("source") or ""),
+                        str(benchmark_item.get("symbol") or ""),
+                    )
+                    benchmark_market = market_key_for_symbol(benchmark_quote_symbol or "")
+                    if benchmark_market in MARKET_CALENDARS:
+                        required_markets.add(str(benchmark_market))
 
             pending_target: str | None = None
             candidate = preview_target
@@ -3429,6 +3460,12 @@ def build_fund_estimates(
                     "missingQuoteCount": max(len(holdings) - int(cumulative["pricedHoldingCount"]), 0),
                     "benchmarkSource": str(cumulative["benchmarkSource"]),
                     "benchmarkSymbol": str(cumulative["benchmarkSymbol"]),
+                    "benchmarkLabel": str(cumulative.get("benchmarkName") or cumulative["benchmarkSymbol"]),
+                    "benchmarkComponents": (
+                        target_benchmark.get("components", [])
+                        if isinstance(target_benchmark, dict)
+                        else []
+                    ),
                     "holdingContributions": holding_contributions,
                     "holdingContributionPercent": round(holding_contribution, 4),
                     "residualContributionPercent": round(residual_contribution * 100, 4),
@@ -3469,6 +3506,7 @@ def refresh_fund_estimate_snapshots(dashboard_payload: dict[str, Any] | None = N
 
 
 def available_fund_estimates(codes: list[str]) -> dict[str, Any]:
+    codes = [code for code in codes if universe_fund_estimate_enabled(code)]
     snapshot = read_dashboard_snapshot(FUND_ESTIMATE_SNAPSHOT_NAME) or {}
     results = {
         code: snapshot[code]
@@ -3536,9 +3574,15 @@ def configured_sina_symbols_from_constants() -> list[str]:
     return universe_sina_symbols()
 
 
+def configured_fund_estimate_enabled(code: str) -> bool:
+    return universe_fund_estimate_enabled(code)
+
+
 def configured_quote_symbols() -> list[str]:
     symbols = configured_sina_symbols_from_constants()
     for code in configured_fund_codes_from_constants():
+        if not configured_fund_estimate_enabled(code):
+            continue
         for holding in read_fund_holdings_from_db(code):
             symbol = str(holding.get("sinaSymbol") or "")
             if universe_quote_supported_symbol(symbol, holding.get("quoteSupported")):
@@ -3549,6 +3593,8 @@ def configured_quote_symbols() -> list[str]:
 def configured_unsupported_quote_symbols() -> list[str]:
     symbols = universe_unsupported_quote_symbols()
     for code in configured_fund_codes_from_constants():
+        if not configured_fund_estimate_enabled(code):
+            continue
         for holding in read_fund_holdings_from_db(code):
             symbol = str(holding.get("sinaSymbol") or "")
             if SINA_SYMBOL_RE.fullmatch(symbol) and not universe_quote_supported_symbol(
@@ -4309,6 +4355,8 @@ def fetch_and_store_stock_history(sina_symbol: str, *, refresh: bool = False) ->
 def refresh_fund_valuation_histories() -> dict[str, Any]:
     symbols: list[str] = []
     for code in configured_fund_codes_from_constants():
+        if not configured_fund_estimate_enabled(code):
+            continue
         holdings = read_fund_holdings_from_db(code) or parse_default_fund_holdings_from_constants(code)
         symbols.extend(
             str(item.get("sinaSymbol") or "")

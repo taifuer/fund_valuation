@@ -118,6 +118,11 @@
   background: #f1f5f9;
 }
 
+.stateOfficial {
+  color: #475569;
+  background: #e2e8f0;
+}
+
 .up { color: var(--color-up); }
 .down { color: var(--color-down); }
 

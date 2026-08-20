@@ -116,6 +116,22 @@ for (const returnVia of ['navigation', 'brand'] as const) {
   });
 }
 
+test('overview fund cards open the matching fund detail', async ({ page }) => {
+  await page.route('**/api/overview?*', async (route) => {
+    const fundCodes = new URL(route.request().url()).searchParams.get('fundCodes')?.split(',') ?? [];
+    await route.fulfill({ json: overviewPayload(3200, 100, fundCodes) });
+  });
+
+  await page.goto('/');
+  await expect(page.locator('button[aria-label^="查看 "][aria-label$=" 详情"]')).toHaveCount(18);
+  await page.getByRole('button', { name: '查看 汇添富全球医疗 详情' }).click();
+
+  await expect(page).toHaveURL(/\/funds\/004877$/);
+  await expect(page.locator('#fund-004877 [aria-expanded="true"]')).toBeVisible();
+  await expect(page.locator('#fund-004877')).toContainText('医疗健康');
+  await expect(page.locator('#fund-004877')).not.toContainText('仅官方净值');
+});
+
 test('mobile return and risk tables keep every column in a horizontal scroller', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile-chromium', 'Mobile table behavior');
 

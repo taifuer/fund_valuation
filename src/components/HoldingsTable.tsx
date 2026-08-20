@@ -22,6 +22,8 @@ interface Props {
   currencyChanges: Record<string, number>;
   projection?: FundEstimateProjection | null;
   marketStates?: Map<string, MarketStateData>;
+  estimateEnabled?: boolean;
+  projectionRequired?: boolean;
 }
 
 function stateClassName(state: QuoteDisplayState): string {
@@ -67,6 +69,8 @@ export default function HoldingsTable({
   currencyChanges,
   projection = null,
   marketStates = new Map(),
+  estimateEnabled = true,
+  projectionRequired = false,
 }: Props) {
   const quoteMap = new Map(quotes.map((q) => [q.symbol, q]));
   const contributionMap = new Map(
@@ -123,7 +127,9 @@ export default function HoldingsTable({
             const rmbChange = priceChange == null
               ? 0
               : ((1 + priceChange / 100) * (1 + fxChange / 100) - 1) * 100;
-            const contrib = contribution?.contributionPercent ?? (q ? rmbChange * h.weight : 0);
+            const contrib = estimateEnabled
+              ? contribution?.contributionPercent ?? (q ? rmbChange * h.weight : 0)
+              : null;
             const marketState = quoteMarketState(h.sinaSymbol, marketStates);
             const displayState = q ? quoteDisplayState({ quote: q, marketState }) : marketState;
             const contributionIsClosed = Boolean(contribution && projection?.complete);
@@ -155,14 +161,14 @@ export default function HoldingsTable({
                 <td className={`${styles.right} ${fxChange >= 0 ? styles.up : styles.down}`}>
                   {h.currency === 'CNY' ? '-' : signedPercent(fxChange)}
                 </td>
-                <td className={`${styles.right} ${contrib >= 0 ? styles.up : styles.down}`}>
-                  {hasValue ? signedPercent(contrib) : '-'}
+                <td className={`${styles.right} ${(contrib ?? 0) >= 0 ? styles.up : styles.down}`}>
+                  {estimateEnabled && hasValue && contrib != null ? signedPercent(contrib) : '-'}
                 </td>
                 <td className={styles.right}>
                   <span
-                    className={`${styles.stateTag} ${quoteSupported ? stateClassName(effectiveState) : styles.stateUnavailable}`}
+                    className={`${styles.stateTag} ${!estimateEnabled ? styles.stateOfficial : quoteSupported ? stateClassName(effectiveState) : styles.stateUnavailable}`}
                   >
-                    {quoteSupported ? displayStateLabel(effectiveState) : '暂无行情'}
+                    {!estimateEnabled ? '官方披露' : quoteSupported ? displayStateLabel(effectiveState) : '暂无行情'}
                   </span>
                 </td>
               </tr>
@@ -170,18 +176,26 @@ export default function HoldingsTable({
           })}
         </tbody>
       </table>
-      <div className={styles.footer}>
-        估算涨跌
-        <span className={`${styles.footerStrong} ${estimateChange >= 0 ? styles.up : styles.down}`}>
-          {signedPercent(estimateChange)}
-        </span>
-        <span style={{ fontSize: 11, color: '#94a3b8' }}>
-          （覆盖 {coveragePct.toFixed(0)}%；持仓 {signedPercent(holdingContribution)}
-          {projection?.model === 'holdingsBenchmark' && `；未披露仓位 ${signedPercent(residualContribution)}`}
-          {Math.abs(calibrationContribution) >= 0.005 && `；校准 ${signedPercent(calibrationContribution)}`}
-          ；外币已折算）
-        </span>
-      </div>
+      {estimateEnabled && projectionRequired && !projection ? (
+        <div className={styles.footer}>复合代理数据准备中，暂不生成估值。</div>
+      ) : estimateEnabled ? (
+        <div className={styles.footer}>
+          估算涨跌
+          <span className={`${styles.footerStrong} ${estimateChange >= 0 ? styles.up : styles.down}`}>
+            {signedPercent(estimateChange)}
+          </span>
+          <span style={{ fontSize: 11, color: '#94a3b8' }}>
+            （覆盖 {coveragePct.toFixed(0)}%；持仓 {signedPercent(holdingContribution)}
+            {projection?.model !== 'coverageNormalizedFallback' && (
+              `；未披露仓位 ${signedPercent(residualContribution)}${projection?.model === 'holdingsCompositeBenchmark' ? '（复合代理）' : ''}`
+            )}
+            {Math.abs(calibrationContribution) >= 0.005 && `；校准 ${signedPercent(calibrationContribution)}`}
+            ；外币已折算）
+          </span>
+        </div>
+      ) : (
+        <div className={styles.footer}>该基金仅展示官方净值，持仓行情不用于实时估算。</div>
+      )}
       <div className={styles.notes}>
         <div>{holdingPeriod}</div>
         {projection?.model === 'coverageNormalizedFallback' && (

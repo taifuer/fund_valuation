@@ -7,6 +7,7 @@
   overflow: hidden;
   transition: box-shadow 0.15s, border-color 0.15s;
   position: relative;
+  scroll-margin-top: 72px;
 }
 .card:hover {
   box-shadow: 0 4px 16px rgba(0,0,0,0.08);
@@ -67,7 +68,9 @@
 .topRow {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-start;
   padding-left: 26px;
   padding-right: 8px;
   margin-bottom: 6px;
@@ -86,6 +89,17 @@
   color: #94a3b8;
   font-weight: 400;
   margin-left: 4px;
+}
+
+.strategyTag {
+  background: #f1f5f9;
+  border-radius: 4px;
+  color: #64748b;
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 17px;
+  padding: 0 5px;
 }
 
 .removeButton {
@@ -130,6 +144,14 @@
   display: grid;
   gap: 8px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.officialOnlyNav {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.officialOnlyNav .officialNavBox {
+  border: 1px solid #e2e8f0;
 }
 
 .navBox {
@@ -284,6 +306,17 @@
 .estLiveTagClosed {
   background: #94a3b8;
   color: #fff;
+}
+
+.officialOnlyTag {
+  background: #e2e8f0;
+  border-radius: 4px;
+  color: #475569;
+  font-size: 9px;
+  font-weight: 700;
+  margin-left: auto;
+  padding: 1px 6px;
+  white-space: nowrap;
 }
 
 .up { color: var(--color-up); }

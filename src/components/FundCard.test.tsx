@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { FundEstimate } from '../hooks/useQuotes';
 import type { Fund, FundEstimateProjection } from '../types';
@@ -95,5 +95,52 @@ describe('FundCard valuation labels', () => {
     expect(screen.getByText('07/29 已出净值')).toBeInTheDocument();
     expect(screen.getByText('盘前')).toBeInTheDocument();
     expect(screen.getByText('1.1000')).toBeInTheDocument();
+  });
+
+  it('shows only the official NAV for an official-only fund', () => {
+    const officialFund: Fund = {
+      ...fund,
+      strategy: 'healthcare',
+      estimateMode: 'official',
+    };
+    const officialEstimate: FundEstimate = {
+      ...estimate,
+      fund: officialFund,
+      fundCode: officialFund.code,
+      fundName: officialFund.name,
+    };
+
+    render(<FundCard fund={officialFund} estimate={officialEstimate} rank={4} sortMode="preview" loading={false} />);
+
+    expect(screen.getByText('医疗健康')).toBeInTheDocument();
+    expect(screen.getByText('仅官方净值')).toBeInTheDocument();
+    expect(screen.getByText('1.0500')).toBeInTheDocument();
+    expect(screen.queryByText('1.1000')).not.toBeInTheDocument();
+    expect(screen.queryByText('盘前')).not.toBeInTheDocument();
+  });
+
+  it('does not show a normalized fallback while a composite benchmark is preparing', async () => {
+    const compositeFund: Fund = {
+      ...fund,
+      benchmark: {
+        id: 'medical-v1',
+        components: [
+          { source: 'sina-us', symbol: 'IXJ', currency: 'USD', weight: 0.8 },
+          { kind: 'stable', symbol: 'CASH', currency: 'CNY', weight: 0.2 },
+        ],
+      },
+    };
+    const preparingEstimate: FundEstimate = {
+      ...estimate,
+      fund: compositeFund,
+      projections: null,
+    };
+
+    render(<FundCard fund={compositeFund} estimate={preparingEstimate} rank={4} sortMode="preview" loading={false} />);
+
+    expect(screen.getByText('代理准备中')).toBeInTheDocument();
+    expect(screen.queryByText('1.0800')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /展开详情/ }));
+    expect(await screen.findByText('复合代理数据准备中，暂不生成估值。')).toBeInTheDocument();
   });
 });

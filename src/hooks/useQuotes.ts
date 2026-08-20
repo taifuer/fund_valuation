@@ -137,7 +137,9 @@ function normalizeFundFxRate(rate: FxRateData): FxRateData {
 
 function fundCacheKey(funds: Fund[]): string {
   return funds
-    .map((fund) => `${fund.code}:${fund.name}:${fund.holdings.length}:${fund.profile ? '1' : '0'}`)
+    .map((fund) => (
+      `${fund.code}:${fund.name}:${fund.strategy ?? ''}:${fund.estimateMode ?? 'holdings'}:${fund.holdings.length}:${fund.profile ? '1' : '0'}`
+    ))
     .join('|');
 }
 
@@ -343,9 +345,10 @@ export function useQuotes(
 
       try {
         const effectiveFunds = await resolveEffectiveFunds();
-        const supportedHoldings = effectiveFunds.flatMap((f) => f.holdings).filter((holding) => (
-          isHoldingQuoteSupported(holding.sinaSymbol, holding.quoteSupported)
-        ));
+        const estimateFunds = effectiveFunds.filter((fund) => fund.estimateMode !== 'official');
+        const supportedHoldings = estimateFunds
+          .flatMap((fund) => fund.holdings)
+          .filter((holding) => isHoldingQuoteSupported(holding.sinaSymbol, holding.quoteSupported));
         const holdingSymbols = supportedHoldings.map((holding) => holding.sinaSymbol);
         const allSinaSymbols = [...new Set(holdingSymbols)];
         const holdingCurrencies = supportedHoldings.map((holding) => holding.currency);
@@ -355,10 +358,10 @@ export function useQuotes(
           fetchFxRates(currencies),
           fetchMarketStates(allSinaSymbols),
           loadSlowFundData(effectiveFunds, showLoading),
-          fetchFundEstimates(effectiveFunds.map((fund) => fund.code)),
+          fetchFundEstimates(estimateFunds.map((fund) => fund.code)),
         ]);
 
-        const valuationBases = await fetchFundValuationBases(effectiveFunds.flatMap((fund) => {
+        const valuationBases = await fetchFundValuationBases(estimateFunds.flatMap((fund) => {
           const navDate = slowFundData.navs.get(fund.code)?.navDate;
           return navDate ? [{ code: fund.code, navDate, holdings: fund.holdings }] : [];
         }));
@@ -376,9 +379,10 @@ export function useQuotes(
         );
 
         const estimates: FundEstimate[] = effectiveFunds.map((fund) => {
+          const estimateEnabled = fund.estimateMode !== 'official';
           const officialNAV = slowFundData.navs.get(fund.code) ?? null;
           const serverEstimate = serverEstimates.get(fund.code);
-          const projections = serverEstimate && serverEstimate.officialNavDate === officialNAV?.navDate
+          const projections = estimateEnabled && serverEstimate && serverEstimate.officialNavDate === officialNAV?.navDate
             ? serverEstimate
             : null;
           const valuationBasis = valuationBases.get(fund.code);
@@ -422,7 +426,7 @@ export function useQuotes(
           let missingFxCount = 0;
 
           const computedChangeLocal =
-            holdingsQuotes.length > 0
+            estimateEnabled && holdingsQuotes.length > 0
               ? fund.holdings.reduce((sum, h) => {
                   const q = fundQuotes.get(h.sinaSymbol);
                   if (!q) return sum;
@@ -438,7 +442,7 @@ export function useQuotes(
               : 0;
 
           const computedChange =
-            holdingsQuotes.length > 0
+            estimateEnabled && holdingsQuotes.length > 0
               ? fund.holdings.reduce((sum, h) => {
                   const q = fundQuotes.get(h.sinaSymbol);
                   if (!q) return sum;
@@ -479,7 +483,9 @@ export function useQuotes(
           const fresh = lastUpdated != null && now.getTime() - lastUpdated < 90_000;
           const effectiveSessions = holdingsQuotes.map((q) => fundQuoteSession(q, now));
           const hasFreshQuoteAfterNav = fund.holdings.some((h) => quoteIsAfterNav(h));
-          const estimateState: EstimateState = fresh && effectiveSessions.some((session) => session === 'pre')
+          const estimateState: EstimateState = !estimateEnabled
+            ? 'CLOSED'
+            : fresh && effectiveSessions.some((session) => session === 'pre')
             ? 'PRE'
             : fresh && effectiveSessions.some((session) => session === 'post')
               ? 'POST'
@@ -488,23 +494,23 @@ export function useQuotes(
                 : 'CLOSED';
 
           const estimatedNAVLocal =
-            hasConfiguredHoldings && officialNAV && officialNAV.nav > 0
+            estimateEnabled && hasConfiguredHoldings && officialNAV && officialNAV.nav > 0
               ? officialNAV.nav * (1 + computedChangeLocal / 100)
               : null;
 
           const estimatedNAV =
-            hasConfiguredHoldings && officialNAV && officialNAV.nav > 0
+            estimateEnabled && hasConfiguredHoldings && officialNAV && officialNAV.nav > 0
               ? officialNAV.nav * (1 + computedChange / 100)
               : null;
 
           // Headline (coverage-normalized) estimates — what the UI displays.
           const normalizedNAVLocal =
-            hasConfiguredHoldings && officialNAV && officialNAV.nav > 0
+            estimateEnabled && hasConfiguredHoldings && officialNAV && officialNAV.nav > 0
               ? officialNAV.nav * (1 + normalizedChangeLocal / 100)
               : null;
 
           const normalizedNAV =
-            hasConfiguredHoldings && officialNAV && officialNAV.nav > 0
+            estimateEnabled && hasConfiguredHoldings && officialNAV && officialNAV.nav > 0
               ? officialNAV.nav * (1 + normalizedChange / 100)
               : null;
 
@@ -554,7 +560,10 @@ export function useQuotes(
     const fundTimer0 = window.setTimeout(() => {
       if (!cancelled) void loadFunds(fundsChanged || !hasFundSnapshot);
     }, 0);
-    const fundSymbols = effectiveFundsRef.current?.flatMap((f) => f.holdings.map((h) => h.sinaSymbol)).filter(Boolean) ?? [];
+    const fundSymbols = effectiveFundsRef.current
+      ?.filter((fund) => fund.estimateMode !== 'official')
+      .flatMap((fund) => fund.holdings.map((holding) => holding.sinaSymbol))
+      .filter(Boolean) ?? [];
     const allPollSymbols = [...marketSymbols, ...fundSymbols];
     const stopPolling = startAdaptivePolling(
       () => Promise.all([loadMarket(false), loadFunds(false)]),

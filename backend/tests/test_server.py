@@ -593,6 +593,8 @@ class ServerDataRefreshTests(unittest.TestCase):
             "holdingContributions": [{"sinaSymbol": "gb_aapl", "contributionPercent": 5.0}],
             "benchmarkChangePercent": 6.25,
             "benchmarkFxChangePercent": -0.1,
+            "benchmarkLabel": "",
+            "benchmarkComponents": [],
         })
 
     def test_fund_estimate_input_signature_is_stable_and_input_sensitive(self) -> None:
@@ -765,6 +767,20 @@ class ServerDataRefreshTests(unittest.TestCase):
             payload = server.available_fund_estimates(["017436"])
 
         self.assertEqual(payload, {"017436": expected})
+
+    def test_available_fund_estimates_excludes_official_only_funds(self) -> None:
+        server.store_dashboard_snapshot(
+            {"009999": {"code": "009999", "officialNavDate": "2026-07-30"}},
+            server.FUND_ESTIMATE_SNAPSHOT_NAME,
+        )
+
+        with (
+            patch.object(server, "universe_fund_estimate_enabled", return_value=False),
+            patch.object(server, "build_fund_estimates", side_effect=AssertionError("must not estimate")),
+        ):
+            payload = server.available_fund_estimates(["009999"])
+
+        self.assertEqual(payload, {})
 
     def test_background_refresh_schedules_configured_work(self) -> None:
         with (
@@ -2121,7 +2137,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         codes = server.configured_fund_codes_from_constants()
         holdings = server.parse_default_fund_holdings_from_constants(codes[0])
 
-        self.assertEqual(len(codes), 17)
+        self.assertEqual(len(codes), 18)
         self.assertGreater(len(holdings), 0)
         self.assertRegex(holdings[0]["sinaSymbol"], r"^[A-Za-z0-9_]+$")
         self.assertIn("sina-cn:sh000001", server.configured_market_return_items_from_constants())
@@ -2136,6 +2152,17 @@ class ServerDataRefreshTests(unittest.TestCase):
             "symbol": "EEM",
             "currency": "USD",
         })
+        self.assertTrue(server.configured_fund_estimate_enabled("004877"))
+        self.assertTrue(server.configured_fund_estimate_enabled("017436"))
+        self.assertIn("gb_nvs", server.configured_sina_symbols_from_constants())
+        self.assertIn("gb_ixj", server.configured_sina_symbols_from_constants())
+        self.assertIn("hk03069", server.configured_sina_symbols_from_constants())
+        self.assertIn("sina-us:IXJ", server.configured_market_return_items_from_constants())
+        self.assertIn("tencent-hk:hk03069", server.configured_market_return_items_from_constants())
+        healthcare_benchmark = server.universe_fund_benchmark("004877")
+        self.assertEqual(healthcare_benchmark["source"], "composite")
+        self.assertEqual(healthcare_benchmark["symbol"], "global-healthcare-v1")
+        self.assertEqual(len(healthcare_benchmark["components"]), 3)
         self.assertEqual(server.configured_unsupported_quote_symbols(), [])
 
     def test_history_health_uses_disclosure_lag_and_completed_market_sessions(self) -> None:
@@ -2223,7 +2250,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertTrue(periods)
         self.assertTrue(all(str(period["availableDate"]) <= "2026-07-03" for period in periods))
         self.assertEqual(coverage["status"], "incomplete")
-        self.assertEqual(coverage["summary"]["fundsWithoutNav"], 17)
+        self.assertEqual(coverage["summary"]["fundsWithoutNav"], 18)
         self.assertGreater(coverage["summary"]["missingHoldingPeriods"], 0)
         self.assertEqual(
             coverage["summary"]["marketsWithoutHistory"],

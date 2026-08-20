@@ -2,7 +2,7 @@ import type { FundEstimate } from './hooks/useQuotes';
 
 export type FundSortMode = 'pending' | 'preview' | 'official';
 export type FundSortDirection = 'desc' | 'asc';
-export type FundSortGroup = 'pending' | 'published' | 'primary';
+export type FundSortGroup = 'pending' | 'published' | 'officialOnly' | 'primary';
 
 export interface RankedFundEstimate {
   estimate: FundEstimate;
@@ -14,15 +14,18 @@ export interface RankedFundEstimate {
 
 function groupFor(estimate: FundEstimate, mode: FundSortMode): FundSortGroup {
   if (mode !== 'pending') return 'primary';
+  if (estimate.fund.estimateMode === 'official') return 'officialOnly';
   return estimate.projections?.pending ? 'pending' : 'published';
 }
 
 function valueFor(estimate: FundEstimate, mode: FundSortMode, group: FundSortGroup): number | null {
   if (mode === 'official') return estimate.officialNAV?.officialChange ?? null;
+  if (estimate.fund.estimateMode === 'official') return null;
+  const projectionRequired = Boolean(estimate.fund.benchmark?.components?.length);
   if (mode === 'preview') {
     return estimate.projections?.preview?.changePercent
       ?? estimate.projections?.pending?.changePercent
-      ?? (estimate.normalizedNAVLocal === null ? null : estimate.normalizedChange);
+      ?? (projectionRequired || estimate.normalizedNAVLocal === null ? null : estimate.normalizedChange);
   }
   if (group === 'pending') return estimate.projections?.pending?.changePercent ?? null;
   return estimate.projections?.preview?.changePercent
@@ -32,6 +35,7 @@ function valueFor(estimate: FundEstimate, mode: FundSortMode, group: FundSortGro
 
 function targetDateFor(estimate: FundEstimate, mode: FundSortMode, group: FundSortGroup): string {
   if (mode === 'official') return estimate.officialNAV?.navDate ?? '';
+  if (estimate.fund.estimateMode === 'official') return estimate.officialNAV?.navDate ?? '';
   if (mode === 'preview') {
     return estimate.projections?.preview?.targetDate
       ?? estimate.projections?.pending?.targetDate
@@ -48,9 +52,22 @@ export function rankFundEstimates(
   direction: FundSortDirection,
 ): RankedFundEstimate[] {
   const sorted = [...estimates].sort((a, b) => {
+    if (mode !== 'official') {
+      const aOfficialOnly = a.fund.estimateMode === 'official';
+      const bOfficialOnly = b.fund.estimateMode === 'official';
+      if (aOfficialOnly !== bOfficialOnly) return aOfficialOnly ? 1 : -1;
+    }
     const aGroup = groupFor(a, mode);
     const bGroup = groupFor(b, mode);
-    if (aGroup !== bGroup) return aGroup === 'pending' ? -1 : 1;
+    if (aGroup !== bGroup) {
+      const groupOrder: Record<FundSortGroup, number> = {
+        pending: 0,
+        published: 1,
+        officialOnly: 2,
+        primary: 0,
+      };
+      return groupOrder[aGroup] - groupOrder[bGroup];
+    }
 
     const aDate = targetDateFor(a, mode, aGroup);
     const bDate = targetDateFor(b, mode, bGroup);
@@ -65,11 +82,11 @@ export function rankFundEstimates(
     return valueOrder || a.fundName.localeCompare(b.fundName);
   });
 
-  const ranks: Record<FundSortGroup, number> = { pending: 0, published: 0, primary: 0 };
+  const ranks: Record<FundSortGroup, number> = { pending: 0, published: 0, officialOnly: 0, primary: 0 };
   const groupCounts = sorted.reduce<Record<FundSortGroup, number>>((counts, estimate) => {
     counts[groupFor(estimate, mode)] += 1;
     return counts;
-  }, { pending: 0, published: 0, primary: 0 });
+  }, { pending: 0, published: 0, officialOnly: 0, primary: 0 });
   let previousGroup: FundSortGroup | null = null;
   return sorted.map((estimate) => {
     const group = groupFor(estimate, mode);

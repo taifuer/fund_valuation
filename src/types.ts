@@ -25,10 +25,35 @@ export interface Holding {
   quoteSupported?: boolean;
 }
 
+export type FundStrategy = 'technology' | 'globalGrowth' | 'manufacturing' | 'healthcare' | 'emergingMarkets';
+export type FundEstimateMode = 'holdings' | 'official';
+
+export interface FundBenchmarkComponent {
+  kind?: 'market' | 'stable';
+  source?: string;
+  symbol: string;
+  sinaSymbol?: string;
+  currency?: Holding['currency'];
+  weight: number;
+  label?: string;
+}
+
+export interface FundBenchmark {
+  id?: string;
+  name?: string;
+  source?: string;
+  symbol?: string;
+  currency?: Holding['currency'];
+  components?: FundBenchmarkComponent[];
+}
+
 export interface Fund {
   symbol: string;
   name: string;
   code: string; // Chinese fund code for NAV fetch
+  strategy?: FundStrategy;
+  estimateMode?: FundEstimateMode;
+  benchmark?: FundBenchmark;
   profile?: {
     inceptionDate: string;
     assetScale: string;
@@ -89,13 +114,14 @@ export interface FundEstimateProjection {
   missingQuoteCount: number;
   benchmarkSource: string;
   benchmarkSymbol: string;
+  benchmarkLabel?: string;
   holdingContributions?: FundHoldingContribution[];
   holdingContributionPercent?: number;
   residualContributionPercent?: number;
   benchmarkChangePercent?: number;
   benchmarkFxChangePercent?: number;
   calibrationContributionPercent?: number;
-  model: 'holdingsBenchmark' | 'coverageNormalizedFallback';
+  model: 'holdingsBenchmark' | 'holdingsCompositeBenchmark' | 'coverageNormalizedFallback';
   calibration: {
     applied: boolean;
     sampleCount: number;
