@@ -272,3 +272,47 @@ export interface IndexConfig {
   };
   history?: MarketHistoryConfig;
 }
+
+export type CompanyFrequency = 'annual' | 'half' | 'quarterly';
+export type CompanyRegion = 'china' | 'usa' | 'europe' | 'korea';
+
+export interface CompanyFundamentalPoint {
+  period: string;
+  periodEnd: string;
+  revenue: number;
+  operatingProfit: number;
+  researchAndDevelopment: number | null;
+  employees: number | null;
+  derived?: boolean;
+}
+
+export interface CompanyEmployeeMethodologyMarker {
+  period: string;
+  label: string;
+  note: string;
+}
+
+export interface CompanyFundamentals {
+  id: string;
+  name: string;
+  nameEn: string;
+  ticker: string;
+  region: CompanyRegion;
+  regionLabel: string;
+  currency: string;
+  sourceName: string;
+  sourceUrl: string;
+  methodologyNote?: string;
+  employeeScope: string;
+  employeeMarkers?: CompanyEmployeeMethodologyMarker[];
+  annual: CompanyFundamentalPoint[];
+  quarterly: CompanyFundamentalPoint[];
+}
+
+export interface CompanyFundamentalsDataset {
+  version: number;
+  updatedAt: string;
+  coverage: string;
+  methodology: string[];
+  companies: CompanyFundamentals[];
+}

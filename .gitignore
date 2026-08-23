@@ -11,6 +11,8 @@ playwright-report
 
 # Local backend storage
 data
+!src/data/
+!src/data/**
 
 # Claude
 .claude

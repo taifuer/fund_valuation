@@ -22,14 +22,14 @@ import {
   pageFromPathname,
   type PageKey,
 } from './routing';
-import type { Fund, FundNavData, FundStrategy, MarketStateData } from './types';
+import type { Fund, FundNavData, FundStrategy } from './types';
 import Header from './components/Header';
 import IndexCards from './components/IndexCards';
 import FundCard from './components/FundCard';
 import styles from './App.module.css';
 
-const RankingPage = lazy(() => import('./components/RankingPage'));
-const RiskPage = lazy(() => import('./components/RiskPage'));
+const PerformancePage = lazy(() => import('./components/PerformancePage'));
+const CompaniesPage = lazy(() => import('./components/CompaniesPage'));
 const AboutPage = lazy(() => import('./components/AboutPage'));
 const DiagnosticsPage = lazy(() => import('./components/DiagnosticsPage'));
 
@@ -48,10 +48,6 @@ interface ManagedFundSettings {
   hiddenDefaultCodes: string[];
   customFunds: Array<{ code: string; name: string }>;
 }
-
-// Stable empty Map for components that don't need market-state data, so we don't
-// create a fresh reference on every render (which would defeat React.memo).
-const EMPTY_MARKET_STATES: Map<string, MarketStateData> = new Map();
 
 const EMPTY_MANAGED_SETTINGS: ManagedFundSettings = {
   hiddenDefaultCodes: [],
@@ -253,7 +249,7 @@ export default function App() {
     activePage === 'funds',
   );
   const overviewData = useOverviewData(funds, activePage === 'overview');
-  const showMarketMeta = activePage !== 'about';
+  const showMarketMeta = activePage !== 'about' && activePage !== 'companies';
   const headerFxRates = useHeaderFxRates(showMarketMeta && activePage !== 'overview' && activePage !== 'funds');
   const marketPageData = useRankingMarketData(activePage === 'ranking');
   const systemStatus = useSystemStatus(showMarketMeta);
@@ -806,22 +802,19 @@ export default function App() {
             })}
           </div>
         </>
-      ) : activePage === 'ranking' ? (
+      ) : activePage === 'companies' ? (
+        <Suspense fallback={<div className={styles.pageFallback}>公司页面加载中...</div>}>
+          <CompaniesPage onStatusMessageChange={setPageStatusMessage} />
+        </Suspense>
+      ) : activePage === 'ranking' || activePage === 'risk' ? (
         <Suspense fallback={<div className={styles.pageFallback}>收益页面加载中...</div>}>
-          <RankingPage
+          <PerformancePage
+            mode={activePage}
             quotes={marketPageData.quotes}
             funds={funds}
             marketStates={marketPageData.marketStates}
             marketLoading={marketPageData.loading}
-            onStatusMessageChange={setPageStatusMessage}
-          />
-        </Suspense>
-      ) : activePage === 'risk' ? (
-        <Suspense fallback={<div className={styles.pageFallback}>风险页面加载中...</div>}>
-          <RiskPage
-            funds={funds}
-            marketStates={EMPTY_MARKET_STATES}
-            marketLoading={false}
+            onModeChange={navigatePage}
             onStatusMessageChange={setPageStatusMessage}
           />
         </Suspense>
@@ -835,7 +828,9 @@ export default function App() {
         </Suspense>
       )}
       <footer className={styles.footer}>
-        © {new Date().getFullYear()} <a href="https://github.com/taifuer/fund_valuation" target="_blank" rel="noreferrer">Fund Valuation</a> · 数据仅供参考，不构成投资建议
+        <div className={styles.footerInner}>
+          © {new Date().getFullYear()} <a href="https://github.com/taifuer/fund_valuation" target="_blank" rel="noreferrer">Fund Valuation</a> · 数据仅供参考，不构成投资建议
+        </div>
       </footer>
     </div>
   );

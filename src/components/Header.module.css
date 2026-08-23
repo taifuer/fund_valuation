@@ -35,7 +35,7 @@
   color: #0f172a;
   cursor: pointer;
   font: inherit;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   padding: 0;
   text-align: left;
 }
@@ -49,7 +49,7 @@
   color: #94a3b8;
   margin-top: 2px;
   font-weight: 400;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 
 .datetime {

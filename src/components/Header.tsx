@@ -68,7 +68,7 @@ export default function Header({
                   全球资产看板
                 </button>
               </h1>
-              <div className={styles.subtitle}>Markets · ETFs · QDII Funds</div>
+              <div className={styles.subtitle}>Markets · Companies · ETFs · QDII Funds</div>
             </div>
           </div>
           <nav className={styles.nav} aria-label="页面切换">
@@ -90,19 +90,19 @@ export default function Header({
             </button>
             <button
               type="button"
-              aria-current={activePage === 'ranking' ? 'page' : undefined}
-              className={`${styles.navButton} ${activePage === 'ranking' ? styles.navButtonActive : ''}`}
+              aria-current={activePage === 'ranking' || activePage === 'risk' ? 'page' : undefined}
+              className={`${styles.navButton} ${activePage === 'ranking' || activePage === 'risk' ? styles.navButtonActive : ''}`}
               onClick={() => onPageChange('ranking')}
             >
               收益
             </button>
             <button
               type="button"
-              aria-current={activePage === 'risk' ? 'page' : undefined}
-              className={`${styles.navButton} ${activePage === 'risk' ? styles.navButtonActive : ''}`}
-              onClick={() => onPageChange('risk')}
+              aria-current={activePage === 'companies' ? 'page' : undefined}
+              className={`${styles.navButton} ${activePage === 'companies' ? styles.navButtonActive : ''}`}
+              onClick={() => onPageChange('companies')}
             >
-              风险
+              公司
             </button>
             <button
               type="button"

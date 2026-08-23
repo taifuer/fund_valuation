@@ -26,6 +26,12 @@
   --surface: #ffffff;
   --surface-muted: #f8fafc;
   --surface-sunken: #f1f5f9;
+
+  /* Compact dashboard typography with a readable 10px lower bound. */
+  --font-caption: 10px;
+  --font-small: 12px;
+  --font-body: 14px;
+  --font-heading: 20px;
 }
 
 body {
@@ -35,6 +41,15 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background: var(--surface-muted);
   color: var(--ink);
+  font-size: var(--font-body);
+  line-height: 1.5;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
 /* Respect users who prefer reduced motion: disable the live/pulse/blink/bounce

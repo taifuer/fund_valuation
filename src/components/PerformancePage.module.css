@@ -1,0 +1,43 @@
+.viewHeader {
+  margin: 0 auto;
+  max-width: 1040px;
+  padding: 14px 16px 0;
+  width: 100%;
+}
+
+.viewNav {
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  gap: 24px;
+}
+
+.viewNav button {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 34px;
+  padding: 0 2px;
+}
+
+.viewNav button:hover {
+  color: #334155;
+}
+
+.viewNav .viewButtonActive {
+  border-bottom-color: #167d8d;
+  color: #0f172a;
+}
+
+@media (max-width: 720px) {
+  .viewHeader {
+    padding: 10px 12px 0;
+  }
+
+  .viewNav {
+    gap: 22px;
+  }
+}

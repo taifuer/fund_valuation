@@ -34,35 +34,116 @@ function overviewPayload(price: number, generatedAt: number, fundCodes: string[]
   };
 }
 
-for (const [path, activeLabel] of [['/', '概览'], ['/funds', '基金'], ['/returns', '收益'], ['/risk', '风险'], ['/about', '关于']] as const) {
+for (const [path, activeLabel] of [['/', '概览'], ['/funds', '基金'], ['/returns', '收益'], ['/risk', '收益'], ['/companies', '公司'], ['/about', '关于']] as const) {
   test(`${path} survives direct navigation`, async ({ page }) => {
     await page.goto(path);
     await expect(page.getByRole('heading', { name: '全球资产看板' })).toBeVisible();
-    await expect(page.getByRole('button', { name: activeLabel, exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: activeLabel, exact: true }),
+    ).toBeVisible();
     await expect(page.locator('body')).not.toContainText('页面加载失败');
   });
 }
 
-test('mobile layout keeps page-level content within the viewport', async ({ page }) => {
+test('company fundamentals are bundled offline and open a focused trend', async ({ page }) => {
+  const companyApiRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/api/companies')) companyApiRequests.push(request.url());
+  });
+
+  await page.goto('/companies');
+  await expect(page.getByRole('heading', { name: '科技公司经营趋势' })).toBeVisible();
+  await expect(page.getByText(/北京时间/)).toHaveCount(0);
+  const mobileCompanySelect = page.getByLabel('公司', { exact: true });
+  if (await mobileCompanySelect.isVisible()) {
+    await mobileCompanySelect.selectOption('apple');
+  } else {
+    await page.getByRole('button', { name: /美国/ }).click();
+    await page.getByRole('group', { name: '美国公司' }).getByRole('button', { name: /苹果/ }).click();
+  }
+  await expect(page.getByRole('heading', { name: '苹果' })).toBeVisible();
+  await expect(page.getByRole('img', { name: '苹果营业收入趋势' })).toBeVisible();
+  expect(companyApiRequests).toEqual([]);
+});
+
+test('company trend chart fits narrow screens without internal horizontal scrolling', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-chromium', 'Mobile chart behavior');
+
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto('/companies?company=asml&metric=employees&period=annual');
+  const chart = page.getByRole('img', { name: '阿斯麦员工人数趋势' });
+  await expect(chart).toBeVisible();
+  const geometry = await chart.evaluate((element) => {
+    const parent = element.parentElement;
+    return {
+      chartWidth: element.getBoundingClientRect().width,
+      parentWidth: parent?.getBoundingClientRect().width ?? 0,
+      parentScrollWidth: parent?.scrollWidth ?? 0,
+    };
+  });
+  expect(geometry.chartWidth).toBeLessThanOrEqual(geometry.parentWidth + 1);
+  expect(geometry.parentScrollWidth).toBeLessThanOrEqual(geometry.parentWidth + 1);
+  await expect(page.getByText(/FY2024 起员工口径纳入 ASML Berlin GmbH/)).toBeVisible();
+});
+
+test('company choices wrap on narrow screens without horizontal scrolling', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto('/companies');
+  await page.getByRole('button', { name: /全部/ }).click();
+
+  const companyOptions = page.getByRole('group', { name: '全部公司' });
+  const geometry = await companyOptions.evaluate((element) => {
+    const rowPositions = Array.from(element.children).map((child) => Math.round(child.getBoundingClientRect().top));
+    return {
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      rows: new Set(rowPositions).size,
+    };
+  });
+
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth + 1);
+  expect(geometry.rows).toBeGreaterThan(1);
+});
+
+test('performance subpages keep their routes while sharing one primary entry', async ({ page }) => {
   await page.goto('/returns');
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(1);
+  const viewNav = page.getByRole('navigation', { name: '收益分析视图' });
+  await expect(viewNav.getByRole('button', { name: '收益' })).toHaveAttribute('aria-current', 'page');
+  await viewNav.getByRole('button', { name: '风险' }).click();
+  await expect(page).toHaveURL(/\/risk$/);
+  await expect(viewNav.getByRole('button', { name: '风险' })).toHaveAttribute('aria-current', 'page');
+  await expect(
+    page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '收益', exact: true }),
+  ).toHaveAttribute('aria-current', 'page');
+});
+
+test('mobile pages keep wide data tables inside local scrollers', async ({ page }) => {
+  for (const path of ['/returns', '/risk', '/companies']) {
+    await page.goto(path);
+    const overflow = await page.evaluate(() => (
+      document.documentElement.scrollWidth - document.documentElement.clientWidth
+    ));
+    expect(overflow, `${path} page overflow`).toBeLessThanOrEqual(1);
+  }
 });
 
 test('mobile navigation keeps the active style after client-side navigation', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile-chromium', 'Mobile navigation behavior');
 
   await page.goto('/');
-  const returnsButton = page.getByRole('button', { name: '收益', exact: true });
-  await returnsButton.click();
+  const primaryNavigation = page.getByRole('navigation', { name: '页面切换' });
+  const performanceButton = primaryNavigation.getByRole('button', { name: '收益', exact: true });
+  await performanceButton.click();
   await expect(page).toHaveURL(/\/returns$/);
-  await expect(returnsButton).toHaveAttribute('aria-current', 'page');
-  const backgroundAfterClick = await returnsButton.evaluate(
+  await expect(performanceButton).toHaveAttribute('aria-current', 'page');
+  const backgroundAfterClick = await performanceButton.evaluate(
     (element) => getComputedStyle(element).backgroundColor,
   );
 
   await page.reload();
-  const reloadedButton = page.getByRole('button', { name: '收益', exact: true });
+  const reloadedButton = page
+    .getByRole('navigation', { name: '页面切换' })
+    .getByRole('button', { name: '收益', exact: true });
   await expect(reloadedButton).toHaveAttribute('aria-current', 'page');
   const backgroundAfterReload = await reloadedButton.evaluate(
     (element) => getComputedStyle(element).backgroundColor,

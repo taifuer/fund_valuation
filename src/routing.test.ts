@@ -5,6 +5,7 @@ describe('routing', () => {
   it('keeps canonical page routes on refresh', () => {
     expect(pageFromPathname('/')).toBe('overview');
     expect(pageFromPathname('/funds')).toBe('funds');
+    expect(pageFromPathname('/companies')).toBe('companies');
     expect(pageFromPathname('/returns')).toBe('ranking');
     expect(pageFromPathname('/risk')).toBe('risk');
     expect(pageFromPathname('/about')).toBe('about');

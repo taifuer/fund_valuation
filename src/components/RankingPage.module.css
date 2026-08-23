@@ -1,7 +1,9 @@
 .page {
   margin: 0 auto;
   max-width: 1040px;
+  min-width: 0;
   padding: 14px 16px 32px;
+  width: 100%;
 }
 
 .toolbar {

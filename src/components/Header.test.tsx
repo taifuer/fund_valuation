@@ -5,7 +5,7 @@ import Header from './Header';
 describe('Header', () => {
   it('describes the dashboard coverage in the brand subtitle', () => {
     render(<Header fxRates={new Map()} activePage="overview" onPageChange={vi.fn()} />);
-    expect(screen.getByText('Markets · ETFs · QDII Funds')).toBeInTheDocument();
+    expect(screen.getByText('Markets · Companies · ETFs · QDII Funds')).toBeInTheDocument();
   });
 
   it('reports degraded freshness without adding a visible status banner', () => {
@@ -26,6 +26,21 @@ describe('Header', () => {
     render(<Header fxRates={new Map()} activePage="overview" onPageChange={onPageChange} />);
     fireEvent.click(screen.getByRole('button', { name: '关于' }));
     expect(onPageChange).toHaveBeenCalledWith('about');
+    fireEvent.click(screen.getByRole('button', { name: '公司' }));
+    expect(onPageChange).toHaveBeenCalledWith('companies');
+    fireEvent.click(screen.getByRole('button', { name: '收益' }));
+    expect(onPageChange).toHaveBeenCalledWith('ranking');
+  });
+
+  it('keeps the combined performance entry active for both subpages', () => {
+    const { rerender } = render(
+      <Header fxRates={new Map()} activePage="ranking" onPageChange={vi.fn()} />,
+    );
+    expect(screen.getByRole('button', { name: '收益' })).toHaveAttribute('aria-current', 'page');
+
+    rerender(<Header fxRates={new Map()} activePage="risk" onPageChange={vi.fn()} />);
+    expect(screen.getByRole('button', { name: '收益' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('button', { name: '风险' })).not.toBeInTheDocument();
   });
 
   it('shows an offline status before the first status response', () => {
@@ -38,6 +53,19 @@ describe('Header', () => {
       <Header
         fxRates={new Map()}
         activePage="about"
+        onPageChange={vi.fn()}
+        showMarketMeta={false}
+      />,
+    );
+    expect(screen.queryByText(/北京时间/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('数据状态暂不可用')).not.toBeInTheDocument();
+  });
+
+  it('hides live market metadata on the offline financial-report page', () => {
+    render(
+      <Header
+        fxRates={new Map()}
+        activePage="companies"
         onPageChange={vi.fn()}
         showMarketMeta={false}
       />,

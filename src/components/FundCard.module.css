@@ -96,7 +96,7 @@
   border-radius: 4px;
   color: #64748b;
   flex: 0 0 auto;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   line-height: 17px;
   padding: 0 5px;
@@ -234,7 +234,7 @@
     padding-left: 6px;
     padding-right: 6px;
   }
-  .estimateKindLabel { font-size: 9px; }
+  .estimateKindLabel { font-size: 10px; }
   .secondaryNavBox {
     background: transparent;
     border: 0;
@@ -244,7 +244,7 @@
     padding: 2px 8px;
   }
   .secondaryNavBox .navKindLabel {
-    font-size: 9px;
+    font-size: 10px;
   }
   .secondaryNavBox .navBoxValue {
     color: #64748b;
@@ -261,11 +261,11 @@
     padding-right: 4px;
   }
   .secondaryNavBox .estimateKindLabel {
-    font-size: 8px;
+    font-size: 10px;
   }
   .navBoxValue { font-size: 15px; }
   .navBoxChange { font-size: 11px; }
-  .navDataTime { font-size: 9px; }
+  .navDataTime { font-size: 10px; }
   .estimateNavBox .estLiveTag {
     padding-left: 3px;
     padding-right: 3px;
@@ -284,7 +284,7 @@
 
 .estLiveTag {
   display: inline-block;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   padding: 1px 6px;
   border-radius: 4px;
@@ -312,7 +312,7 @@
   background: #e2e8f0;
   border-radius: 4px;
   color: #475569;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   margin-left: auto;
   padding: 1px 6px;
