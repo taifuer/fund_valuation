@@ -292,6 +292,19 @@ export interface CompanyEmployeeMethodologyMarker {
   note: string;
 }
 
+export type CompanyFundamentalMetric =
+  | 'revenue'
+  | 'operatingProfit'
+  | 'researchAndDevelopment'
+  | 'employees';
+
+export interface CompanyMetricMethodologyMarker {
+  metric: CompanyFundamentalMetric;
+  period: string;
+  label: string;
+  note: string;
+}
+
 export interface CompanyFundamentals {
   id: string;
   name: string;
@@ -305,6 +318,7 @@ export interface CompanyFundamentals {
   methodologyNote?: string;
   employeeScope: string;
   employeeMarkers?: CompanyEmployeeMethodologyMarker[];
+  metricMarkers?: CompanyMetricMethodologyMarker[];
   annual: CompanyFundamentalPoint[];
   quarterly: CompanyFundamentalPoint[];
 }

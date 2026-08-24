@@ -11,11 +11,11 @@ describe('CompaniesPage', () => {
   it('renders one focused trend with the complete restrained company roster', () => {
     render(<CompaniesPage />);
 
-    expect(screen.getByRole('heading', { name: '科技公司经营趋势' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '公司经营趋势' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /全部/ }));
     const companyOptions = screen.getByRole('group', { name: '全部公司' });
     const companyButtons = within(companyOptions).getAllByRole('button');
-    expect(companyButtons).toHaveLength(30);
+    expect(companyButtons).toHaveLength(36);
     expect(companyButtons.slice(0, 7).map((button) => button.textContent)).toEqual([
       'AMD', '阿里巴巴', '谷歌', '亚马逊', '苹果', '应用材料', 'Arm',
     ]);
@@ -157,9 +157,9 @@ describe('CompaniesPage', () => {
     expect(screen.getByRole('button', { name: '半年' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '年度' })).toHaveAttribute('aria-pressed', 'true');
 
-    fireEvent.click(screen.getByRole('button', { name: '研发投入' }));
-    expect(screen.getByRole('img', { name: '华为研发投入趋势' })).toBeInTheDocument();
-    expect(screen.getByText(/研发投入按公司单列披露口径/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '研发费用' }));
+    expect(screen.getByRole('img', { name: '华为研发费用趋势' })).toBeInTheDocument();
+    expect(screen.getByText(/研发费用按公司单列披露口径/)).toBeInTheDocument();
   });
 
   it('disables unsupported research spending without presenting a false zero', () => {
@@ -168,7 +168,7 @@ describe('CompaniesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /鸿海精密/ }));
 
     expect(screen.getByRole('heading', { name: '鸿海精密' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '研发投入' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '研发费用' })).toBeDisabled();
     expect(screen.getByRole('img', { name: '鸿海精密营业收入趋势' })).toBeInTheDocument();
   });
 
@@ -176,11 +176,24 @@ describe('CompaniesPage', () => {
     render(<CompaniesPage />);
 
     fireEvent.click(screen.getByRole('button', { name: /联发科/ }));
-    fireEvent.click(screen.getByRole('button', { name: '研发投入' }));
+    fireEvent.click(screen.getByRole('button', { name: '研发费用' }));
 
     expect(screen.getByRole('button', { name: '季度' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '半年' })).toBeEnabled();
-    expect(screen.getByRole('img', { name: '联发科研发投入趋势' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '联发科研发费用趋势' })).toBeInTheDocument();
+  });
+
+  it('shows pharmaceutical R&D intensity and material methodology events', () => {
+    render(<CompaniesPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /美国/ }));
+    fireEvent.click(screen.getByRole('button', { name: /默沙东/ }));
+    fireEvent.click(screen.getByRole('button', { name: '研发费用' }));
+
+    expect(screen.getByRole('img', { name: '默沙东研发费用趋势' })).toBeInTheDocument();
+    expect(screen.getByText(/占营收/)).toBeInTheDocument();
+    expect(screen.getByText('并购费用')).toBeInTheDocument();
+    expect(screen.getByText(/FY2023 Q2 研发费用包含 Prometheus Biosciences/)).toBeInTheDocument();
   });
 
   it('shows year-over-year change as a separate chart view', () => {

@@ -52,7 +52,7 @@ test('company fundamentals are bundled offline and open a focused trend', async 
   });
 
   await page.goto('/companies');
-  await expect(page.getByRole('heading', { name: '科技公司经营趋势' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '公司经营趋势' })).toBeVisible();
   await expect(page.getByText(/北京时间/)).toHaveCount(0);
   const mobileCompanySelect = page.getByLabel('公司', { exact: true });
   if (await mobileCompanySelect.isVisible()) {
@@ -84,6 +84,28 @@ test('company trend chart fits narrow screens without internal horizontal scroll
   expect(geometry.chartWidth).toBeLessThanOrEqual(geometry.parentWidth + 1);
   expect(geometry.parentScrollWidth).toBeLessThanOrEqual(geometry.parentWidth + 1);
   await expect(page.getByText(/FY2024 起员工口径纳入 ASML Berlin GmbH/)).toBeVisible();
+});
+
+test('company disclosure shows revenue in the initial mobile viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto('/companies?company=samsung&period=quarterly');
+
+  const table = page.getByRole('table', { name: '三星电子披露明细' });
+  await expect(table).toBeVisible();
+  const geometry = await table.evaluate((element) => {
+    const scroller = element.parentElement;
+    const revenueHeader = element.querySelectorAll('th')[2];
+    const scrollerRect = scroller?.getBoundingClientRect();
+    const revenueRect = revenueHeader?.getBoundingClientRect();
+    return {
+      scrollLeft: scroller?.scrollLeft ?? -1,
+      scrollerRight: scrollerRect?.right ?? 0,
+      revenueRight: revenueRect?.right ?? Number.POSITIVE_INFINITY,
+    };
+  });
+
+  expect(geometry.scrollLeft).toBe(0);
+  expect(geometry.revenueRight).toBeLessThanOrEqual(geometry.scrollerRight + 1);
 });
 
 test('company choices wrap on narrow screens without horizontal scrolling', async ({ page }) => {

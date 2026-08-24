@@ -41,7 +41,7 @@ const METRICS: Array<{ key: MetricKey; label: string }> = [
   { key: 'revenue', label: '营业收入' },
   { key: 'operatingProfit', label: '营业利润' },
   { key: 'margin', label: '营业利润率' },
-  { key: 'researchAndDevelopment', label: '研发投入' },
+  { key: 'researchAndDevelopment', label: '研发费用' },
   { key: 'employees', label: '员工人数' },
 ];
 
@@ -139,6 +139,11 @@ function changeValue(
 function operatingMargin(point: CompanyFundamentalPoint | undefined) {
   if (!point || point.revenue === 0) return null;
   return (point.operatingProfit / point.revenue) * 100;
+}
+
+function researchIntensity(point: CompanyFundamentalPoint | undefined) {
+  if (!point || point.researchAndDevelopment == null || point.revenue === 0) return null;
+  return (point.researchAndDevelopment / point.revenue) * 100;
 }
 
 function changeClass(value: number | null) {
@@ -284,15 +289,24 @@ function TrendChart({ company, points, metric, mode }: TrendChartProps) {
   const activePoint = points[activeIndex];
   const activeValue = activePoint ? trendValue(points, activePoint, metric, mode) : null;
   const activeChange = activePoint ? metricChange(points, activePoint, metric) : { value: null, label: '--' };
-  const methodologyMarkers = metric === 'employees'
-    ? (company.employeeMarkers ?? []).flatMap((marker) => {
-      const annualPoint = company.annual.find((point) => point.period === marker.period);
-      const index = points.findIndex((point) => (
-        point.period === marker.period || (annualPoint != null && point.periodEnd === annualPoint.periodEnd)
-      ));
-      return index >= firstPlotIndex && index <= lastPlotIndex ? [{ ...marker, index, x: x(index) }] : [];
-    })
-    : [];
+  const activeResearchIntensity = activePoint ? researchIntensity(activePoint) : null;
+  const markerDefinitions = [
+    ...(metric === 'employees' ? company.employeeMarkers ?? [] : []),
+    ...(metric === 'margin'
+      ? []
+      : (company.metricMarkers ?? []).filter((marker) => marker.metric === metric)),
+  ];
+  const methodologyMarkers = markerDefinitions.flatMap((marker) => {
+    const referencePoint = [...company.annual, ...company.quarterly]
+      .find((point) => point.period === marker.period);
+    const fiscalYear = marker.period.match(/^(FY\d{4})/)?.[1];
+    const index = points.findIndex((point) => (
+      point.period === marker.period
+      || (referencePoint != null && point.periodEnd === referencePoint.periodEnd)
+      || (fiscalYear != null && point.period === fiscalYear)
+    ));
+    return index >= firstPlotIndex && index <= lastPlotIndex ? [{ ...marker, index, x: x(index) }] : [];
+  });
 
   useLayoutEffect(() => {
     const frame = chartFrameRef.current;
@@ -329,6 +343,11 @@ function TrendChart({ company, points, metric, mode }: TrendChartProps) {
         <em className={changeClass(activeChange.value)}>
           {mode === 'yoy' ? '较上年同期' : `同比 ${activeChange.label}`}
         </em>
+        {mode === 'value' && metric === 'researchAndDevelopment' && activeResearchIntensity != null && (
+          <small className={styles.researchIntensity}>
+            占营收 {formatPercent(activeResearchIntensity)}
+          </small>
+        )}
       </div>
       <div className={styles.chartFrame} ref={chartFrameRef}>
         <svg
@@ -415,21 +434,20 @@ function TrendChart({ company, points, metric, mode }: TrendChartProps) {
           ))}
         </svg>
       </div>
-      {(mode === 'yoy' || metric === 'employees' || metric === 'researchAndDevelopment') && (
+      {(mode === 'yoy' || metric === 'employees' || metric === 'researchAndDevelopment'
+        || methodologyMarkers.length > 0) && (
         <div className={styles.chartNotes} role="note">
           {mode === 'yoy' && (
             <p><strong>*</strong><span>同比按上一财年相同季度、半年或年度计算，不使用相邻期间环比。</span></p>
           )}
           {metric === 'employees' ? (
-            <>
-              <p><strong>*</strong><span>{company.employeeScope}；仅展示公司明确披露的期间。</span></p>
-              {methodologyMarkers.map((marker) => (
-                <p key={`${marker.period}-${marker.note}`}><strong>*</strong><span>{marker.note}</span></p>
-              ))}
-            </>
-          ) : (
-            <p><strong>*</strong><span>研发投入按公司单列披露口径；缺失期间不推算。</span></p>
-          )}
+            <p><strong>*</strong><span>{company.employeeScope}；仅展示公司明确披露的期间。</span></p>
+          ) : metric === 'researchAndDevelopment' ? (
+            <p><strong>*</strong><span>研发费用按公司单列披露口径；研发强度为研发费用占营业收入比例，缺失期间不推算。</span></p>
+          ) : null}
+          {methodologyMarkers.map((marker) => (
+            <p key={`${marker.period}-${marker.note}`}><strong>*</strong><span>{marker.note}</span></p>
+          ))}
         </div>
       )}
     </div>
@@ -568,8 +586,8 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
     <main className={styles.page}>
       <header className={styles.pageHeader}>
         <div>
-          <h2>科技公司经营趋势</h2>
-          <p>聚焦营业收入、营业利润、研发投入与员工人数的长期变化</p>
+          <h2>公司经营趋势</h2>
+          <p>聚焦营业收入、营业利润、研发费用与员工人数的长期变化</p>
         </div>
       </header>
 
@@ -766,7 +784,7 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
                     <th>截止日期</th>
                     <th>营业收入</th>
                     <th>营业利润</th>
-                    <th>研发投入</th>
+                    <th>研发费用</th>
                     <th>利润率</th>
                     <th>员工人数</th>
                   </tr>

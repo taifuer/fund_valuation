@@ -511,6 +511,12 @@
   font-weight: 700;
 }
 
+.chartReading .researchIntensity {
+  color: #667284;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .chartFrame {
   min-width: 0;
   width: 100%;
@@ -850,6 +856,46 @@
 
   .trendContent {
     padding: 13px 11px;
+  }
+
+  .detailTable {
+    min-width: 680px;
+  }
+
+  .detailTable th,
+  .detailTable td {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .detailTable th:first-child {
+    width: 86px;
+  }
+
+  .detailTable th:nth-child(2) {
+    width: 72px;
+  }
+
+  .detailTable th:nth-child(3) {
+    width: 98px;
+  }
+
+  .detailTable th:nth-child(4),
+  .detailTable th:nth-child(5) {
+    width: 104px;
+  }
+
+  .detailTable th:nth-child(6) {
+    width: 92px;
+  }
+
+  .detailTable th:nth-child(7) {
+    width: 124px;
+  }
+
+  .detailTable th:nth-child(2),
+  .detailTable td:nth-child(2) {
+    white-space: nowrap;
   }
 
   .companyHeader {

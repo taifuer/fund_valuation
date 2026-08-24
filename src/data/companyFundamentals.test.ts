@@ -9,6 +9,8 @@ const EXPECTED_IDS = [
   'byd',
   'catl',
   'smic',
+  'hengrui',
+  'beone',
   'tsmc',
   'mediatek',
   'huawei',
@@ -21,6 +23,9 @@ const EXPECTED_IDS = [
   'qualcomm',
   'apple',
   'tesla',
+  'lilly',
+  'merck',
+  'pfizer',
   'amazon',
   'meta',
   'micron',
@@ -28,6 +33,7 @@ const EXPECTED_IDS = [
   'appliedMaterials',
   'oracle',
   'palantir',
+  'novoNordisk',
   'asml',
   'arm',
   'samsung',
@@ -100,6 +106,14 @@ describe('company fundamentals offline dataset', () => {
         expect(marker.label.length).toBeGreaterThan(1);
         expect(marker.note).toContain(marker.period);
       });
+      (company.metricMarkers ?? []).forEach((marker) => {
+        expect(
+          [...company.annual, ...company.quarterly].some((point) => point.period === marker.period),
+          `${company.id} ${marker.period} metric methodology marker`,
+        ).toBe(true);
+        expect(marker.label.length).toBeGreaterThan(1);
+        expect(marker.note).toContain(marker.period);
+      });
     });
   });
 
@@ -145,6 +159,7 @@ describe('company fundamentals offline dataset', () => {
       alphabet: { firstPeriod: 'FY2020 Q1', minimumPoints: 26 },
       amazon: { firstPeriod: 'FY2020 Q1', minimumPoints: 26 },
       meta: { firstPeriod: 'FY2020 Q1', minimumPoints: 26 },
+      novoNordisk: { firstPeriod: 'FY2023 Q1', minimumPoints: 12 },
     };
 
     Object.entries(expectedCoverage).forEach(([id, expectation]) => {
