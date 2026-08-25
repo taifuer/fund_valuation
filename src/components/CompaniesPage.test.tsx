@@ -12,10 +12,10 @@ describe('CompaniesPage', () => {
     render(<CompaniesPage />);
 
     expect(screen.getByRole('heading', { name: '公司经营趋势' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /全部/ }));
+    fireEvent.click(within(screen.getByLabelText('地区筛选')).getByRole('button', { name: /全部/ }));
     const companyOptions = screen.getByRole('group', { name: '全部公司' });
     const companyButtons = within(companyOptions).getAllByRole('button');
-    expect(companyButtons).toHaveLength(36);
+    expect(companyButtons).toHaveLength(42);
     expect(companyButtons.slice(0, 7).map((button) => button.textContent)).toEqual([
       'AMD', '阿里巴巴', '谷歌', '亚马逊', '苹果', '应用材料', 'Arm',
     ]);
@@ -36,6 +36,19 @@ describe('CompaniesPage', () => {
     expect(within(companyOptions).getByRole('button', { name: /联发科/ })).toBeInTheDocument();
     expect(screen.queryByText('SAP')).not.toBeInTheDocument();
     expect(screen.queryByText('经营对比')).not.toBeInTheDocument();
+  });
+
+  it('groups Japan, India, and Korea under the Asia-Pacific filter', () => {
+    render(<CompaniesPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: /亚太/ }));
+
+    const companyOptions = screen.getByRole('group', { name: '亚太公司' });
+    expect(within(companyOptions).getAllByRole('button')).toHaveLength(4);
+    expect(within(companyOptions).getByRole('button', { name: '丰田汽车' })).toBeInTheDocument();
+    expect(within(companyOptions).getByRole('button', { name: '塔塔咨询服务' })).toBeInTheDocument();
+    expect(within(companyOptions).getByRole('button', { name: '三星电子' })).toBeInTheDocument();
+    expect(within(companyOptions).getByRole('button', { name: 'SK 海力士' })).toBeInTheDocument();
   });
 
   it('filters the company picker by name or ticker', () => {
@@ -61,7 +74,7 @@ describe('CompaniesPage', () => {
     expect(screen.getByRole('heading', { name: '百度' })).toBeInTheDocument();
   });
 
-  it('shows disclosure rows by default and still allows them to be collapsed', () => {
+  it('shows the latest disclosure rows by default and expands the complete history on demand', () => {
     render(<CompaniesPage />);
 
     const summary = screen.getByText('披露明细').closest('summary');
@@ -69,11 +82,26 @@ describe('CompaniesPage', () => {
     const details = summary!.closest('details');
     expect(details).toHaveAttribute('open');
     const table = screen.getByRole('table', { name: '阿里巴巴披露明细' });
-    expect(within(table).getAllByText(/同比/).length).toBeGreaterThan(10);
-    expect(within(table).getByText('FY2022 Q1')).toBeInTheDocument();
+    expect(within(table).getAllByRole('row')).toHaveLength(13);
+    expect(within(table).getByText('FY2027 Q1')).toBeInTheDocument();
+    expect(within(table).queryByText('FY2019 Q1')).not.toBeInTheDocument();
 
-    fireEvent.click(summary!);
-    expect(details).not.toHaveAttribute('open');
+    const showAll = screen.getByRole('button', { name: '显示全部 33 期' });
+    expect(showAll).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(showAll);
+    expect(within(table).getAllByRole('row')).toHaveLength(34);
+    expect(within(table).getByText('FY2019 Q1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '收起至最近 12 期' })).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: /百度/ }));
+    const baiduTable = screen.getByRole('table', { name: '百度披露明细' });
+    expect(within(baiduTable).getAllByRole('row')).toHaveLength(13);
+    expect(screen.getByRole('button', { name: '显示全部 34 期' })).toHaveAttribute('aria-expanded', 'false');
+
+    const currentSummary = screen.getByText('披露明细').closest('summary');
+    const currentDetails = currentSummary!.closest('details');
+    fireEvent.click(currentSummary!);
+    expect(currentDetails).not.toHaveAttribute('open');
   });
 
   it('uses quarterly employee disclosures when the company publishes them', () => {

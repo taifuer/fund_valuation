@@ -4,6 +4,7 @@ import { companyFundamentalsDataset, companySeries, deriveHalfYear } from './com
 const EXPECTED_IDS = [
   'alibaba',
   'tencent',
+  'meituan',
   'baidu',
   'xiaomi',
   'byd',
@@ -15,6 +16,8 @@ const EXPECTED_IDS = [
   'mediatek',
   'huawei',
   'foxconn',
+  'visa',
+  'walmart',
   'microsoft',
   'alphabet',
   'nvidia',
@@ -35,7 +38,10 @@ const EXPECTED_IDS = [
   'palantir',
   'novoNordisk',
   'asml',
+  'siemens',
   'arm',
+  'toyota',
+  'tcs',
   'samsung',
   'sk-hynix',
 ].sort();
@@ -61,6 +67,12 @@ describe('company fundamentals offline dataset', () => {
     expect(ids).toContain('foxconn');
     expect(ids).toContain('broadcom');
     expect(ids).toContain('mediatek');
+    expect(ids).toContain('meituan');
+    expect(ids).toContain('toyota');
+    expect(ids).toContain('tcs');
+    expect(ids).toContain('visa');
+    expect(ids).toContain('walmart');
+    expect(ids).toContain('siemens');
     expect(ids).not.toContain('sap');
   });
 
@@ -85,6 +97,10 @@ describe('company fundamentals offline dataset', () => {
 
       for (const series of [company.annual, company.quarterly]) {
         expect(new Set(series.map((point) => point.period)).size, `${company.id} unique periods`).toBe(series.length);
+        expect(
+          series.map((point) => point.periodEnd),
+          `${company.id} chronological periods`,
+        ).toEqual(series.map((point) => point.periodEnd).sort());
         series.forEach((point) => {
           expect(Number.isFinite(point.revenue), `${company.id} ${point.period} revenue`).toBe(true);
           expect(Number.isFinite(point.operatingProfit), `${company.id} ${point.period} operating profit`).toBe(true);
@@ -100,7 +116,7 @@ describe('company fundamentals offline dataset', () => {
       }
       (company.employeeMarkers ?? []).forEach((marker) => {
         expect(
-          company.annual.some((point) => point.period === marker.period),
+          [...company.annual, ...company.quarterly].some((point) => point.period === marker.period),
           `${company.id} ${marker.period} methodology marker`,
         ).toBe(true);
         expect(marker.label.length).toBeGreaterThan(1);
@@ -156,6 +172,7 @@ describe('company fundamentals offline dataset', () => {
     const expectedCoverage: Record<string, { firstPeriod: string; minimumPoints: number }> = {
       alibaba: { firstPeriod: 'FY2021 Q1', minimumPoints: 25 },
       tencent: { firstPeriod: 'FY2021 Q1', minimumPoints: 22 },
+      toyota: { firstPeriod: 'FY2019 Q1', minimumPoints: 33 },
       alphabet: { firstPeriod: 'FY2020 Q1', minimumPoints: 26 },
       amazon: { firstPeriod: 'FY2020 Q1', minimumPoints: 26 },
       meta: { firstPeriod: 'FY2020 Q1', minimumPoints: 26 },
@@ -168,6 +185,80 @@ describe('company fundamentals offline dataset', () => {
       expect(employeePoints[0]?.period, `${id} first quarterly employee disclosure`).toBe(expectation.firstPeriod);
       expect(employeePoints.length, `${id} quarterly employee coverage`).toBeGreaterThanOrEqual(expectation.minimumPoints);
       expect(employeePoints.every((point) => point.employees! > 0), `${id} valid employee values`).toBe(true);
+    });
+  });
+
+  it('keeps verified long-form quarterly histories continuous', () => {
+    const expectedCoverage: Record<string, { firstPeriod: string; minimumPoints: number }> = {
+      alibaba: { firstPeriod: 'FY2019 Q1', minimumPoints: 33 },
+      tencent: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      meituan: { firstPeriod: 'FY2018 Q1', minimumPoints: 33 },
+      baidu: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      xiaomi: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      byd: { firstPeriod: 'FY2018 Q1', minimumPoints: 33 },
+      catl: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      smic: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      hengrui: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      beone: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      tsmc: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      mediatek: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      foxconn: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      visa: { firstPeriod: 'FY2018 Q1', minimumPoints: 35 },
+      walmart: { firstPeriod: 'FY2019 Q1', minimumPoints: 34 },
+      microsoft: { firstPeriod: 'FY2019 Q1', minimumPoints: 32 },
+      alphabet: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      nvidia: { firstPeriod: 'FY2019 Q1', minimumPoints: 33 },
+      amd: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      intel: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      qualcomm: { firstPeriod: 'FY2018 Q1', minimumPoints: 35 },
+      apple: { firstPeriod: 'FY2018 Q1', minimumPoints: 35 },
+      tesla: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      lilly: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      merck: { firstPeriod: 'FY2020 Q1', minimumPoints: 26 },
+      pfizer: { firstPeriod: 'FY2020 Q1', minimumPoints: 26 },
+      amazon: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      meta: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      micron: { firstPeriod: 'FY2018 Q1', minimumPoints: 35 },
+      broadcom: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      appliedMaterials: { firstPeriod: 'FY2018 Q1', minimumPoints: 35 },
+      oracle: { firstPeriod: 'FY2018 Q1', minimumPoints: 36 },
+      palantir: { firstPeriod: 'FY2020 Q1', minimumPoints: 26 },
+      novoNordisk: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      asml: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      siemens: { firstPeriod: 'FY2021 Q1', minimumPoints: 23 },
+      arm: { firstPeriod: 'FY2023 Q1', minimumPoints: 17 },
+      toyota: { firstPeriod: 'FY2019 Q1', minimumPoints: 33 },
+      tcs: { firstPeriod: 'FY2019 Q1', minimumPoints: 33 },
+      samsung: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      'sk-hynix': { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+    };
+
+    expect(Object.keys(expectedCoverage).sort()).toEqual(
+      EXPECTED_IDS.filter((id) => id !== 'huawei'),
+    );
+
+    Object.entries(expectedCoverage).forEach(([id, expectation]) => {
+      const company = companyFundamentalsDataset.companies.find((candidate) => candidate.id === id)!;
+      expect(company.quarterly[0]?.period, `${id} first verified quarter`).toBe(expectation.firstPeriod);
+      expect(company.quarterly.length, `${id} quarterly coverage`).toBeGreaterThanOrEqual(expectation.minimumPoints);
+    });
+
+    companyFundamentalsDataset.companies.forEach((company) => {
+      const quarterCounts = new Map<string, number>();
+      company.quarterly.forEach((point) => {
+        const fiscalYear = point.period.match(/^(FY\d{4}) Q[1-4]$/)?.[1];
+        if (fiscalYear) quarterCounts.set(fiscalYear, (quarterCounts.get(fiscalYear) ?? 0) + 1);
+      });
+      const completeYears = [...quarterCounts.entries()]
+        .filter(([, count]) => count === 4)
+        .map(([year]) => Number(year.slice(2)))
+        .sort((left, right) => left - right);
+      if (completeYears.length < 2) return;
+      const expectedYears = Array.from(
+        { length: completeYears[completeYears.length - 1] - completeYears[0] + 1 },
+        (_, index) => completeYears[0] + index,
+      );
+      expect(completeYears, `${company.id} continuous complete fiscal years`).toEqual(expectedYears);
     });
   });
 
@@ -195,7 +286,9 @@ describe('company fundamentals offline dataset', () => {
     expect(firstHalf.revenue).toBe(q1.revenue + q2.revenue);
     expect(firstHalf.operatingProfit).toBe(q1.operatingProfit + q2.operatingProfit);
     expect(firstHalf.periodEnd).toBe(q2.periodEnd);
-    expect(firstHalf.researchAndDevelopment).toBeNull();
+    expect(firstHalf.researchAndDevelopment).toBe(
+      q1.researchAndDevelopment! + q2.researchAndDevelopment!,
+    );
     expect(firstHalf.derived).toBe(true);
   });
 

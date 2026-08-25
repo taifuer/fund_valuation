@@ -274,7 +274,7 @@ export interface IndexConfig {
 }
 
 export type CompanyFrequency = 'annual' | 'half' | 'quarterly';
-export type CompanyRegion = 'china' | 'usa' | 'europe' | 'korea';
+export type CompanyRegion = 'china' | 'usa' | 'europe' | 'asiaPacific';
 
 export interface CompanyFundamentalPoint {
   period: string;

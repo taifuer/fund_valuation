@@ -31,7 +31,7 @@ const REGIONS = [
   { key: 'china', label: '中国' },
   { key: 'usa', label: '美国' },
   { key: 'europe', label: '欧洲' },
-  { key: 'korea', label: '韩国' },
+  { key: 'asiaPacific', label: '亚太' },
 ] as const;
 
 const REGION_FILTERS = [{ key: 'all', label: '全部' }, ...REGIONS] as const;
@@ -49,6 +49,8 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$',
   EUR: '€',
   CNY: '¥',
+  JPY: '¥',
+  INR: '₹',
   TWD: 'NT$',
   KRW: '₩',
 };
@@ -57,6 +59,7 @@ const FREQUENCY_KEYS = FREQUENCIES.map((item) => item.key);
 const METRIC_KEYS = METRICS.map((item) => item.key);
 const TREND_MODE_KEYS: TrendMode[] = ['value', 'yoy'];
 const COMPANY_NAME_COLLATOR = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+const DEFAULT_DISCLOSURE_LIMIT = 12;
 
 function formatMoney(value: number | null, currency: string, precision = 1) {
   if (value == null || !Number.isFinite(value)) return '--';
@@ -477,6 +480,7 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
     return companies.find((company) => company.id === requestedId)?.region ?? 'china';
   });
   const [companyQuery, setCompanyQuery] = useState('');
+  const [showAllDisclosures, setShowAllDisclosures] = useState(false);
 
   useEffect(() => {
     onStatusMessageChange?.('');
@@ -507,6 +511,10 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
     ? frequency
     : fallbackFrequency;
   const trendPoints = companySeries(selectedCompany, effectiveFrequency);
+  const disclosurePoints = [...trendPoints].reverse();
+  const visibleDisclosurePoints = showAllDisclosures
+    ? disclosurePoints
+    : disclosurePoints.slice(0, DEFAULT_DISCLOSURE_LIMIT);
   const latestPoint = trendPoints[trendPoints.length - 1];
   const annualEmployeePoints = selectedCompany.annual.filter((point) => point.employees != null);
   const quarterlyEmployeePoints = selectedCompany.quarterly.filter((point) => point.employees != null);
@@ -525,6 +533,10 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
   useEffect(() => {
     if (metric !== effectiveMetric) setMetric(effectiveMetric);
   }, [effectiveMetric, metric]);
+
+  useEffect(() => {
+    setShowAllDisclosures(false);
+  }, [effectiveFrequency, selectedCompany.id]);
 
   const selectCompany = (company: CompanyFundamentals, clearSearch = false) => {
     setSelectedId(company.id);
@@ -777,7 +789,11 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
               </span>
             </summary>
             <div className={styles.tableScroller}>
-              <table className={styles.detailTable} aria-label={`${selectedCompany.name}披露明细`}>
+              <table
+                id="company-disclosure-table"
+                className={styles.detailTable}
+                aria-label={`${selectedCompany.name}披露明细`}
+              >
                 <thead>
                   <tr>
                     <th>期间</th>
@@ -790,7 +806,7 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {[...trendPoints].reverse().map((point) => (
+                  {visibleDisclosurePoints.map((point) => (
                     <tr key={`${point.period}-${point.periodEnd}`}>
                       <td><strong>{point.period}</strong>{point.derived && <span className={styles.derivedTag}>汇总</span>}</td>
                       <td>{compactDate(point.periodEnd)}</td>
@@ -829,6 +845,21 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
                 </tbody>
               </table>
             </div>
+            {disclosurePoints.length > DEFAULT_DISCLOSURE_LIMIT && (
+              <div className={styles.detailTableFooter}>
+                <button
+                  type="button"
+                  className={styles.detailTableToggle}
+                  aria-expanded={showAllDisclosures}
+                  aria-controls="company-disclosure-table"
+                  onClick={() => setShowAllDisclosures((current) => !current)}
+                >
+                  {showAllDisclosures
+                    ? `收起至最近 ${DEFAULT_DISCLOSURE_LIMIT} 期`
+                    : `显示全部 ${disclosurePoints.length} 期`}
+                </button>
+              </div>
+            )}
           </details>
 
           {selectedCompany.methodologyNote && (

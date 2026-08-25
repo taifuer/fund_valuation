@@ -111,7 +111,7 @@ test('company disclosure shows revenue in the initial mobile viewport', async ({
 test('company choices wrap on narrow screens without horizontal scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 });
   await page.goto('/companies');
-  await page.getByRole('button', { name: /全部/ }).click();
+  await page.getByLabel('地区筛选').getByRole('button', { name: /全部/ }).click();
 
   const companyOptions = page.getByRole('group', { name: '全部公司' });
   const geometry = await companyOptions.evaluate((element) => {
