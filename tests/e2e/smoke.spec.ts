@@ -66,6 +66,26 @@ test('company fundamentals are bundled offline and open a focused trend', async 
   expect(companyApiRequests).toEqual([]);
 });
 
+test('company report calendar keeps official events readable without a runtime data request', async ({ page }) => {
+  const companyApiRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/api/companies')) companyApiRequests.push(request.url());
+  });
+
+  await page.goto('/companies?panel=calendar');
+  await expect(page.getByRole('heading', { name: '财报日历' })).toBeVisible();
+  await expect(page.getByRole('grid', { name: /财报日历/ })).toBeVisible();
+  await expect(page.getByText('当月事项')).toBeVisible();
+  await expect(page.getByText('已确认').first()).toBeVisible();
+  expect(companyApiRequests).toEqual([]);
+
+  const pageGeometry = await page.locator('body').evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(pageGeometry.scrollWidth).toBeLessThanOrEqual(pageGeometry.clientWidth + 1);
+});
+
 test('company trend chart fits narrow screens without internal horizontal scrolling', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile-chromium', 'Mobile chart behavior');
 

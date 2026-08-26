@@ -7,10 +7,12 @@ import type {
   CompanyFundamentals,
   CompanyRegion,
 } from '../types';
+import CompanyReportCalendar from './CompanyReportCalendar';
 import styles from './CompaniesPage.module.css';
 
 type MetricKey = 'revenue' | 'operatingProfit' | 'margin' | 'researchAndDevelopment' | 'employees';
 type TrendMode = 'value' | 'yoy';
+type CompanyPageMode = 'trend' | 'calendar';
 
 interface Props {
   onStatusMessageChange?: (message: string) => void;
@@ -58,6 +60,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 const FREQUENCY_KEYS = FREQUENCIES.map((item) => item.key);
 const METRIC_KEYS = METRICS.map((item) => item.key);
 const TREND_MODE_KEYS: TrendMode[] = ['value', 'yoy'];
+const COMPANY_PAGE_MODE_KEYS: CompanyPageMode[] = ['trend', 'calendar'];
 const COMPANY_NAME_COLLATOR = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
 const DEFAULT_DISCLOSURE_LIMIT = 12;
 
@@ -472,6 +475,9 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
   const [trendMode, setTrendMode] = useState<TrendMode>(() => (
     choiceFromSearch(window.location.search, 'trend', TREND_MODE_KEYS, 'value')
   ));
+  const [pageMode, setPageMode] = useState<CompanyPageMode>(() => (
+    choiceFromSearch(window.location.search, 'panel', COMPANY_PAGE_MODE_KEYS, 'trend')
+  ));
   const [selectedId, setSelectedId] = useState(
     () => new URLSearchParams(window.location.search).get('company') ?? 'alibaba',
   );
@@ -591,19 +597,41 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
       period: effectiveFrequency === 'quarterly' ? null : effectiveFrequency,
       metric: effectiveMetric !== 'revenue' ? effectiveMetric : null,
       trend: trendMode === 'value' ? null : trendMode,
+      panel: pageMode === 'calendar' ? 'calendar' : null,
     });
-  }, [effectiveFrequency, effectiveMetric, selectedCompany.id, trendMode]);
+  }, [effectiveFrequency, effectiveMetric, pageMode, selectedCompany.id, trendMode]);
 
   return (
     <main className={styles.page}>
       <header className={styles.pageHeader}>
         <div>
-          <h2>公司经营趋势</h2>
-          <p>聚焦营业收入、营业利润、研发费用与员工人数的长期变化</p>
+          <h2>{pageMode === 'trend' ? '公司经营趋势' : '财报日历'}</h2>
+          <p>{pageMode === 'trend'
+            ? '聚焦营业收入、营业利润、研发费用与员工人数的长期变化'
+            : '集中查看已披露报告与官方确认的财报日期'}</p>
+        </div>
+        <div className={styles.segmented} aria-label="公司页面视图">
+          <button
+            type="button"
+            className={`${styles.segmentButton} ${pageMode === 'trend' ? styles.segmentButtonActive : ''}`}
+            aria-pressed={pageMode === 'trend'}
+            onClick={() => setPageMode('trend')}
+          >
+            经营趋势
+          </button>
+          <button
+            type="button"
+            className={`${styles.segmentButton} ${pageMode === 'calendar' ? styles.segmentButtonActive : ''}`}
+            aria-pressed={pageMode === 'calendar'}
+            onClick={() => setPageMode('calendar')}
+          >
+            财报日历
+          </button>
         </div>
       </header>
 
-      <section className={styles.trendLayout}>
+      {pageMode === 'calendar' ? <CompanyReportCalendar /> : <>
+        <section className={styles.trendLayout}>
         <section className={styles.companyPicker} aria-label="公司选择">
           <div className={styles.pickerToolbar}>
             <div className={styles.regionSwitcher} aria-label="地区筛选">
@@ -685,6 +713,17 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
               >
                 官方披露
               </a>
+              {selectedCompany.latestReport && (
+                <a
+                  className={styles.latestReportLink}
+                  href={selectedCompany.latestReport.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={selectedCompany.latestReport.sourceLabel}
+                >
+                  最新报告 · {compactDate(selectedCompany.latestReport.publishedAt)}
+                </a>
+              )}
             </div>
           </header>
 
@@ -866,12 +905,13 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
             <p className={styles.companyNote}>* {selectedCompany.methodologyNote}</p>
           )}
         </div>
-      </section>
+        </section>
 
-      <footer className={styles.methodology}>
-        <strong>口径说明</strong>
-        {companyFundamentalsDataset.methodology.map((item) => <span key={item}>{item}</span>)}
-      </footer>
+        <footer className={styles.methodology}>
+          <strong>口径说明</strong>
+          {companyFundamentalsDataset.methodology.map((item) => <span key={item}>{item}</span>)}
+        </footer>
+      </>}
     </main>
   );
 }

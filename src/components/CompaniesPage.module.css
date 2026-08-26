@@ -369,6 +369,21 @@
   text-decoration: underline;
 }
 
+.latestReportLink {
+  color: #758291;
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 17px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.latestReportLink:hover {
+  color: #126b77;
+  text-decoration: underline;
+}
+
 .kpiStrip {
   border-bottom: 1px solid #e5e9ee;
   border-top: 1px solid #e5e9ee;

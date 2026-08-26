@@ -29,7 +29,9 @@ Flask Web 请求只读取 SQLite 或持久化快照，不在请求过程中同�
 - `src/App.tsx`：全局路由、页面装配和共享市场状态
 - `src/hooks/useQuotes.ts`：概览行情、基金净值和估值数据协调
 - `src/components/`：市场卡片、基金详情、收益风险、公司经营和诊断页面
-- `src/data/companyFundamentals.ts`：版本化公司经营数据
+- `src/data/companies/*.ts`：按公司拆分的版本化经营数据与原始披露元数据
+- `src/data/companyFundamentals.ts`：数据集聚合、口径说明与半年派生逻辑
+- `src/data/companyReportCalendar.ts`：已披露及官方确认的财报日程
 - `src/api.ts`：API 契约、请求和响应解析
 - `src/marketHours.ts`：按北京时间统一的市场时段与状态逻辑
 

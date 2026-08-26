@@ -15,7 +15,7 @@ describe('CompaniesPage', () => {
     fireEvent.click(within(screen.getByLabelText('地区筛选')).getByRole('button', { name: /全部/ }));
     const companyOptions = screen.getByRole('group', { name: '全部公司' });
     const companyButtons = within(companyOptions).getAllByRole('button');
-    expect(companyButtons).toHaveLength(42);
+    expect(companyButtons).toHaveLength(45);
     expect(companyButtons.slice(0, 7).map((button) => button.textContent)).toEqual([
       'AMD', '阿里巴巴', '谷歌', '亚马逊', '苹果', '应用材料', 'Arm',
     ]);
@@ -36,6 +36,28 @@ describe('CompaniesPage', () => {
     expect(within(companyOptions).getByRole('button', { name: /联发科/ })).toBeInTheDocument();
     expect(screen.queryByText('SAP')).not.toBeInTheDocument();
     expect(screen.queryByText('经营对比')).not.toBeInTheDocument();
+  });
+
+  it('shows an official-source report calendar without replacing the company route', () => {
+    render(<CompaniesPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: '财报日历' }));
+
+    expect(screen.getByRole('heading', { name: '财报日历' })).toBeInTheDocument();
+    expect(screen.getByLabelText('财报日历')).toBeInTheDocument();
+    expect(screen.getByRole('grid', { name: /财报日历/ })).toBeInTheDocument();
+    expect(screen.getByText('当月事项')).toBeInTheDocument();
+    expect(screen.getAllByText('已确认').length).toBeGreaterThan(0);
+    expect(window.location.pathname).toBe('/companies');
+    expect(window.location.search).toContain('panel=calendar');
+  });
+
+  it('links the original latest report when report metadata is available', () => {
+    window.history.replaceState({}, '', '/companies?company=pdd');
+    render(<CompaniesPage />);
+
+    expect(screen.getByRole('link', { name: '最新报告 · 2026.08.24' }))
+      .toHaveAttribute('href', expect.stringContaining('sec.gov/Archives/edgar/data/1737806'));
   });
 
   it('groups Japan, India, and Korea under the Asia-Pacific filter', () => {
@@ -193,11 +215,12 @@ describe('CompaniesPage', () => {
   it('disables unsupported research spending without presenting a false zero', () => {
     render(<CompaniesPage />);
 
-    fireEvent.click(screen.getByRole('button', { name: /鸿海精密/ }));
+    fireEvent.click(screen.getByRole('button', { name: /美国/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Visa/ }));
 
-    expect(screen.getByRole('heading', { name: '鸿海精密' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Visa' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '研发费用' })).toBeDisabled();
-    expect(screen.getByRole('img', { name: '鸿海精密营业收入趋势' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Visa营业收入趋势' })).toBeInTheDocument();
   });
 
   it('shows quarterly research spending where the company reports it', () => {

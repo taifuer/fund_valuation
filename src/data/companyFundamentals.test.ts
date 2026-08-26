@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { companyFundamentalsDataset, companySeries, deriveHalfYear } from './companyFundamentals';
+import {
+  COMPANIES_WITHOUT_COMPARABLE_RESEARCH_DISCLOSURE,
+  PARTIAL_RESEARCH_DISCLOSURE_PERIODS,
+  companyFundamentalsDataset,
+  companySeries,
+  deriveHalfYear,
+} from './companyFundamentals';
 
 const EXPECTED_IDS = [
   'alibaba',
+  'jd',
+  'pdd',
   'tencent',
   'meituan',
   'baidu',
@@ -23,6 +31,7 @@ const EXPECTED_IDS = [
   'nvidia',
   'amd',
   'intel',
+  'cisco',
   'qualcomm',
   'apple',
   'tesla',
@@ -68,6 +77,9 @@ describe('company fundamentals offline dataset', () => {
     expect(ids).toContain('broadcom');
     expect(ids).toContain('mediatek');
     expect(ids).toContain('meituan');
+    expect(ids).toContain('jd');
+    expect(ids).toContain('pdd');
+    expect(ids).toContain('cisco');
     expect(ids).toContain('toyota');
     expect(ids).toContain('tcs');
     expect(ids).toContain('visa');
@@ -168,6 +180,69 @@ describe('company fundamentals offline dataset', () => {
     });
   });
 
+  it('classifies every annual research gap instead of silently leaving missing data', () => {
+    const noComparableResearch = new Set(
+      Object.keys(COMPANIES_WITHOUT_COMPARABLE_RESEARCH_DISCLOSURE),
+    );
+
+    companyFundamentalsDataset.companies.forEach((company) => {
+      const missingPeriods = company.annual
+        .filter((point) => point.researchAndDevelopment == null)
+        .map((point) => point.period);
+
+      if (noComparableResearch.has(company.id)) {
+        expect(missingPeriods, `${company.id} intentionally has no standalone research series`)
+          .toEqual(company.annual.map((point) => point.period));
+        return;
+      }
+
+      expect(missingPeriods, `${company.id} classified partial research periods`)
+        .toEqual(PARTIAL_RESEARCH_DISCLOSURE_PERIODS[company.id] ?? []);
+    });
+  });
+
+  it('keeps corrected official research series and comparable historical scopes', () => {
+    const annualResearch = (id: string, period: string) => companyFundamentalsDataset.companies
+      .find((company) => company.id === id)!
+      .annual.find((point) => point.period === period)!
+      .researchAndDevelopment;
+
+    expect(annualResearch('tencent', 'FY2025')).toBe(85_747_000_000);
+    expect(annualResearch('byd', 'FY2025')).toBe(57_978_105_000);
+    expect(annualResearch('catl', 'FY2025')).toBe(22_146_581_000);
+    expect(annualResearch('tsmc', 'FY2025')).toBe(246_427_000_000);
+    expect(annualResearch('toyota', 'FY2026')).toBe(1_522_800_000_000);
+    expect(annualResearch('jd', 'FY2025')).toBe(22_229_000_000);
+    expect(annualResearch('samsung', 'FY2025')).toBe(37_740_392_000_000);
+    expect(annualResearch('sk-hynix', 'FY2018')).toBeNull();
+
+    const smic = companyFundamentalsDataset.companies.find((company) => company.id === 'smic')!;
+    expect(annualResearch('smic', 'FY2018')).toBe(663_368_000);
+    expect(smic.quarterly.find((point) => point.period === 'FY2018 Q1')!.researchAndDevelopment)
+      .toBeNull();
+    expect(smic.quarterly.find((point) => point.period === 'FY2020 Q1')!.researchAndDevelopment)
+      .toBe(166_486_000);
+  });
+
+  it('retains official exact and approximate employee disclosures with explicit scope', () => {
+    const annualEmployees = (id: string, period: string) => companyFundamentalsDataset.companies
+      .find((company) => company.id === id)!
+      .annual.find((point) => point.period === period)!
+      .employees;
+
+    expect(annualEmployees('meituan', 'FY2019')).toBe(54580);
+    expect(annualEmployees('mediatek', 'FY2025')).toBe(22869);
+    expect(annualEmployees('foxconn', 'FY2025')).toBe(900000);
+    expect(annualEmployees('broadcom', 'FY2019')).toBe(19000);
+    expect(annualEmployees('oracle', 'FY2026')).toBe(141000);
+    expect(annualEmployees('tcs', 'FY2026')).toBe(584519);
+    expect(annualEmployees('jd', 'FY2025')).toBe(776682);
+
+    const foxconn = companyFundamentalsDataset.companies.find((company) => company.id === 'foxconn')!;
+    expect(foxconn.employeeMarkers?.find((marker) => marker.period === 'FY2025')?.label)
+      .toBe('官方约数');
+  });
+
   it('keeps extended quarterly employee histories only for sustained official reporters', () => {
     const expectedCoverage: Record<string, { firstPeriod: string; minimumPoints: number }> = {
       alibaba: { firstPeriod: 'FY2021 Q1', minimumPoints: 25 },
@@ -191,6 +266,8 @@ describe('company fundamentals offline dataset', () => {
   it('keeps verified long-form quarterly histories continuous', () => {
     const expectedCoverage: Record<string, { firstPeriod: string; minimumPoints: number }> = {
       alibaba: { firstPeriod: 'FY2019 Q1', minimumPoints: 33 },
+      jd: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      pdd: { firstPeriod: 'FY2022 Q1', minimumPoints: 18 },
       tencent: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
       meituan: { firstPeriod: 'FY2018 Q1', minimumPoints: 33 },
       baidu: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
@@ -210,6 +287,7 @@ describe('company fundamentals offline dataset', () => {
       nvidia: { firstPeriod: 'FY2019 Q1', minimumPoints: 33 },
       amd: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
       intel: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      cisco: { firstPeriod: 'FY2018 Q1', minimumPoints: 36 },
       qualcomm: { firstPeriod: 'FY2018 Q1', minimumPoints: 35 },
       apple: { firstPeriod: 'FY2018 Q1', minimumPoints: 35 },
       tesla: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
@@ -274,6 +352,65 @@ describe('company fundamentals offline dataset', () => {
         ).toBe(true);
       });
     });
+  });
+
+  it('keeps JD consolidated GAAP results separate from segment and ecosystem measures', () => {
+    const jd = companyFundamentalsDataset.companies.find((company) => company.id === 'jd')!;
+
+    expect(jd.annual.find((point) => point.period === 'FY2025')?.operatingProfit)
+      .toBe(2_774_000_000);
+    expect(jd.quarterly.find((point) => point.period === 'FY2025 Q4')?.operatingProfit)
+      .toBe(-5_849_000_000);
+    expect(jd.quarterly[jd.quarterly.length - 1]?.period).toBe('FY2026 Q2');
+    expect(jd.methodologyNote).toContain('JD Ecosystem');
+  });
+
+  it('includes NVIDIA fiscal 2027 second-quarter GAAP results', () => {
+    const nvidia = companyFundamentalsDataset.companies.find((company) => company.id === 'nvidia')!;
+    const latest = nvidia.quarterly[nvidia.quarterly.length - 1]!;
+
+    expect(latest).toMatchObject({
+      period: 'FY2027 Q2',
+      periodEnd: '2026-07-26',
+      revenue: 96_221_000_000,
+      operatingProfit: 63_734_000_000,
+      researchAndDevelopment: 7_054_000_000,
+    });
+  });
+
+  it('keeps PDD audited annual reconciliation and latest quarterly results explicit', () => {
+    const pdd = companyFundamentalsDataset.companies.find((company) => company.id === 'pdd')!;
+    const latest = pdd.quarterly[pdd.quarterly.length - 1]!;
+
+    expect(latest).toMatchObject({
+      period: 'FY2026 Q2',
+      periodEnd: '2026-06-30',
+      revenue: 112_358_000_000,
+      operatingProfit: 27_764_000_000,
+      researchAndDevelopment: 4_567_000_000,
+    });
+    expect(pdd.annual.find((point) => point.period === 'FY2025')?.operatingProfit)
+      .toBe(93_102_131_000);
+    expect(pdd.metricMarkers?.some((marker) => marker.period === 'FY2025 Q4')).toBe(true);
+    expect(pdd.latestReport?.publishedAt).toBe('2026-08-24');
+  });
+
+  it('includes Cisco fiscal 2026 full-year and fourth-quarter GAAP results', () => {
+    const cisco = companyFundamentalsDataset.companies.find((company) => company.id === 'cisco')!;
+
+    expect(cisco.annual[cisco.annual.length - 1]).toMatchObject({
+      period: 'FY2026',
+      revenue: 63_325_000_000,
+      operatingProfit: 15_368_000_000,
+      researchAndDevelopment: 9_563_000_000,
+    });
+    expect(cisco.quarterly[cisco.quarterly.length - 1]).toMatchObject({
+      period: 'FY2026 Q4',
+      revenue: 17_252_000_000,
+      operatingProfit: 4_264_000_000,
+      researchAndDevelopment: 2_431_000_000,
+    });
+    expect(cisco.latestReport?.publishedAt).toBe('2026-08-12');
   });
 
   it('derives half-year values only from complete quarter pairs', () => {

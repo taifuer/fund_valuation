@@ -305,6 +305,18 @@ export interface CompanyMetricMethodologyMarker {
   note: string;
 }
 
+export interface CompanyReportReference {
+  period: string;
+  publishedAt: string;
+  sourceUrl: string;
+  sourceLabel?: string;
+}
+
+export interface CompanyReportEvent extends CompanyReportReference {
+  companyId: string;
+  status: 'reported' | 'scheduled';
+}
+
 export interface CompanyFundamentals {
   id: string;
   name: string;
@@ -315,6 +327,7 @@ export interface CompanyFundamentals {
   currency: string;
   sourceName: string;
   sourceUrl: string;
+  latestReport?: CompanyReportReference;
   methodologyNote?: string;
   employeeScope: string;
   employeeMarkers?: CompanyEmployeeMethodologyMarker[];
