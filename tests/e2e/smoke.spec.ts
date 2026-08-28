@@ -75,8 +75,9 @@ test('company report calendar keeps official events readable without a runtime d
   await page.goto('/companies?panel=calendar');
   await expect(page.getByRole('heading', { name: '财报日历' })).toBeVisible();
   await expect(page.getByRole('grid', { name: /财报日历/ })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: '选择财报月份' })).toBeVisible();
   await expect(page.getByText('当月事项')).toBeVisible();
-  await expect(page.getByText('已确认').first()).toBeVisible();
+  await expect(page.getByText('已披露').first()).toBeVisible();
   expect(companyApiRequests).toEqual([]);
 
   const pageGeometry = await page.locator('body').evaluate((element) => ({

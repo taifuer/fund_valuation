@@ -3,23 +3,14 @@ import {
   assessCompanyReportFreshness,
   latestCompanyPeriodEnd,
   latestSecPeriodicFiling,
-  type SecRecentFilings,
 } from '../src/data/companyReportMaintenance';
-
-interface SecTickerRecord {
-  cik_str: number;
-  ticker: string;
-}
-
-interface SecSubmissionResponse {
-  filings: { recent: SecRecentFilings };
-}
-
-const SEC_HEADERS = {
-  Accept: 'application/json',
-  'User-Agent': process.env.SEC_USER_AGENT
-    ?? 'fund-valuation company-data audit taifu@taifua.com',
-};
+import {
+  fetchSecSubmissions,
+  loadSecCikByTicker,
+  mapWithConcurrency,
+  secArchiveUrl,
+  secDomesticCompanies,
+} from './lib/sec';
 
 const args = new Set(process.argv.slice(2));
 const asOfArg = [...args].find((arg) => arg.startsWith('--as-of='));
@@ -27,30 +18,6 @@ const asOf = asOfArg?.slice('--as-of='.length) ?? new Date().toISOString().slice
 const offline = args.has('--offline');
 const showAll = args.has('--all');
 const strict = args.has('--strict');
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { headers: SEC_HEADERS, signal: AbortSignal.timeout(15_000) });
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-  return response.json() as Promise<T>;
-}
-
-async function mapWithConcurrency<T, R>(
-  values: readonly T[],
-  concurrency: number,
-  mapper: (value: T) => Promise<R>,
-): Promise<R[]> {
-  const output = new Array<R>(values.length);
-  let cursor = 0;
-  async function worker() {
-    while (cursor < values.length) {
-      const index = cursor++;
-      output[index] = await mapper(values[index]);
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, worker));
-  return output;
-}
 
 const localCandidates = companyFundamentalsDataset.companies
   .map((company) => ({ company, freshness: assessCompanyReportFreshness(company, asOf) }))
@@ -73,15 +40,8 @@ if (localCandidates.length > 0) {
 }
 
 if (!offline) {
-  const tickerRecords = await fetchJson<Record<string, SecTickerRecord>>(
-    'https://www.sec.gov/files/company_tickers.json',
-  );
-  const cikByTicker = new Map(
-    Object.values(tickerRecords).map((record) => [record.ticker.toUpperCase(), record.cik_str]),
-  );
-  const companies = companyFundamentalsDataset.companies.filter(
-    (company) => company.region === 'usa',
-  );
+  const cikByTicker = await loadSecCikByTicker();
+  const companies = secDomesticCompanies(companyFundamentalsDataset.companies);
   const failures: string[] = [];
 
   const filings = await mapWithConcurrency(companies, 4, async (company) => {
@@ -91,16 +51,12 @@ if (!offline) {
       return undefined;
     }
     try {
-      const paddedCik = String(cik).padStart(10, '0');
-      const submission = await fetchJson<SecSubmissionResponse>(
-        `https://data.sec.gov/submissions/CIK${paddedCik}.json`,
-      );
+      const submission = await fetchSecSubmissions(cik);
       const filing = latestSecPeriodicFiling(submission.filings.recent);
       if (!filing) {
         failures.push(`${company.name}: no recent 10-Q/10-K`);
         return undefined;
       }
-      const accession = filing.accessionNumber.replaceAll('-', '');
       return {
         company: company.name,
         ticker: company.ticker,
@@ -109,7 +65,7 @@ if (!offline) {
         filedAt: filing.filingDate,
         form: filing.form,
         status: filing.reportDate > latestCompanyPeriodEnd(company) ? '有新财报' : '已同步',
-        source: `https://www.sec.gov/Archives/edgar/data/${cik}/${accession}/${filing.primaryDocument}`,
+        source: secArchiveUrl(cik, filing),
       };
     } catch (error) {
       failures.push(`${company.name}: ${error instanceof Error ? error.message : String(error)}`);

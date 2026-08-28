@@ -12,6 +12,7 @@
     "data:companies:audit": "vite-node --script scripts/audit-company-data.ts",
     "data:companies:check": "vite-node --script scripts/check-company-releases.ts",
     "data:companies:draft": "vite-node --script scripts/generate-sec-company-draft.ts",
+    "data:companies:calendar": "vite-node --script scripts/sync-sec-report-calendar.ts",
     "dev": "vite",
     "test": "npm run test:backend && npm run test:unit && npm run test:frontend",
     "test:backend": ".venv/bin/python -m unittest discover -s backend/tests",

@@ -4,6 +4,7 @@ import {
   assessCompanyReportFreshness,
   latestCompanyPeriodEnd,
   latestSecPeriodicFiling,
+  listSecPeriodicFilings,
 } from './companyReportMaintenance';
 
 function company(overrides: Partial<CompanyFundamentals> = {}): CompanyFundamentals {
@@ -70,6 +71,31 @@ describe('company report maintenance', () => {
       form: '10-Q',
       primaryDocument: 'quarterly.htm',
     });
+  });
+
+  it('lists SEC periodic filings for a calendar year in newest-first order', () => {
+    expect(listSecPeriodicFilings({
+      accessionNumber: ['other', 'quarterly', 'annual', 'older'],
+      filingDate: ['2026-08-27', '2026-08-26', '2026-02-25', '2025-11-01'],
+      reportDate: ['', '2026-07-26', '2025-12-31', '2025-09-30'],
+      form: ['8-K', '10-Q', '10-K', '10-Q'],
+      primaryDocument: ['other.htm', 'quarterly.htm', 'annual.htm', 'older.htm'],
+    }, 2026)).toEqual([
+      {
+        accessionNumber: 'quarterly',
+        filingDate: '2026-08-26',
+        reportDate: '2026-07-26',
+        form: '10-Q',
+        primaryDocument: 'quarterly.htm',
+      },
+      {
+        accessionNumber: 'annual',
+        filingDate: '2026-02-25',
+        reportDate: '2025-12-31',
+        form: '10-K',
+        primaryDocument: 'annual.htm',
+      },
+    ]);
   });
 
   it('uses the newest period end across annual and quarterly data', () => {

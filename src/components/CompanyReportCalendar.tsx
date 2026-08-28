@@ -62,6 +62,11 @@ export default function CompanyReportCalendar() {
   const monthEvents = companyReportEvents.filter(
     (event) => event.publishedAt.startsWith(selectedMonth),
   );
+  const selectableMonths = useMemo(() => {
+    const months = new Set(companyReportEvents.map((event) => event.publishedAt.slice(0, 7)));
+    months.add(selectedMonth);
+    return [...months].sort();
+  }, [selectedMonth]);
   const [year, month] = selectedMonth.split('-').map(Number);
 
   return (
@@ -71,30 +76,50 @@ export default function CompanyReportCalendar() {
           <strong>{year} 年 {month} 月</strong>
           <span>{monthEvents.length} 项官方披露或确认日程</span>
         </div>
-        <div className={styles.monthControls}>
-          <button
-            type="button"
-            aria-label="上个月"
-            title="上个月"
-            onClick={() => setSelectedMonth((current) => moveMonth(current, -1))}
+        <div className={styles.calendarActions}>
+          <select
+            className={styles.monthSelect}
+            aria-label="选择财报月份"
+            value={selectedMonth}
+            onChange={(event) => setSelectedMonth(event.target.value)}
           >
-            ‹
-          </button>
-          <button
-            type="button"
-            className={selectedMonth === initialMonth ? styles.currentMonthActive : ''}
-            onClick={() => setSelectedMonth(initialMonth)}
-          >
-            本月
-          </button>
-          <button
-            type="button"
-            aria-label="下个月"
-            title="下个月"
-            onClick={() => setSelectedMonth((current) => moveMonth(current, 1))}
-          >
-            ›
-          </button>
+            {selectableMonths.map((value) => {
+              const [optionYear, optionMonth] = value.split('-').map(Number);
+              const count = companyReportEvents.filter(
+                (event) => event.publishedAt.startsWith(value),
+              ).length;
+              return (
+                <option key={value} value={value}>
+                  {optionYear} 年 {optionMonth} 月{count > 0 ? ` · ${count}` : ''}
+                </option>
+              );
+            })}
+          </select>
+          <div className={styles.monthControls}>
+            <button
+              type="button"
+              aria-label="上个月"
+              title="上个月"
+              onClick={() => setSelectedMonth((current) => moveMonth(current, -1))}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              className={selectedMonth === initialMonth ? styles.currentMonthActive : ''}
+              onClick={() => setSelectedMonth(initialMonth)}
+            >
+              本月
+            </button>
+            <button
+              type="button"
+              aria-label="下个月"
+              title="下个月"
+              onClick={() => setSelectedMonth((current) => moveMonth(current, 1))}
+            >
+              ›
+            </button>
+          </div>
         </div>
       </header>
 
@@ -164,7 +189,7 @@ export default function CompanyReportCalendar() {
       </div>
 
       <p className={styles.calendarNote}>
-        * 日历只收录已披露报告和公司、监管机构或交易所正式确认的日期；第三方预测日期不作为确定日程展示。
+        * 日历累计收录当年已核验的正式披露和官方确认日程，不使用第三方预测日期，也不代表全部公司披露清单。
       </p>
     </section>
   );

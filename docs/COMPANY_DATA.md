@@ -26,6 +26,12 @@
    npm run data:companies:draft -- --ticker=CSCO
    ```
 
+   日常维护优先使用批量增量模式，一次检查全部 SEC 公司，只为确有新申报的公司生成候选：
+
+   ```bash
+   npm run data:companies:draft -- --all-updates
+   ```
+
    可通过 `SEC_USER_AGENT` 设置符合 SEC 要求的联系标识。工具读取最新 10-Q/10-K 与 Company Facts，筛选直接季度或完整年度事实，只向标准输出写 JSON，绝不会修改正式数据。8-K、6-K、非标准 XBRL 标签、累计口径和重述仍需回到原始报告人工核验。
 
 3. 更新对应的 `src/data/companies/<company>.ts`，并保存最新报告期间、披露日期和原始链接。录入后执行：
@@ -35,6 +41,14 @@
    npm run test:unit
    npm run build
    ```
+
+4. 公司数据核验通过后，同步当年 SEC 正式申报日历：
+
+   ```bash
+   npm run data:companies:calendar -- --year=2026 --write
+   ```
+
+   命令只为离线数据中已经存在的报告期间生成事件；如出现 `pending`，应先完成财报数据更新，不能只把申报日期写进日历。
 
 ## 财报日历
 
@@ -50,4 +64,4 @@
 - 公司投资者关系财务日历适合补充其他市场的正式确认日期。
 - [Alpha Vantage](https://www.alphavantage.co/documentation/#earnings-calendar) 和 [Finnhub](https://finnhub.io/docs/api/earnings-calendar) 提供财报日历接口，但需要令牌，且未来日期包含预期数据。它们可用于维护时发现候选，不作为页面运行时依赖，也不能直接标记为官方确认。
 
-正式事件维护在 `src/data/companyReportCalendar.ts`。没有原始来源链接的预测日期不进入日历，避免用户把估计时间误认为公司公告。
+当年 SEC 历史事件由维护命令生成到 `src/data/companyReportCalendar.sec.ts`；非美市场已核验报告、最新报告和未来正式日程在 `src/data/companyReportCalendar.ts` 合并并按公司与报告期间去重。日历允许快速切换已有事件月份，但不是全部上市公司的穷举披露清单。没有原始来源链接的预测日期不进入日历，避免用户把估计时间误认为公司公告。

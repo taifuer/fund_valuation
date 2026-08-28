@@ -23,7 +23,21 @@ describe('company report calendar', () => {
 
   it('keeps future events limited to explicitly confirmed announcements', () => {
     const scheduled = companyReportEvents.filter((event) => event.status === 'scheduled');
-    expect(scheduled.map((event) => event.companyId).sort()).toEqual(['byd', 'meituan']);
+    expect(scheduled).toEqual([]);
     expect(scheduled.every((event) => event.sourceUrl.includes('hkexnews.hk'))).toBe(true);
+  });
+
+  it('keeps prior current-year disclosures and removes duplicate report periods', () => {
+    const currentYearReports = companyReportEvents.filter(
+      (event) => event.status === 'reported' && event.publishedAt.startsWith('2026-'),
+    );
+    const uniqueReports = new Set(
+      currentYearReports.map((event) => `${event.companyId}:${event.period}`),
+    );
+
+    expect(currentYearReports.length).toBeGreaterThan(50);
+    expect(uniqueReports.size).toBe(currentYearReports.length);
+    expect(currentYearReports.some((event) => event.publishedAt.startsWith('2026-01'))).toBe(true);
+    expect(currentYearReports.some((event) => event.publishedAt.startsWith('2026-08'))).toBe(true);
   });
 });

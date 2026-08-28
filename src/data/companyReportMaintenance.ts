@@ -110,15 +110,32 @@ export function assessCompanyReportFreshness(
 export function latestSecPeriodicFiling(
   filings: SecRecentFilings,
 ): SecPeriodicFiling | undefined {
-  const index = filings.form.findIndex((form) => form === '10-Q' || form === '10-K');
-  if (index < 0) return undefined;
-  return {
-    accessionNumber: filings.accessionNumber[index],
-    filingDate: filings.filingDate[index],
-    reportDate: filings.reportDate[index],
-    form: filings.form[index] as SecPeriodicFiling['form'],
-    primaryDocument: filings.primaryDocument[index],
-  };
+  return listSecPeriodicFilings(filings)[0];
+}
+
+export function listSecPeriodicFilings(
+  filings: SecRecentFilings,
+  filingYear?: number,
+): SecPeriodicFiling[] {
+  return filings.form.flatMap((form, index) => {
+    if (form !== '10-Q' && form !== '10-K') return [];
+    const filingDate = filings.filingDate[index];
+    const accessionNumber = filings.accessionNumber[index];
+    const reportDate = filings.reportDate[index];
+    const primaryDocument = filings.primaryDocument[index];
+    if (!filingDate || !accessionNumber || !reportDate || !primaryDocument) return [];
+    if (filingYear != null && !filingDate.startsWith(`${filingYear}-`)) return [];
+    return [{
+      accessionNumber,
+      filingDate,
+      reportDate,
+      form: form as SecPeriodicFiling['form'],
+      primaryDocument,
+    }];
+  }).sort((left, right) => (
+    right.filingDate.localeCompare(left.filingDate)
+      || right.accessionNumber.localeCompare(left.accessionNumber)
+  ));
 }
 
 export function latestCompanyPeriodEnd(company: CompanyFundamentals): string {

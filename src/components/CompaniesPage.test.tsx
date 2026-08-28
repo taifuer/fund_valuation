@@ -46,8 +46,13 @@ describe('CompaniesPage', () => {
     expect(screen.getByRole('heading', { name: '财报日历' })).toBeInTheDocument();
     expect(screen.getByLabelText('财报日历')).toBeInTheDocument();
     expect(screen.getByRole('grid', { name: /财报日历/ })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '选择财报月份' })).toBeInTheDocument();
     expect(screen.getByText('当月事项')).toBeInTheDocument();
-    expect(screen.getAllByText('已确认').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('已披露').length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByRole('combobox', { name: '选择财报月份' }), {
+      target: { value: '2026-01' },
+    });
+    expect(screen.getByRole('grid', { name: '2026 年 1 月财报日历' })).toBeInTheDocument();
     expect(window.location.pathname).toBe('/companies');
     expect(window.location.search).toContain('panel=calendar');
   });

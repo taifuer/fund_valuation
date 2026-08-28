@@ -10,6 +10,12 @@ export default defineCompany({
   "currency": "CNY",
   "sourceName": "美团投资者关系",
   "sourceUrl": "https://www.meituan.com/en-US/investor/results",
+  "latestReport": {
+    "period": "FY2026 Q2",
+    "publishedAt": "2026-08-28",
+    "sourceLabel": "美团 2026 年第二季度及半年业绩",
+    "sourceUrl": "https://media-meituan.todayir.com/202608281731561718399005_en.pdf"
+  },
   "methodologyNote": "FY2025 收入及可比季度采用公司最新披露的持续经营口径；员工人数为期末全职员工约数。",
   "employeeScope": "期末全职员工",
   "metricMarkers": [
@@ -61,7 +67,8 @@ export default defineCompany({
       "FY2025 Q2": 6260.087,
       "FY2025 Q3": 6936.845,
       "FY2025 Q4": 7029.303,
-      "FY2026 Q1": 7043.098
+      "FY2026 Q1": 7043.098,
+      "FY2026 Q2": 7670.045
     }
   },
   "annual": [
@@ -320,6 +327,12 @@ export default defineCompany({
       "2026-03-31",
       91038.906,
       -6469.811
+    ],
+    [
+      "FY2026 Q2",
+      "2026-06-30",
+      104643.044,
+      2691.166
     ]
   ]
 });

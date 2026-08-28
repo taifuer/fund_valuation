@@ -10,6 +10,12 @@ export default defineCompany({
   "currency": "CNY",
   "sourceName": "比亚迪投资者关系",
   "sourceUrl": "https://www.bydglobal.com/cn/InvestorNotice.html",
+  "latestReport": {
+    "period": "FY2026 Q2",
+    "publishedAt": "2026-08-28",
+    "sourceLabel": "比亚迪 2026 年中期业绩",
+    "sourceUrl": "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0828/2026082801633.pdf"
+  },
   "methodologyNote": "营业利润和研发费用采用合并利润表费用化口径；员工规模变化需结合产能扩张和组织效率调整观察。",
   "employeeScope": "年末在职员工",
   "employeeMarkers": [
@@ -74,7 +80,8 @@ export default defineCompany({
       "FY2025 Q2": 15373.36,
       "FY2025 Q3": 14152.081,
       "FY2025 Q4": 14229.658,
-      "FY2026 Q1": 11343.566
+      "FY2026 Q1": 11343.566,
+      "FY2026 Q2": 11963.586
     }
   },
   "annual": [
@@ -333,6 +340,12 @@ export default defineCompany({
       "2026-03-31",
       150225.314,
       4695.889
+    ],
+    [
+      "FY2026 Q2",
+      "2026-06-30",
+      194590.107,
+      10047.689
     ]
   ]
 });

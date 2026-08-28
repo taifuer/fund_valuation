@@ -224,6 +224,30 @@ describe('company fundamentals offline dataset', () => {
       .toBe(166_486_000);
   });
 
+  it('keeps the latest Meituan and BYD quarter reconciled to their original reports', () => {
+    const meituan = companyFundamentalsDataset.companies.find(
+      (company) => company.id === 'meituan',
+    )!;
+    const meituanQuarter = meituan.quarterly.find((point) => point.period === 'FY2026 Q2')!;
+    expect(meituanQuarter).toMatchObject({
+      periodEnd: '2026-06-30',
+      revenue: 104_643_044_000,
+      operatingProfit: 2_691_166_000,
+      researchAndDevelopment: 7_670_045_000,
+    });
+    expect(meituan.latestReport?.publishedAt).toBe('2026-08-28');
+
+    const byd = companyFundamentalsDataset.companies.find((company) => company.id === 'byd')!;
+    const bydQuarter = byd.quarterly.find((point) => point.period === 'FY2026 Q2')!;
+    expect(bydQuarter).toMatchObject({
+      periodEnd: '2026-06-30',
+      revenue: 194_590_107_000,
+      operatingProfit: 10_047_689_000,
+      researchAndDevelopment: 11_963_586_000,
+    });
+    expect(byd.latestReport?.sourceUrl).toContain('hkexnews.hk');
+  });
+
   it('retains official exact and approximate employee disclosures with explicit scope', () => {
     const annualEmployees = (id: string, period: string) => companyFundamentalsDataset.companies
       .find((company) => company.id === id)!

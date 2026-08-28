@@ -1,33 +1,30 @@
 import type { CompanyReportEvent } from '../types';
 import { companies } from './companies';
+import { secCompanyReportEvents } from './companyReportCalendar.sec';
 
-const confirmedScheduledReports: CompanyReportEvent[] = [
-  {
-    companyId: 'meituan',
-    period: 'FY2026 Q2',
-    publishedAt: '2026-08-28',
-    status: 'scheduled',
-    sourceLabel: '美团董事会会议公告',
-    sourceUrl: 'https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0818/2026081800498.pdf',
-  },
-  {
-    companyId: 'byd',
-    period: 'FY2026 H1',
-    publishedAt: '2026-08-28',
-    status: 'scheduled',
-    sourceLabel: '比亚迪董事会会议公告',
-    sourceUrl: 'https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0813/2026081300621.pdf',
-  },
-];
+const confirmedScheduledReports: CompanyReportEvent[] = [];
 
-export const companyReportEvents: CompanyReportEvent[] = [
-  ...companies.flatMap((company) => company.latestReport ? [{
+function reportKey(event: CompanyReportEvent): string {
+  return `${event.companyId}:${event.period}`;
+}
+
+const reportsByKey = new Map<string, CompanyReportEvent>();
+
+secCompanyReportEvents.forEach((event) => reportsByKey.set(reportKey(event), event));
+companies.forEach((company) => {
+  if (!company.latestReport) return;
+  const event: CompanyReportEvent = {
     companyId: company.id,
     ...company.latestReport,
-    status: 'reported' as const,
-  }] : []),
-  ...confirmedScheduledReports,
-].sort((left, right) => (
+    status: 'reported',
+  };
+  reportsByKey.set(reportKey(event), event);
+});
+confirmedScheduledReports.forEach((event) => {
+  if (!reportsByKey.has(reportKey(event))) reportsByKey.set(reportKey(event), event);
+});
+
+export const companyReportEvents: CompanyReportEvent[] = [...reportsByKey.values()].sort((left, right) => (
   left.publishedAt.localeCompare(right.publishedAt)
     || left.companyId.localeCompare(right.companyId)
 ));
