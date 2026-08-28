@@ -16,15 +16,20 @@ import huawei from './huawei';
 import foxconn from './foxconn';
 import visa from './visa';
 import walmart from './walmart';
+import ibm from './ibm';
 import microsoft from './microsoft';
 import alphabet from './alphabet';
+import salesforce from './crm';
+import adobe from './adbe';
 import nvidia from './nvidia';
 import amd from './amd';
 import intel from './intel';
+import texasInstruments from './txn';
 import cisco from './cisco';
 import qualcomm from './qualcomm';
 import apple from './apple';
 import tesla from './tesla';
+import johnsonAndJohnson from './jnj';
 import lilly from './lilly';
 import merck from './merck';
 import pfizer from './pfizer';
@@ -63,15 +68,20 @@ export const companies = [
   foxconn,
   visa,
   walmart,
+  ibm,
   microsoft,
   alphabet,
+  salesforce,
+  adobe,
   nvidia,
   amd,
   intel,
+  texasInstruments,
   cisco,
   qualcomm,
   apple,
   tesla,
+  johnsonAndJohnson,
   lilly,
   merck,
   pfizer,

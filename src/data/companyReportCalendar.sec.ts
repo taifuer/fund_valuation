@@ -5,6 +5,14 @@ import type { CompanyReportEvent } from '../types';
 
 export const secCompanyReportEvents: CompanyReportEvent[] = [
   {
+    "companyId": "adbe",
+    "period": "FY2025",
+    "publishedAt": "2026-01-15",
+    "status": "reported",
+    "sourceLabel": "Adobe FY2025 · SEC 10-K",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634326000003/adbe-20251128.htm"
+  },
+  {
     "companyId": "intel",
     "period": "FY2025",
     "publishedAt": "2026-01-23",
@@ -85,6 +93,22 @@ export const secCompanyReportEvents: CompanyReportEvent[] = [
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1018724/000101872426000004/amzn-20251231.htm"
   },
   {
+    "companyId": "txn",
+    "period": "FY2025",
+    "publishedAt": "2026-02-06",
+    "status": "reported",
+    "sourceLabel": "德州仪器 FY2025 · SEC 10-K",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/97476/000009747626000059/txn-20251231.htm"
+  },
+  {
+    "companyId": "jnj",
+    "period": "FY2025",
+    "publishedAt": "2026-02-11",
+    "status": "reported",
+    "sourceLabel": "强生 FY2025 · SEC 10-K",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/200406/000020040626000016/jnj-20251228.htm"
+  },
+  {
     "companyId": "lilly",
     "period": "FY2025",
     "publishedAt": "2026-02-12",
@@ -117,6 +141,14 @@ export const secCompanyReportEvents: CompanyReportEvent[] = [
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/6951/000162828026009694/amat-20260125.htm"
   },
   {
+    "companyId": "ibm",
+    "period": "FY2025",
+    "publishedAt": "2026-02-24",
+    "status": "reported",
+    "sourceLabel": "IBM FY2025 · SEC 10-K",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/51143/000005114326000010/ibm-20251231.htm"
+  },
+  {
     "companyId": "merck",
     "period": "FY2025",
     "publishedAt": "2026-02-24",
@@ -139,6 +171,14 @@ export const secCompanyReportEvents: CompanyReportEvent[] = [
     "status": "reported",
     "sourceLabel": "辉瑞 FY2025 · SEC 10-K",
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/78003/000007800326000026/pfe-20251231.htm"
+  },
+  {
+    "companyId": "crm",
+    "period": "FY2026",
+    "publishedAt": "2026-03-02",
+    "status": "reported",
+    "sourceLabel": "Salesforce FY2026 · SEC 10-K",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1108524/000110852426000060/crm-20260131.htm"
   },
   {
     "companyId": "broadcom",
@@ -173,6 +213,30 @@ export const secCompanyReportEvents: CompanyReportEvent[] = [
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312526000006/mu-20260226.htm"
   },
   {
+    "companyId": "adbe",
+    "period": "FY2026 Q1",
+    "publishedAt": "2026-03-25",
+    "status": "reported",
+    "sourceLabel": "Adobe FY2026 Q1 · SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634326000056/adbe-20260227.htm"
+  },
+  {
+    "companyId": "jnj",
+    "period": "FY2026 Q1",
+    "publishedAt": "2026-04-22",
+    "status": "reported",
+    "sourceLabel": "强生 FY2026 Q1 · SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/200406/000020040626000087/jnj-20260329.htm"
+  },
+  {
+    "companyId": "ibm",
+    "period": "FY2026 Q1",
+    "publishedAt": "2026-04-23",
+    "status": "reported",
+    "sourceLabel": "IBM FY2026 Q1 · SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/51143/000005114326000038/ibm-20260331.htm"
+  },
+  {
     "companyId": "tesla",
     "period": "FY2026 Q1",
     "publishedAt": "2026-04-23",
@@ -187,6 +251,14 @@ export const secCompanyReportEvents: CompanyReportEvent[] = [
     "status": "reported",
     "sourceLabel": "英特尔 FY2026 Q1 · SEC 10-Q",
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000079/intc-20260328.htm"
+  },
+  {
+    "companyId": "txn",
+    "period": "FY2026 Q1",
+    "publishedAt": "2026-04-24",
+    "status": "reported",
+    "sourceLabel": "德州仪器 FY2026 Q1 · SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/97476/000009747626000101/txn-20260331.htm"
   },
   {
     "companyId": "microsoft",
@@ -309,6 +381,14 @@ export const secCompanyReportEvents: CompanyReportEvent[] = [
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/6951/000162828026037227/amat-20260426.htm"
   },
   {
+    "companyId": "crm",
+    "period": "FY2027 Q1",
+    "publishedAt": "2026-05-28",
+    "status": "reported",
+    "sourceLabel": "Salesforce FY2027 Q1 · SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1108524/000110852426000127/crm-20260430.htm"
+  },
+  {
     "companyId": "walmart",
     "period": "FY2027 Q1",
     "publishedAt": "2026-05-29",
@@ -323,6 +403,14 @@ export const secCompanyReportEvents: CompanyReportEvent[] = [
     "status": "reported",
     "sourceLabel": "博通 FY2026 Q2 · SEC 10-Q",
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1730168/000173016826000054/avgo-20260503.htm"
+  },
+  {
+    "companyId": "adbe",
+    "period": "FY2026 Q2",
+    "publishedAt": "2026-06-15",
+    "status": "reported",
+    "sourceLabel": "Adobe FY2026 Q2 · SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634326000112/adbe-20260529.htm"
   },
   {
     "companyId": "oracle",
@@ -349,6 +437,22 @@ export const secCompanyReportEvents: CompanyReportEvent[] = [
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000071/goog-20260630.htm"
   },
   {
+    "companyId": "ibm",
+    "period": "FY2026 Q2",
+    "publishedAt": "2026-07-23",
+    "status": "reported",
+    "sourceLabel": "IBM FY2026 Q2 · SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/51143/000005114326000078/ibm-20260630.htm"
+  },
+  {
+    "companyId": "jnj",
+    "period": "FY2026 Q2",
+    "publishedAt": "2026-07-23",
+    "status": "reported",
+    "sourceLabel": "强生 FY2026 Q2 · SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/200406/000020040626000153/jnj-20260628.htm"
+  },
+  {
     "companyId": "tesla",
     "period": "FY2026 Q2",
     "publishedAt": "2026-07-23",
@@ -363,6 +467,14 @@ export const secCompanyReportEvents: CompanyReportEvent[] = [
     "status": "reported",
     "sourceLabel": "英特尔 FY2026 Q2 · SEC 10-Q",
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000157/intc-20260627.htm"
+  },
+  {
+    "companyId": "txn",
+    "period": "FY2026 Q2",
+    "publishedAt": "2026-07-24",
+    "status": "reported",
+    "sourceLabel": "德州仪器 FY2026 Q2 · SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/97476/000009747626000152/txn-20260630.htm"
   },
   {
     "companyId": "microsoft",
@@ -467,5 +579,13 @@ export const secCompanyReportEvents: CompanyReportEvent[] = [
     "status": "reported",
     "sourceLabel": "英伟达 FY2027 Q2 · SEC 10-Q",
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000075/nvda-20260726.htm"
+  },
+  {
+    "companyId": "crm",
+    "period": "FY2027 Q2",
+    "publishedAt": "2026-08-27",
+    "status": "reported",
+    "sourceLabel": "Salesforce FY2027 Q2 · SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1108524/000110852426000190/crm-20260731.htm"
   }
 ];

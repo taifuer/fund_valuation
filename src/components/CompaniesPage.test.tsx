@@ -15,9 +15,9 @@ describe('CompaniesPage', () => {
     fireEvent.click(within(screen.getByLabelText('地区筛选')).getByRole('button', { name: /全部/ }));
     const companyOptions = screen.getByRole('group', { name: '全部公司' });
     const companyButtons = within(companyOptions).getAllByRole('button');
-    expect(companyButtons).toHaveLength(45);
+    expect(companyButtons).toHaveLength(50);
     expect(companyButtons.slice(0, 7).map((button) => button.textContent)).toEqual([
-      'AMD', '阿里巴巴', '谷歌', '亚马逊', '苹果', '应用材料', 'Arm',
+      'Adobe', 'AMD', '阿里巴巴', '谷歌', '亚马逊', '苹果', '应用材料',
     ]);
     expect(within(companyOptions).queryByText('AAPL')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '阿里巴巴' })).toBeInTheDocument();
@@ -185,6 +185,19 @@ describe('CompaniesPage', () => {
       'href',
       'https://www.smics.com/en/site/company_financialSummary',
     );
+  });
+
+  it('uses the disclosed profit label when consolidated operating profit is unavailable', () => {
+    window.history.replaceState({}, '', '/companies?company=ibm');
+    render(<CompaniesPage />);
+
+    expect(screen.getByRole('heading', { name: 'IBM' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '税前利润' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '税前利润率' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '营业利润' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '税前利润' }));
+    expect(screen.getByRole('img', { name: 'IBM税前利润趋势' })).toBeInTheDocument();
   });
 
   it('marks disclosed employee-scope changes and keeps exact annual headcount', () => {

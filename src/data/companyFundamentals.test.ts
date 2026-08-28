@@ -26,15 +26,20 @@ const EXPECTED_IDS = [
   'foxconn',
   'visa',
   'walmart',
+  'ibm',
   'microsoft',
   'alphabet',
+  'crm',
+  'adbe',
   'nvidia',
   'amd',
   'intel',
+  'txn',
   'cisco',
   'qualcomm',
   'apple',
   'tesla',
+  'jnj',
   'lilly',
   'merck',
   'pfizer',
@@ -84,6 +89,11 @@ describe('company fundamentals offline dataset', () => {
     expect(ids).toContain('tcs');
     expect(ids).toContain('visa');
     expect(ids).toContain('walmart');
+    expect(ids).toContain('ibm');
+    expect(ids).toContain('crm');
+    expect(ids).toContain('adbe');
+    expect(ids).toContain('txn');
+    expect(ids).toContain('jnj');
     expect(ids).toContain('siemens');
     expect(ids).not.toContain('sap');
   });
@@ -306,15 +316,20 @@ describe('company fundamentals offline dataset', () => {
       foxconn: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
       visa: { firstPeriod: 'FY2018 Q1', minimumPoints: 35 },
       walmart: { firstPeriod: 'FY2019 Q1', minimumPoints: 34 },
+      ibm: { firstPeriod: 'FY2021 Q1', minimumPoints: 22 },
       microsoft: { firstPeriod: 'FY2019 Q1', minimumPoints: 32 },
       alphabet: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      crm: { firstPeriod: 'FY2018 Q1', minimumPoints: 38 },
+      adbe: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
       nvidia: { firstPeriod: 'FY2019 Q1', minimumPoints: 33 },
       amd: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
       intel: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      txn: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
       cisco: { firstPeriod: 'FY2018 Q1', minimumPoints: 36 },
       qualcomm: { firstPeriod: 'FY2018 Q1', minimumPoints: 35 },
       apple: { firstPeriod: 'FY2018 Q1', minimumPoints: 35 },
       tesla: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      jnj: { firstPeriod: 'FY2023 Q1', minimumPoints: 14 },
       lilly: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
       merck: { firstPeriod: 'FY2020 Q1', minimumPoints: 26 },
       pfizer: { firstPeriod: 'FY2020 Q1', minimumPoints: 26 },
@@ -435,6 +450,33 @@ describe('company fundamentals offline dataset', () => {
       researchAndDevelopment: 2_431_000_000,
     });
     expect(cisco.latestReport?.publishedAt).toBe('2026-08-12');
+  });
+
+  it('keeps the five added companies on verified report-specific profit scopes', () => {
+    const company = (id: string) => companyFundamentalsDataset.companies
+      .find((candidate) => candidate.id === id)!;
+
+    const salesforce = company('crm');
+    const ibm = company('ibm');
+
+    expect(salesforce.quarterly[salesforce.quarterly.length - 1]).toMatchObject({
+      period: 'FY2027 Q2',
+      periodEnd: '2026-07-31',
+      revenue: 11_345_000_000,
+      operatingProfit: 2_331_000_000,
+      researchAndDevelopment: 1_687_000_000,
+    });
+    expect(ibm.quarterly[ibm.quarterly.length - 1]).toMatchObject({
+      period: 'FY2026 Q2',
+      revenue: 17_162_000_000,
+      operatingProfit: 2_479_000_000,
+      researchAndDevelopment: 2_311_000_000,
+    });
+    expect(company('ibm').profitMetricLabel).toBe('税前利润');
+    expect(company('jnj').profitMetricLabel).toBe('税前利润');
+    expect(company('jnj').metricMarkers?.some((marker) => marker.period === 'FY2025 Q1')).toBe(true);
+    expect(company('txn').quarterly).toHaveLength(34);
+    expect(company('adbe').quarterly).toHaveLength(34);
   });
 
   it('derives half-year values only from complete quarter pairs', () => {

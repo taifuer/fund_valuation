@@ -17,11 +17,11 @@ export const PARTIAL_RESEARCH_DISCLOSURE_PERIODS: Readonly<Record<string, readon
 };
 
 export const companyFundamentalsDataset: CompanyFundamentalsDataset = {
-  version: 12,
+  version: 13,
   updatedAt: '2026-08-28',
-  coverage: '45 家公司 · 年度最长 9 年 · 季度最长 36 期',
+  coverage: '50 家公司 · 年度最长 9 年 · 季度最长 38 期',
   methodology: [
-    '营业收入与营业利润保留公司原始披露币种。',
+    '营业收入与利润指标保留公司原始披露币种及报表口径，具体利润口径以页面标签为准。',
     '研发费用仅展示公司明确单列披露的费用；未单列披露的期间不推算、不补齐。',
     '季度同比匹配上一财年同季度；半年数据仅由完整的两个季度相加生成。',
     '历史序列以官方披露为主，监管机构、交易所或证券行情结构化接口仅用于补齐与交叉校验。',

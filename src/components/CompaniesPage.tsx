@@ -47,6 +47,13 @@ const METRICS: Array<{ key: MetricKey; label: string }> = [
   { key: 'employees', label: '员工人数' },
 ];
 
+function metricLabel(company: CompanyFundamentals, metric: MetricKey) {
+  const profitLabel = company.profitMetricLabel ?? '营业利润';
+  if (metric === 'operatingProfit') return profitLabel;
+  if (metric === 'margin') return `${profitLabel}率`;
+  return METRICS.find((item) => item.key === metric)?.label ?? '';
+}
+
 const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: '$',
   EUR: '€',
@@ -362,7 +369,7 @@ function TrendChart({ company, points, metric, mode }: TrendChartProps) {
           viewBox={`0 0 ${width} ${height}`}
           width={width}
           role="img"
-          aria-label={`${company.name}${METRICS.find((item) => item.key === metric)?.label}${mode === 'yoy' ? '同比' : ''}趋势`}
+          aria-label={`${company.name}${metricLabel(company, metric)}${mode === 'yoy' ? '同比' : ''}趋势`}
         >
           {ticks.map((tick) => (
             <g key={tick.y}>
@@ -607,7 +614,7 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
         <div>
           <h2>{pageMode === 'trend' ? '公司经营趋势' : '财报日历'}</h2>
           <p>{pageMode === 'trend'
-            ? '聚焦营业收入、营业利润、研发费用与员工人数的长期变化'
+            ? '聚焦营业收入、利润、研发费用与员工人数的长期变化'
             : '集中查看已披露报告与官方确认的财报日期'}</p>
         </div>
         <div className={styles.segmented} aria-label="公司页面视图">
@@ -734,12 +741,12 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
               <em className={changeClass(revenueChange.value)}>同比 {revenueChange.label}</em>
             </div>
             <div>
-              <span>营业利润</span>
+              <span>{metricLabel(selectedCompany, 'operatingProfit')}</span>
               <strong>{formatMoney(latestPoint.operatingProfit, selectedCompany.currency)}</strong>
               <em className={changeClass(profitChange.value)}>同比 {profitChange.label}</em>
             </div>
             <div>
-              <span>营业利润率</span>
+              <span>{metricLabel(selectedCompany, 'margin')}</span>
               <strong>{formatPercent(operatingMargin(latestPoint))}</strong>
               <em>{compactDate(latestPoint.periodEnd)}</em>
             </div>
@@ -763,7 +770,7 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
                   aria-pressed={effectiveMetric === item.key}
                   onClick={() => setMetric(item.key)}
                 >
-                  {item.label}
+                  {metricLabel(selectedCompany, item.key)}
                 </button>
               ))}
             </div>
@@ -838,9 +845,9 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
                     <th>期间</th>
                     <th>截止日期</th>
                     <th>营业收入</th>
-                    <th>营业利润</th>
+                    <th>{metricLabel(selectedCompany, 'operatingProfit')}</th>
                     <th>研发费用</th>
-                    <th>利润率</th>
+                    <th>{metricLabel(selectedCompany, 'margin')}</th>
                     <th>员工人数</th>
                   </tr>
                 </thead>
