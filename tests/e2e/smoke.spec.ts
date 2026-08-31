@@ -252,8 +252,15 @@ test('overview fund cards open the matching fund detail', async ({ page }) => {
 
   await expect(page).toHaveURL(/\/funds\/004877$/);
   await expect(page.locator('#fund-004877 [aria-expanded="true"]')).toBeVisible();
-  await expect(page.locator('#fund-004877')).toContainText('医疗健康');
   await expect(page.locator('#fund-004877')).not.toContainText('仅官方净值');
+});
+
+test('fund page keeps one complete ranking without a strategy filter', async ({ page }) => {
+  await page.goto('/funds');
+
+  await expect(page.getByRole('button', { name: /QDII 主动基金 · 18只/ })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: '基金策略筛选' })).toHaveCount(0);
+  await expect(page.locator('#fund-004877')).toContainText('汇添富全球医疗');
 });
 
 test('mobile return and risk tables keep every column in a horizontal scroller', async ({ page }, testInfo) => {

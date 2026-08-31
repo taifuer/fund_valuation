@@ -25,7 +25,6 @@ export interface Holding {
   quoteSupported?: boolean;
 }
 
-export type FundStrategy = 'technology' | 'globalGrowth' | 'manufacturing' | 'healthcare' | 'emergingMarkets';
 export type FundEstimateMode = 'holdings' | 'official';
 
 export interface FundBenchmarkComponent {
@@ -51,7 +50,6 @@ export interface Fund {
   symbol: string;
   name: string;
   code: string; // Chinese fund code for NAV fetch
-  strategy?: FundStrategy;
   estimateMode?: FundEstimateMode;
   benchmark?: FundBenchmark;
   profile?: {

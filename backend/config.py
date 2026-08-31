@@ -23,7 +23,6 @@ HISTORY_SOURCES = {
     "naver-korea",
     "coinmetrics-crypto",
 }
-FUND_STRATEGIES = {"technology", "globalGrowth", "manufacturing", "healthcare", "emergingMarkets"}
 FUND_ESTIMATE_MODES = {"holdings", "official"}
 FUND_BENCHMARK_COMPONENT_KINDS = {"market", "stable"}
 
@@ -124,9 +123,6 @@ def load_universe() -> dict[str, Any]:
             if not FUND_CODE_RE.fullmatch(code) or code in fund_codes:
                 raise RuntimeError("Invalid or duplicate fund code in universe configuration")
             fund_codes.add(code)
-            strategy = str(fund.get("strategy") or "")
-            if strategy and strategy not in FUND_STRATEGIES:
-                raise RuntimeError(f"Invalid strategy for fund {code}")
             estimate_mode = str(fund.get("estimateMode") or "holdings")
             if estimate_mode not in FUND_ESTIMATE_MODES:
                 raise RuntimeError(f"Invalid estimate mode for fund {code}")

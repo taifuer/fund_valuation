@@ -91,17 +91,6 @@
   margin-left: 4px;
 }
 
-.strategyTag {
-  background: #f1f5f9;
-  border-radius: 4px;
-  color: #64748b;
-  flex: 0 0 auto;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 17px;
-  padding: 0 5px;
-}
-
 .removeButton {
   align-items: center;
   background: rgba(255, 255, 255, 0.86);

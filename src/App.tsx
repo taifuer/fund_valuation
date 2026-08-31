@@ -8,7 +8,7 @@ import {
   storeFundManagementToken,
   type FundManagementMode,
 } from './fundManagementAuth';
-import { FUNDS, FUND_STRATEGY_LABELS } from './constants';
+import { FUNDS } from './constants';
 import {
   rankFundEstimates,
   type FundSortDirection,
@@ -22,7 +22,7 @@ import {
   pageFromPathname,
   type PageKey,
 } from './routing';
-import type { Fund, FundNavData, FundStrategy } from './types';
+import type { Fund, FundNavData } from './types';
 import Header from './components/Header';
 import IndexCards from './components/IndexCards';
 import FundCard from './components/FundCard';
@@ -37,8 +37,6 @@ const FUND_SECTION_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_section';
 const FUND_SUMMARY_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_summary';
 const FUND_MANAGER_KEY = 'fund_valuation:managed_funds';
 const MAX_CUSTOM_FUNDS = 50;
-type FundStrategyFilter = 'all' | FundStrategy;
-const FUND_STRATEGY_OPTIONS = Object.entries(FUND_STRATEGY_LABELS) as Array<[FundStrategy, string]>;
 interface FundSummary {
   fund: Fund;
   nav: FundNavData | null;
@@ -267,7 +265,6 @@ export default function App() {
       : null;
   const [sortMode, setSortMode] = useState<FundSortMode>('preview');
   const [sortDirection, setSortDirection] = useState<FundSortDirection>('desc');
-  const [fundStrategy, setFundStrategy] = useState<FundStrategyFilter>('all');
   const [fundCollapsed, setFundCollapsed] = useState(() => readCollapsedFlag(FUND_SECTION_COLLAPSED_KEY));
   const [fundSummaryCollapsed, setFundSummaryCollapsed] = useState(() => readCollapsedFlag(FUND_SUMMARY_COLLAPSED_KEY));
   const [fundSearchQuery, setFundSearchQuery] = useState('');
@@ -345,14 +342,9 @@ export default function App() {
     };
   }, [fundManagerOpen]);
 
-  const visibleFundEstimates = useMemo(() => (
-    fundStrategy === 'all'
-      ? fundEstimates
-      : fundEstimates.filter((estimate) => estimate.fund.strategy === fundStrategy)
-  ), [fundEstimates, fundStrategy]);
   const sortedEstimates = useMemo(() => (
-    rankFundEstimates(visibleFundEstimates, sortMode, sortDirection)
-  ), [sortDirection, sortMode, visibleFundEstimates]);
+    rankFundEstimates(fundEstimates, sortMode, sortDirection)
+  ), [fundEstimates, sortDirection, sortMode]);
 
   const sortLabel = sortMode === 'official'
     ? '按最新净值涨跌排序'
@@ -428,7 +420,6 @@ export default function App() {
       window.history.pushState({}, '', path);
     }
     pendingFundScrollRef.current = code;
-    setFundStrategy('all');
     setActivePage('funds');
     setExpandedCode(code);
   }
@@ -630,23 +621,12 @@ export default function App() {
                 <span className={styles.toggleIcon}>{fundCollapsed ? '+' : '-'}</span>
                 <span>QDII 主动基金</span>
                 <span className={styles.count}>
-                  {' · '}{fundStrategy === 'all' ? funds.length : `${sortedEstimates.length}/${funds.length}`}只
+                  {' · '}{funds.length}只
                   {fundCollapsed ? '' : ` · ${sortLabel}`}
                 </span>
               </button>
               {!fundCollapsed && (
                 <div className={styles.sortControls}>
-                  <select
-                    className={styles.strategySelect}
-                    aria-label="基金策略筛选"
-                    value={fundStrategy}
-                    onChange={(event) => setFundStrategy(event.target.value as FundStrategyFilter)}
-                  >
-                    <option value="all">全部策略</option>
-                    {FUND_STRATEGY_OPTIONS.map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </select>
                   <div className={styles.sortToggle} aria-label="基金排序方式">
                     <button
                       type="button"

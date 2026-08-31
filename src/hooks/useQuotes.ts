@@ -138,7 +138,7 @@ function normalizeFundFxRate(rate: FxRateData): FxRateData {
 function fundCacheKey(funds: Fund[]): string {
   return funds
     .map((fund) => (
-      `${fund.code}:${fund.name}:${fund.strategy ?? ''}:${fund.estimateMode ?? 'holdings'}:${fund.holdings.length}:${fund.profile ? '1' : '0'}`
+      `${fund.code}:${fund.name}:${fund.estimateMode ?? 'holdings'}:${fund.holdings.length}:${fund.profile ? '1' : '0'}`
     ))
     .join('|');
 }

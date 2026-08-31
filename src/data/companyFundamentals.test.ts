@@ -515,15 +515,32 @@ describe('company fundamentals offline dataset', () => {
     expect(huawei.annual).toHaveLength(8);
     expect(huawei.quarterly).toEqual([]);
     expect(halves).toEqual(huawei.halfYear);
-    expect(halves).toHaveLength(2);
-    expect(halves[1]).toMatchObject({
+    expect(halves.map((point) => point.period)).toEqual([
+      'FY2019 H1',
+      'FY2020 H1',
+      'FY2021 H1',
+      'FY2022 H1',
+      'FY2023 H1',
+      'FY2024 H1',
+      'FY2025 H1',
+      'FY2026 H1',
+    ]);
+    expect(halves[0]).toMatchObject({
+      period: 'FY2019 H1',
+      periodEnd: '2019-06-30',
+      employees: null,
+    });
+    expect(halves[7]).toMatchObject({
       period: 'FY2026 H1',
       periodEnd: '2026-06-30',
       employees: null,
     });
-    expect(halves[1].revenue).toBeCloseTo(467_819_096_000, 0);
-    expect(halves[1].operatingProfit).toBeCloseTo(32_771_344_000, 0);
-    expect(halves[1].researchAndDevelopment).toBeCloseTo(121_382_454_000, 0);
+    expect(halves[0].revenue).toBeCloseTo(396_538_490_000, 0);
+    expect(halves[0].operatingProfit).toBeCloseTo(43_543_180_000, 0);
+    expect(halves[0].researchAndDevelopment).toBeCloseTo(56_596_722_000, 0);
+    expect(halves[7].revenue).toBeCloseTo(467_819_096_000, 0);
+    expect(halves[7].operatingProfit).toBeCloseTo(32_771_344_000, 0);
+    expect(halves[7].researchAndDevelopment).toBeCloseTo(121_382_454_000, 0);
     expect(halves.every((point) => point.derived !== true)).toBe(true);
     expect(huawei.latestReport?.publishedAt).toBe('2026-08-31');
     expect(huawei.annual.every((point) => point.researchAndDevelopment != null)).toBe(true);

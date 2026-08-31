@@ -50,10 +50,9 @@ describe('market universe configuration', () => {
     });
   });
 
-  it('classifies every default fund and configures a composite healthcare benchmark', () => {
+  it('configures a composite healthcare benchmark', () => {
     const funds = universe.funds as Array<{
       code: string;
-      strategy?: string;
       estimateMode?: string;
       benchmark?: { id?: string; components?: unknown[] };
       holdings?: unknown[];
@@ -61,9 +60,7 @@ describe('market universe configuration', () => {
     const healthcare = funds.find((fund) => fund.code === '004877');
 
     expect(funds).toHaveLength(18);
-    expect(funds.every((fund) => Boolean(fund.strategy))).toBe(true);
     expect(healthcare).toMatchObject({
-      strategy: 'healthcare',
       benchmark: {
         id: 'global-healthcare-v1',
       },

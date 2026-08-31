@@ -6,7 +6,6 @@ import type {
   QuoteData,
 } from '../types';
 import type { FundEstimate } from '../hooks/useQuotes';
-import { FUND_STRATEGY_LABELS } from '../constants';
 import { quoteDisplayState, quoteDisplayTime, quoteMarketState } from '../displayStatus';
 import styles from './FundCard.module.css';
 
@@ -191,11 +190,9 @@ const FundCard = memo(function FundCard({
   const rankStyle = RANK_STYLE[rank];
   const officialOnly = fund.estimateMode === 'official';
   const compositeBenchmark = Boolean(fund.benchmark?.components?.length);
-  const strategyLabel = fund.strategy ? FUND_STRATEGY_LABELS[fund.strategy] : '';
   const titleNode = (
     <div className={styles.topRow}>
       <span className={styles.name}>{fund.name}<span className={styles.code}>{fund.code}</span></span>
-      {strategyLabel && <span className={styles.strategyTag}>{strategyLabel}</span>}
     </div>
   );
   const cardClassName = [

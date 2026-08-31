@@ -660,7 +660,6 @@
       "symbol": "017436",
       "name": "华宝纳斯达克精选",
       "code": "017436",
-      "strategy": "technology",
       "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2023-03-02",
@@ -747,7 +746,6 @@
       "symbol": "017091",
       "name": "景顺长城纳斯达克科技",
       "code": "017091",
-      "strategy": "technology",
       "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2022-12-09",
@@ -834,7 +832,6 @@
       "symbol": "022184",
       "name": "富国全球科技互联网",
       "code": "022184",
-      "strategy": "technology",
       "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2024-09-18",
@@ -921,7 +918,6 @@
       "symbol": "161128",
       "name": "易方达标普信息科技",
       "code": "161128",
-      "strategy": "technology",
       "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2016-12-13",
@@ -1008,7 +1004,6 @@
       "symbol": "006555",
       "name": "浦银安盛全球智能科技",
       "code": "006555",
-      "strategy": "technology",
       "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2019-01-29",
@@ -1095,7 +1090,6 @@
       "symbol": "006373",
       "name": "国富全球科技互联",
       "code": "006373",
-      "strategy": "technology",
       "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2018-11-20",
@@ -1182,7 +1176,6 @@
       "symbol": "270023",
       "name": "广发全球精选",
       "code": "270023",
-      "strategy": "globalGrowth",
       "benchmark": { "source": "sina-us", "symbol": ".INX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2010-08-18",
@@ -1269,7 +1262,6 @@
       "symbol": "001668",
       "name": "汇添富全球移动互联",
       "code": "001668",
-      "strategy": "technology",
       "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2017-01-25",
@@ -1356,7 +1348,6 @@
       "symbol": "000043",
       "name": "嘉实美国成长",
       "code": "000043",
-      "strategy": "globalGrowth",
       "benchmark": { "source": "sina-us", "symbol": ".INX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2013-06-14",
@@ -1443,7 +1434,6 @@
       "symbol": "008253",
       "name": "华宝致远混合",
       "code": "008253",
-      "strategy": "globalGrowth",
       "benchmark": { "source": "sina-us", "symbol": ".INX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2019-11-27",
@@ -1530,7 +1520,6 @@
       "symbol": "012920",
       "name": "易方达全球成长精选",
       "code": "012920",
-      "strategy": "globalGrowth",
       "benchmark": { "source": "sina-us", "symbol": ".INX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2022-01-11",
@@ -1617,7 +1606,6 @@
       "symbol": "017730",
       "name": "嘉实全球产业升级",
       "code": "017730",
-      "strategy": "manufacturing",
       "benchmark": { "source": "sina-us", "symbol": ".INX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2023-02-09",
@@ -1704,7 +1692,6 @@
       "symbol": "016664",
       "name": "天弘全球高端制造",
       "code": "016664",
-      "strategy": "manufacturing",
       "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2023-04-26",
@@ -1791,7 +1778,6 @@
       "symbol": "501312",
       "name": "华宝海外科技",
       "code": "501312",
-      "strategy": "technology",
       "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2023-04-11",
@@ -1888,7 +1874,6 @@
       "symbol": "005698",
       "name": "华夏全球科技先锋",
       "code": "005698",
-      "strategy": "technology",
       "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2018-04-17",
@@ -1975,7 +1960,6 @@
       "symbol": "016701",
       "name": "银华海外数字经济",
       "code": "016701",
-      "strategy": "technology",
       "benchmark": { "source": "sina-us", "symbol": ".NDX", "currency": "USD" },
       "profile": {
         "inceptionDate": "2023-03-15",
@@ -2062,7 +2046,6 @@
       "symbol": "004877",
       "name": "汇添富全球医疗",
       "code": "004877",
-      "strategy": "healthcare",
       "benchmark": {
         "id": "global-healthcare-v1",
         "name": "全球医疗复合代理",
@@ -2186,7 +2169,6 @@
       "symbol": "539002",
       "name": "建信新兴市场混合",
       "code": "539002",
-      "strategy": "emergingMarkets",
       "benchmark": {
         "source": "sina-us",
         "symbol": "EEM",

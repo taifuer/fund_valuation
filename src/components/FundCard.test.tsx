@@ -100,7 +100,6 @@ describe('FundCard valuation labels', () => {
   it('shows only the official NAV for an official-only fund', () => {
     const officialFund: Fund = {
       ...fund,
-      strategy: 'healthcare',
       estimateMode: 'official',
     };
     const officialEstimate: FundEstimate = {
@@ -112,7 +111,6 @@ describe('FundCard valuation labels', () => {
 
     render(<FundCard fund={officialFund} estimate={officialEstimate} rank={4} sortMode="preview" loading={false} />);
 
-    expect(screen.getByText('医疗健康')).toBeInTheDocument();
     expect(screen.getByText('仅官方净值')).toBeInTheDocument();
     expect(screen.getByText('1.0500')).toBeInTheDocument();
     expect(screen.queryByText('1.1000')).not.toBeInTheDocument();
