@@ -8,6 +8,7 @@ RUN npm ci --registry "${FUND_VALUATION_NPM_REGISTRY}"
 COPY index.html tsconfig.json tsconfig.node.json vite.config.ts ./
 COPY config ./config
 COPY public ./public
+COPY scripts ./scripts
 COPY src ./src
 RUN npm run build
 
