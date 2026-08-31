@@ -326,8 +326,10 @@ export interface CompanyFundamentals {
   sourceName: string;
   sourceUrl: string;
   latestReport?: CompanyReportReference;
+  reportReferences?: CompanyReportReference[];
   methodologyNote?: string;
   profitMetricLabel?: string;
+  researchMetricLabel?: string;
   employeeScope: string;
   employeeMarkers?: CompanyEmployeeMethodologyMarker[];
   metricMarkers?: CompanyMetricMethodologyMarker[];

@@ -40,5 +40,11 @@ describe('company report calendar', () => {
     expect(uniqueReports.size).toBe(currentYearReports.length);
     expect(currentYearReports.some((event) => event.publishedAt.startsWith('2026-01'))).toBe(true);
     expect(currentYearReports.some((event) => event.publishedAt.startsWith('2026-08'))).toBe(true);
+    expect(currentYearReports.some(
+      (event) => event.companyId === 'netflix' && event.period === 'FY2026 Q1',
+    )).toBe(true);
+    expect(currentYearReports.some(
+      (event) => event.companyId === 'schneider' && event.period === 'FY2025',
+    )).toBe(true);
   });
 });

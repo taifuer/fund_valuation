@@ -58,6 +58,34 @@ describe('company report maintenance', () => {
     }), '2026-08-27').status).toBe('current');
   });
 
+  it('checks directly disclosed half years on a six-month cadence', () => {
+    expect(assessCompanyReportFreshness(company({
+      region: 'europe',
+      annual: [{
+        period: 'FY2025',
+        periodEnd: '2025-12-31',
+        revenue: 1,
+        operatingProfit: 1,
+        researchAndDevelopment: null,
+        employees: null,
+      }],
+      halfYear: [{
+        period: 'FY2026 H1',
+        periodEnd: '2026-06-30',
+        revenue: 1,
+        operatingProfit: 1,
+        researchAndDevelopment: null,
+        employees: null,
+      }],
+      quarterly: [],
+    }), '2026-08-31')).toMatchObject({
+      status: 'current',
+      latestPeriod: 'FY2026 H1',
+      expectedPeriod: 'FY2026',
+      expectedPeriodEnd: '2026-12-31',
+    });
+  });
+
   it('selects the latest SEC 10-Q or 10-K filing', () => {
     expect(latestSecPeriodicFiling({
       accessionNumber: ['other', 'quarterly', 'annual'],

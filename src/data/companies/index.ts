@@ -14,6 +14,7 @@ import tsmc from './tsmc';
 import mediatek from './mediatek';
 import huawei from './huawei';
 import foxconn from './foxconn';
+import netflix from './netflix';
 import visa from './visa';
 import walmart from './walmart';
 import ibm from './ibm';
@@ -43,6 +44,7 @@ import palantir from './palantir';
 import novoNordisk from './novo-nordisk';
 import asml from './asml';
 import siemens from './siemens';
+import schneider from './schneider';
 import arm from './arm';
 import toyota from './toyota';
 import tcs from './tcs';
@@ -66,6 +68,7 @@ export const companies = [
   mediatek,
   huawei,
   foxconn,
+  netflix,
   visa,
   walmart,
   ibm,
@@ -95,6 +98,7 @@ export const companies = [
   novoNordisk,
   asml,
   siemens,
+  schneider,
   arm,
   toyota,
   tcs,

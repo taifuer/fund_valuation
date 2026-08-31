@@ -11,6 +11,7 @@ import {
   secArchiveUrl,
   secDomesticCompanies,
 } from './lib/sec';
+import { probeCompanyReleaseSource } from './lib/company-releases';
 
 const args = new Set(process.argv.slice(2));
 const asOfArg = [...args].find((arg) => arg.startsWith('--as-of='));
@@ -83,5 +84,40 @@ if (!offline) {
     process.exitCode = 1;
   } else if (strict && updates.length > 0) {
     process.exitCode = 2;
+  }
+
+  const nonUsCompanies = companyFundamentalsDataset.companies
+    .filter((company) => company.region !== 'usa');
+  const probes = await mapWithConcurrency(nonUsCompanies, 3, async (company) => (
+    probeCompanyReleaseSource(company, assessCompanyReportFreshness(company, asOf))
+  ));
+  const actionable = probes.filter((probe) => probe.status !== '来源可用');
+  const candidates = probes.filter((probe) => probe.status === '命中报告候选');
+  const sourceFailures = probes.filter((probe) => probe.status === '来源异常');
+  const restrictedSources = probes.filter((probe) => probe.status === '访问受限');
+
+  console.log('\nNon-US official-source check:');
+  if (showAll || actionable.length > 0) console.table(showAll ? probes : actionable);
+  console.log(
+    `${probes.length}/${nonUsCompanies.length} checked; `
+    + `${candidates.length} candidate(s), ${restrictedSources.length} access-restricted, `
+    + `${sourceFailures.length} source error(s).`,
+  );
+  if (sourceFailures.length > 0) {
+    console.warn(
+      `Non-US source checks with errors: ${sourceFailures
+        .map((probe) => `${probe.company}: ${probe.error ?? 'unknown error'}`)
+        .join('; ')}`,
+    );
+  }
+  if (restrictedSources.length > 0) {
+    console.warn(
+      `Non-US sources requiring browser/manual fallback: ${restrictedSources
+        .map((probe) => probe.company)
+        .join(', ')}`,
+    );
+  }
+  if (strict && (candidates.length > 0 || sourceFailures.length > 0)) {
+    process.exitCode = candidates.length > 0 ? 2 : 1;
   }
 }

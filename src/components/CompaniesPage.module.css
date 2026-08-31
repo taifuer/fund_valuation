@@ -712,10 +712,37 @@
   font-variant-numeric: tabular-nums;
 }
 
-.detailTable td:first-child > strong {
+.periodCell {
+  align-items: center;
+  display: inline-flex;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.periodCell > strong {
   color: #2b3749;
   font-size: 11px;
-  margin-right: 6px;
+}
+
+.periodSourceLink {
+  border: 1px solid #cbdfe2;
+  border-radius: 4px;
+  color: #28717b;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 15px;
+  padding: 0 4px;
+  text-decoration: none;
+}
+
+.periodSourceLink:hover {
+  background: #f2f8f8;
+  border-color: #9fc6cb;
+}
+
+.periodSourceArchive {
+  border-color: #dfe4ea;
+  color: #8993a0;
 }
 
 .detailTableFooter {

@@ -9,7 +9,7 @@ export default defineCompany({
   "regionLabel": "中国",
   "currency": "CNY",
   "sourceName": "比亚迪投资者关系",
-  "sourceUrl": "https://www.bydglobal.com/cn/InvestorNotice.html",
+  "sourceUrl": "https://www.bydglobal.com/en/investorannals.html?scroll=true",
   "latestReport": {
     "period": "FY2026 Q2",
     "publishedAt": "2026-08-28",

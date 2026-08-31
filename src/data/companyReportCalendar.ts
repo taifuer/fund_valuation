@@ -9,9 +9,22 @@ function reportKey(event: CompanyReportEvent): string {
 }
 
 const reportsByKey = new Map<string, CompanyReportEvent>();
+const calendarYears = new Set(
+  secCompanyReportEvents.map((event) => event.publishedAt.slice(0, 4)),
+);
 
 secCompanyReportEvents.forEach((event) => reportsByKey.set(reportKey(event), event));
 companies.forEach((company) => {
+  company.reportReferences
+    ?.filter((reference) => calendarYears.has(reference.publishedAt.slice(0, 4)))
+    .forEach((reference) => {
+      const event: CompanyReportEvent = {
+        companyId: company.id,
+        ...reference,
+        status: 'reported',
+      };
+      reportsByKey.set(reportKey(event), event);
+    });
   if (!company.latestReport) return;
   const event: CompanyReportEvent = {
     companyId: company.id,

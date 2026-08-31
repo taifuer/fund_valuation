@@ -3,12 +3,14 @@ import {
   PARTIAL_RESEARCH_DISCLOSURE_PERIODS,
   companyFundamentalsDataset,
 } from '../src/data/companyFundamentals';
+import { resolveCompanyReportReference } from '../src/data/companyReportSources';
 
 const noComparableResearch = new Set(
   Object.keys(COMPANIES_WITHOUT_COMPARABLE_RESEARCH_DISCLOSURE),
 );
 const unexpectedResearchGaps: string[] = [];
 const employeeGaps: string[] = [];
+const sourceReferenceErrors: string[] = [];
 
 const rows = companyFundamentalsDataset.companies.map((company) => {
   const annualResearch = company.annual.filter(
@@ -24,6 +26,33 @@ const rows = companyFundamentalsDataset.companies.map((company) => {
     .filter((point) => point.researchAndDevelopment == null)
     .map((point) => point.period);
   const allowedPartialPeriods = new Set(PARTIAL_RESEARCH_DISCLOSURE_PERIODS[company.id] ?? []);
+  const disclosurePoints = [...company.annual, ...company.halfYear, ...company.quarterly];
+  const disclosurePeriods = new Set(disclosurePoints.map((point) => point.period));
+  const exactSources = disclosurePoints.filter(
+    (point) => resolveCompanyReportReference(company, point).exact,
+  ).length;
+
+  const referencePeriods = company.reportReferences?.map((reference) => reference.period) ?? [];
+  if (new Set(referencePeriods).size !== referencePeriods.length) {
+    sourceReferenceErrors.push(`${company.id}: duplicate report reference periods`);
+  }
+  company.reportReferences?.forEach((reference) => {
+    if (!disclosurePeriods.has(reference.period)) {
+      sourceReferenceErrors.push(`${company.id}: unknown report period ${reference.period}`);
+    }
+    if (!/^https:\/\//.test(reference.sourceUrl)) {
+      sourceReferenceErrors.push(`${company.id} ${reference.period}: non-HTTPS source`);
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(reference.publishedAt)) {
+      sourceReferenceErrors.push(`${company.id} ${reference.period}: invalid publication date`);
+    }
+  });
+  disclosurePoints.forEach((point) => {
+    const reference = resolveCompanyReportReference(company, point);
+    if (!/^https:\/\//.test(reference.sourceUrl) || !reference.sourceLabel) {
+      sourceReferenceErrors.push(`${company.id} ${point.period}: unresolved source`);
+    }
+  });
 
   if (noComparableResearch.has(company.id)) {
     if (annualResearch > 0) {
@@ -50,6 +79,7 @@ const rows = companyFundamentalsDataset.companies.map((company) => {
     quarterlyResearch,
     annualEmployees: `${annualEmployees}/${company.annual.length}`,
     quarterlyEmployees,
+    exactSources: `${exactSources}/${disclosurePoints.length}`,
   };
 });
 
@@ -78,5 +108,10 @@ console.log(
 
 if (unexpectedResearchGaps.length > 0) {
   console.error(`Unexpected annual research gaps: ${unexpectedResearchGaps.join(', ')}`);
+  process.exitCode = 1;
+}
+
+if (sourceReferenceErrors.length > 0) {
+  console.error(`Company report source errors: ${sourceReferenceErrors.join(', ')}`);
   process.exitCode = 1;
 }

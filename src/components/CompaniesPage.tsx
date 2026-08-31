@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { companyFundamentalsDataset, companySeries } from '../data/companyFundamentals';
+import { resolveCompanyReportReference } from '../data/companyReportSources';
 import { choiceFromSearch, replaceSearchParams } from '../routing';
 import type {
   CompanyFrequency,
@@ -51,6 +52,7 @@ function metricLabel(company: CompanyFundamentals, metric: MetricKey) {
   const profitLabel = company.profitMetricLabel ?? '营业利润';
   if (metric === 'operatingProfit') return profitLabel;
   if (metric === 'margin') return `${profitLabel}率`;
+  if (metric === 'researchAndDevelopment') return company.researchMetricLabel ?? '研发费用';
   return METRICS.find((item) => item.key === metric)?.label ?? '';
 }
 
@@ -456,7 +458,7 @@ function TrendChart({ company, points, metric, mode }: TrendChartProps) {
           {metric === 'employees' ? (
             <p><strong>*</strong><span>{company.employeeScope}；仅展示公司明确披露的期间。</span></p>
           ) : metric === 'researchAndDevelopment' ? (
-            <p><strong>*</strong><span>研发费用按公司单列披露口径；研发强度为研发费用占营业收入比例，缺失期间不推算。</span></p>
+            <p><strong>*</strong><span>{metricLabel(company, 'researchAndDevelopment')}按公司单列披露口径；研发强度为该指标占营业收入比例，缺失期间不推算。</span></p>
           ) : null}
           {methodologyMarkers.map((marker) => (
             <p key={`${marker.period}-${marker.note}`}><strong>*</strong><span>{marker.note}</span></p>
@@ -614,7 +616,7 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
         <div>
           <h2>{pageMode === 'trend' ? '公司经营趋势' : '财报日历'}</h2>
           <p>{pageMode === 'trend'
-            ? '聚焦营业收入、利润、研发费用与员工人数的长期变化'
+            ? '聚焦营业收入、利润、研发投入与员工人数的长期变化'
             : '集中查看已披露报告与官方确认的财报日期'}</p>
         </div>
         <div className={styles.segmented} aria-label="公司页面视图">
@@ -848,48 +850,66 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
                     <th>截止日期</th>
                     <th>营业收入</th>
                     <th>{metricLabel(selectedCompany, 'operatingProfit')}</th>
-                    <th>研发费用</th>
+                    <th>{metricLabel(selectedCompany, 'researchAndDevelopment')}</th>
                     <th>{metricLabel(selectedCompany, 'margin')}</th>
                     <th>员工人数</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleDisclosurePoints.map((point) => (
-                    <tr key={`${point.period}-${point.periodEnd}`}>
-                      <td><strong>{point.period}</strong>{point.derived && <span className={styles.derivedTag}>汇总</span>}</td>
-                      <td>{compactDate(point.periodEnd)}</td>
-                      <td>
-                        <DetailMetric
-                          value={formatMoney(point.revenue, selectedCompany.currency)}
-                          change={metricChange(trendPoints, point, 'revenue')}
-                        />
-                      </td>
-                      <td>
-                        <DetailMetric
-                          value={formatMoney(point.operatingProfit, selectedCompany.currency)}
-                          change={metricChange(trendPoints, point, 'operatingProfit')}
-                        />
-                      </td>
-                      <td>
-                        <DetailMetric
-                          value={formatMoney(point.researchAndDevelopment, selectedCompany.currency)}
-                          change={metricChange(trendPoints, point, 'researchAndDevelopment')}
-                        />
-                      </td>
-                      <td>
-                        <DetailMetric
-                          value={formatPercent(operatingMargin(point))}
-                          change={metricChange(trendPoints, point, 'margin')}
-                        />
-                      </td>
-                      <td>
-                        <DetailMetric
-                          value={formatEmployeeDetail(point.employees)}
-                          change={metricChange(trendPoints, point, 'employees')}
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                  {visibleDisclosurePoints.map((point) => {
+                    const reportReference = resolveCompanyReportReference(selectedCompany, point);
+                    return (
+                      <tr key={`${point.period}-${point.periodEnd}`}>
+                        <td>
+                          <span className={styles.periodCell}>
+                            <strong>{point.period}</strong>
+                            {point.derived && <span className={styles.derivedTag}>汇总</span>}
+                            <a
+                              className={`${styles.periodSourceLink} ${reportReference.exact ? '' : styles.periodSourceArchive}`}
+                              href={reportReference.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={`${selectedCompany.name} ${point.period}${reportReference.exact ? '官方报告' : '官方报告归档'}`}
+                              title={`${reportReference.sourceLabel}${reportReference.publishedAt ? ` · 披露 ${compactDate(reportReference.publishedAt)}` : ''}`}
+                            >
+                              {reportReference.exact ? '报告' : '归档'}
+                            </a>
+                          </span>
+                        </td>
+                        <td>{compactDate(point.periodEnd)}</td>
+                        <td>
+                          <DetailMetric
+                            value={formatMoney(point.revenue, selectedCompany.currency)}
+                            change={metricChange(trendPoints, point, 'revenue')}
+                          />
+                        </td>
+                        <td>
+                          <DetailMetric
+                            value={formatMoney(point.operatingProfit, selectedCompany.currency)}
+                            change={metricChange(trendPoints, point, 'operatingProfit')}
+                          />
+                        </td>
+                        <td>
+                          <DetailMetric
+                            value={formatMoney(point.researchAndDevelopment, selectedCompany.currency)}
+                            change={metricChange(trendPoints, point, 'researchAndDevelopment')}
+                          />
+                        </td>
+                        <td>
+                          <DetailMetric
+                            value={formatPercent(operatingMargin(point))}
+                            change={metricChange(trendPoints, point, 'margin')}
+                          />
+                        </td>
+                        <td>
+                          <DetailMetric
+                            value={formatEmployeeDetail(point.employees)}
+                            change={metricChange(trendPoints, point, 'employees')}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

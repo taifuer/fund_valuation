@@ -32,8 +32,10 @@ export interface CompanyDefinition {
   sourceName: string;
   sourceUrl: string;
   latestReport?: CompanyReportReference;
+  reportReferences?: readonly CompanyReportReference[];
   methodologyNote?: string;
   profitMetricLabel?: string;
+  researchMetricLabel?: string;
   employeeScope: string;
   employeeMarkers?: readonly CompanyEmployeeMethodologyMarker[];
   metricMarkers?: readonly CompanyMetricMethodologyMarker[];
@@ -76,8 +78,10 @@ export function defineCompany(definition: CompanyDefinition): CompanyFundamental
     sourceName: definition.sourceName,
     sourceUrl: definition.sourceUrl,
     latestReport: definition.latestReport,
+    reportReferences: definition.reportReferences ? [...definition.reportReferences] : undefined,
     methodologyNote: definition.methodologyNote,
     profitMetricLabel: definition.profitMetricLabel,
+    researchMetricLabel: definition.researchMetricLabel,
     employeeScope: definition.employeeScope,
     employeeMarkers: definition.employeeMarkers ? [...definition.employeeMarkers] : undefined,
     metricMarkers: definition.metricMarkers ? [...definition.metricMarkers] : undefined,

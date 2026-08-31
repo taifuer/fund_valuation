@@ -24,6 +24,7 @@ const EXPECTED_IDS = [
   'mediatek',
   'huawei',
   'foxconn',
+  'netflix',
   'visa',
   'walmart',
   'ibm',
@@ -53,6 +54,7 @@ const EXPECTED_IDS = [
   'novoNordisk',
   'asml',
   'siemens',
+  'schneider',
   'arm',
   'toyota',
   'tcs',
@@ -95,6 +97,8 @@ describe('company fundamentals offline dataset', () => {
     expect(ids).toContain('txn');
     expect(ids).toContain('jnj');
     expect(ids).toContain('siemens');
+    expect(ids).toContain('netflix');
+    expect(ids).toContain('schneider');
     expect(ids).not.toContain('sap');
   });
 
@@ -102,7 +106,7 @@ describe('company fundamentals offline dataset', () => {
     companyFundamentalsDataset.companies.forEach((company) => {
       const expectedAnnualCoverage = company.id === 'arm' ? 5 : 8;
       expect(company.annual.length, `${company.id} annual coverage`).toBeGreaterThanOrEqual(expectedAnnualCoverage);
-      if (company.id === 'huawei') {
+      if (company.id === 'huawei' || company.id === 'schneider') {
         expect(company.quarterly, `${company.id} does not infer quarterly coverage`).toEqual([]);
       } else {
         expect(company.quarterly.length, `${company.id} quarterly coverage`).toBeGreaterThanOrEqual(10);
@@ -316,6 +320,7 @@ describe('company fundamentals offline dataset', () => {
       tsmc: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
       mediatek: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
       foxconn: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      netflix: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
       visa: { firstPeriod: 'FY2018 Q1', minimumPoints: 35 },
       walmart: { firstPeriod: 'FY2019 Q1', minimumPoints: 34 },
       ibm: { firstPeriod: 'FY2021 Q1', minimumPoints: 22 },
@@ -353,7 +358,7 @@ describe('company fundamentals offline dataset', () => {
     };
 
     expect(Object.keys(expectedCoverage).sort()).toEqual(
-      EXPECTED_IDS.filter((id) => id !== 'huawei'),
+      EXPECTED_IDS.filter((id) => id !== 'huawei' && id !== 'schneider'),
     );
 
     Object.entries(expectedCoverage).forEach(([id, expectation]) => {
@@ -544,6 +549,42 @@ describe('company fundamentals offline dataset', () => {
     expect(halves.every((point) => point.derived !== true)).toBe(true);
     expect(huawei.latestReport?.publishedAt).toBe('2026-08-31');
     expect(huawei.annual.every((point) => point.researchAndDevelopment != null)).toBe(true);
+  });
+
+  it('keeps Schneider Electric on direct annual and half-year disclosures', () => {
+    const schneider = companyFundamentalsDataset.companies
+      .find((company) => company.id === 'schneider')!;
+
+    expect(schneider.quarterly).toEqual([]);
+    expect(schneider.annual).toHaveLength(8);
+    expect(schneider.halfYear).toHaveLength(9);
+    expect(schneider.halfYear[schneider.halfYear.length - 1]).toMatchObject({
+      period: 'FY2026 H1',
+      periodEnd: '2026-06-30',
+      revenue: 21_226_000_000,
+      operatingProfit: 4_093_000_000,
+      researchAndDevelopment: 1_235_000_000,
+    });
+    expect(schneider.profitMetricLabel).toBe('调整后 EBITA');
+    expect(schneider.researchMetricLabel).toBe('研发投入');
+    expect(schneider.reportReferences).toHaveLength(17);
+  });
+
+  it('keeps Netflix annual and quarterly GAAP histories reconciled', () => {
+    const netflix = companyFundamentalsDataset.companies
+      .find((company) => company.id === 'netflix')!;
+
+    expect(netflix.annual).toHaveLength(8);
+    expect(netflix.quarterly).toHaveLength(34);
+    expect(netflix.quarterly[netflix.quarterly.length - 1]).toMatchObject({
+      period: 'FY2026 Q2',
+      periodEnd: '2026-06-30',
+      revenue: 12_559_938_000,
+      researchAndDevelopment: 1_007_675_000,
+    });
+    expect(netflix.quarterly[netflix.quarterly.length - 1]?.operatingProfit)
+      .toBeCloseTo(4_192_610_000, 0);
+    expect(netflix.reportReferences).toHaveLength(42);
   });
 
   it('keeps period-end employee disclosures when deriving half years', () => {

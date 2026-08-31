@@ -53,11 +53,16 @@ function addMonths(value: string, months: number): string {
   const targetMonth = date.getUTCMonth() + months;
   const targetYear = date.getUTCFullYear() + Math.floor(targetMonth / 12);
   const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+  const sourceFinalDay = new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth() + 1,
+    0,
+  )).getUTCDate();
   const finalDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
   return formatDate(new Date(Date.UTC(
     targetYear,
     normalizedMonth,
-    Math.min(date.getUTCDate(), finalDay),
+    date.getUTCDate() === sourceFinalDay ? finalDay : Math.min(date.getUTCDate(), finalDay),
   )));
 }
 
@@ -69,19 +74,35 @@ function nextQuarter(period: string): string | undefined {
   return quarter === 4 ? `FY${fiscalYear + 1} Q1` : `FY${fiscalYear} Q${quarter + 1}`;
 }
 
+function nextHalfYearPeriod(period: string): string | undefined {
+  const halfMatch = /^FY(\d{4}) H([12])$/.exec(period);
+  if (halfMatch) {
+    const fiscalYear = Number(halfMatch[1]);
+    return halfMatch[2] === '1' ? `FY${fiscalYear}` : `FY${fiscalYear + 1} H1`;
+  }
+  const annualMatch = /^FY(\d{4})$/.exec(period);
+  return annualMatch ? `FY${Number(annualMatch[1]) + 1} H1` : undefined;
+}
+
+function latestCompanyPoint(company: CompanyFundamentals) {
+  const points = [...company.annual, ...company.halfYear, ...company.quarterly]
+    .sort((left, right) => (
+      left.periodEnd.localeCompare(right.periodEnd) || left.period.localeCompare(right.period)
+    ));
+  return points[points.length - 1];
+}
+
 export function assessCompanyReportFreshness(
   company: CompanyFundamentals,
   asOf: string,
   upcomingDays = 14,
 ): CompanyReportFreshness {
-  const latest = company.quarterly[company.quarterly.length - 1]
-    ?? company.halfYear[company.halfYear.length - 1]
-    ?? company.annual[company.annual.length - 1];
+  const latest = latestCompanyPoint(company);
 
   if (!latest) {
     return { status: 'annualOnly', latestPeriod: '-', latestPeriodEnd: '-' };
   }
-  if (company.quarterly.length === 0) {
+  if (company.quarterly.length === 0 && company.halfYear.length === 0) {
     return {
       status: 'annualOnly',
       latestPeriod: latest.period,
@@ -89,8 +110,11 @@ export function assessCompanyReportFreshness(
     };
   }
 
-  const expectedPeriod = nextQuarter(latest.period);
-  const expectedPeriodEnd = addMonths(latest.periodEnd, 3);
+  const halfYearCadence = company.quarterly.length === 0;
+  const expectedPeriod = halfYearCadence
+    ? nextHalfYearPeriod(latest.period)
+    : nextQuarter(latest.period);
+  const expectedPeriodEnd = addMonths(latest.periodEnd, halfYearCadence ? 6 : 3);
   const reviewAfter = addDays(expectedPeriodEnd, REVIEW_LAG_DAYS[company.region]);
   const daysUntilReview = Math.ceil(
     (parseDate(reviewAfter).getTime() - parseDate(asOf).getTime()) / 86_400_000,

@@ -15,7 +15,7 @@ describe('CompaniesPage', () => {
     fireEvent.click(within(screen.getByLabelText('地区筛选')).getByRole('button', { name: /全部/ }));
     const companyOptions = screen.getByRole('group', { name: '全部公司' });
     const companyButtons = within(companyOptions).getAllByRole('button');
-    expect(companyButtons).toHaveLength(50);
+    expect(companyButtons).toHaveLength(52);
     expect(companyButtons.slice(0, 7).map((button) => button.textContent)).toEqual([
       'Adobe', 'AMD', '阿里巴巴', '谷歌', '亚马逊', '苹果', '应用材料',
     ]);
@@ -34,6 +34,8 @@ describe('CompaniesPage', () => {
     expect(within(companyOptions).getByRole('button', { name: /鸿海精密/ })).toBeInTheDocument();
     expect(within(companyOptions).getByRole('button', { name: /博通/ })).toBeInTheDocument();
     expect(within(companyOptions).getByRole('button', { name: /联发科/ })).toBeInTheDocument();
+    expect(within(companyOptions).getByRole('button', { name: /奈飞/ })).toBeInTheDocument();
+    expect(within(companyOptions).getByRole('button', { name: /施耐德电气/ })).toBeInTheDocument();
     expect(screen.queryByText('SAP')).not.toBeInTheDocument();
     expect(screen.queryByText('经营对比')).not.toBeInTheDocument();
   });
@@ -172,6 +174,19 @@ describe('CompaniesPage', () => {
       'href',
       'https://www.tencent.com/investors/results/',
     );
+  });
+
+  it('links each disclosure period to an exact report or a labeled archive', () => {
+    window.history.replaceState({}, '', '/companies?company=netflix');
+    render(<CompaniesPage />);
+
+    expect(screen.getByRole('link', { name: '奈飞 FY2026 Q2官方报告' }))
+      .toHaveAttribute('href', expect.stringContaining('sec.gov/Archives/edgar/data/1065280'));
+
+    fireEvent.click(within(screen.getByLabelText('地区筛选')).getByRole('button', { name: /全部/ }));
+    fireEvent.click(screen.getByRole('button', { name: /阿里巴巴/ }));
+    expect(screen.getByRole('link', { name: /阿里巴巴 FY2027 Q1官方报告归档/ }))
+      .toBeInTheDocument();
   });
 
   it('shows SMIC IFRS operating profit rather than gross profit', () => {
