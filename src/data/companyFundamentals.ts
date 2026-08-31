@@ -17,13 +17,13 @@ export const PARTIAL_RESEARCH_DISCLOSURE_PERIODS: Readonly<Record<string, readon
 };
 
 export const companyFundamentalsDataset: CompanyFundamentalsDataset = {
-  version: 13,
-  updatedAt: '2026-08-28',
+  version: 14,
+  updatedAt: '2026-08-31',
   coverage: '50 家公司 · 年度最长 9 年 · 季度最长 38 期',
   methodology: [
     '营业收入与利润指标保留公司原始披露币种及报表口径，具体利润口径以页面标签为准。',
     '研发费用仅展示公司明确单列披露的费用；未单列披露的期间不推算、不补齐。',
-    '季度同比匹配上一财年同季度；半年数据仅由完整的两个季度相加生成。',
+    '季度同比匹配上一财年同季度；半年数据优先采用公司直接披露值，否则仅由完整的两个季度相加生成。',
     '历史序列以官方披露为主，监管机构、交易所或证券行情结构化接口仅用于补齐与交叉校验。',
     '员工统计、合并范围或指标口径发生显著变化时，以虚线标示可比边界。',
     '员工人数优先采用期末披露值；官方约数或期间平均人数仅在明确标注口径时保留，不据此反推期末人数。',
@@ -70,5 +70,11 @@ export function deriveHalfYear(pointsToCombine: readonly CompanyFundamentalPoint
 export function companySeries(companyData: CompanyFundamentals, frequency: 'annual' | 'half' | 'quarterly') {
   if (frequency === 'annual') return companyData.annual;
   if (frequency === 'quarterly') return companyData.quarterly;
-  return deriveHalfYear(companyData.quarterly);
+  const byPeriod = new Map(
+    deriveHalfYear(companyData.quarterly).map((point) => [point.period, point]),
+  );
+  companyData.halfYear.forEach((point) => byPeriod.set(point.period, point));
+  return [...byPeriod.values()].sort((left, right) => (
+    left.periodEnd.localeCompare(right.periodEnd) || left.period.localeCompare(right.period)
+  ));
 }

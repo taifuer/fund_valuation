@@ -310,7 +310,7 @@ function TrendChart({ company, points, metric, mode }: TrendChartProps) {
       : (company.metricMarkers ?? []).filter((marker) => marker.metric === metric)),
   ];
   const methodologyMarkers = markerDefinitions.flatMap((marker) => {
-    const referencePoint = [...company.annual, ...company.quarterly]
+    const referencePoint = [...company.annual, ...company.halfYear, ...company.quarterly]
       .find((point) => point.period === marker.period);
     const fiscalYear = marker.period.match(/^(FY\d{4})/)?.[1];
     const index = points.findIndex((point) => (
@@ -826,7 +826,9 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
               <span className={styles.detailTableTitle}>
                 <strong>披露明细</strong>
                 <small>{effectiveFrequency === 'half'
-                  ? effectiveMetric === 'employees' ? '取半年度末披露值' : '由完整季度汇总'
+                  ? trendPoints.some((point) => !point.derived)
+                    ? '公司直接披露口径'
+                    : effectiveMetric === 'employees' ? '取半年度末披露值' : '由完整季度汇总'
                   : '公司原始披露口径'}</small>
               </span>
               <span className={styles.detailTableAction}>

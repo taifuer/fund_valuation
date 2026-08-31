@@ -14,7 +14,8 @@ describe('company report calendar', () => {
       if (event.status === 'reported') {
         const company = companies.get(event.companyId)!;
         expect(
-          [...company.annual, ...company.quarterly].some((point) => point.period === event.period),
+          [...company.annual, ...company.halfYear, ...company.quarterly]
+            .some((point) => point.period === event.period),
           `${event.companyId} ${event.period}`,
         ).toBe(true);
       }

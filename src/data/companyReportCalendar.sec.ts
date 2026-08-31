@@ -587,5 +587,13 @@ export const secCompanyReportEvents: CompanyReportEvent[] = [
     "status": "reported",
     "sourceLabel": "Salesforce FY2027 Q2 · SEC 10-Q",
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1108524/000110852426000190/crm-20260731.htm"
+  },
+  {
+    "companyId": "walmart",
+    "period": "FY2027 Q2",
+    "publishedAt": "2026-08-28",
+    "status": "reported",
+    "sourceLabel": "沃尔玛 FY2027 Q2 · SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/104169/000010416926000154/wmt-20260731.htm"
   }
 ];

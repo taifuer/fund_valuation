@@ -15,6 +15,7 @@ const rows = companyFundamentalsDataset.companies.map((company) => {
     (point) => point.researchAndDevelopment != null,
   ).length;
   const annualEmployees = company.annual.filter((point) => point.employees != null).length;
+  const directHalfYears = company.halfYear.length;
   const quarterlyResearch = company.quarterly.filter(
     (point) => point.researchAndDevelopment != null,
   ).length;
@@ -41,6 +42,7 @@ const rows = companyFundamentalsDataset.companies.map((company) => {
   return {
     company: company.name,
     annual: company.annual.length,
+    directHalfYears,
     quarterly: company.quarterly.length,
     firstQuarter: company.quarterly[0]?.period ?? '-',
     latestQuarter: company.quarterly.at(-1)?.period ?? '-',
@@ -57,11 +59,13 @@ console.table(rows);
 
 const quarterlyCompanies = rows.filter((row) => row.quarterly > 0);
 const longFormCompanies = quarterlyCompanies.filter((row) => row.quarterly >= 26);
-const annualOnlyCompanies = rows.filter((row) => row.quarterly === 0);
+const directHalfYearCompanies = rows.filter((row) => row.directHalfYears > 0);
+const annualOnlyCompanies = rows.filter((row) => row.quarterly === 0 && row.directHalfYears === 0);
 
 console.log(
   `Core quarterly histories: ${quarterlyCompanies.length}/${rows.length}; `
   + `extended histories (26+ quarters): ${longFormCompanies.length}/${quarterlyCompanies.length}; `
+  + `direct half-year: ${directHalfYearCompanies.map((row) => row.company).join(', ') || 'none'}; `
   + `annual-only: ${annualOnlyCompanies.map((row) => row.company).join(', ') || 'none'}.`,
 );
 

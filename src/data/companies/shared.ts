@@ -17,6 +17,7 @@ export type RawPoint = readonly [
 
 export interface ResearchAndDevelopmentSeries {
   annual?: Readonly<Record<string, number>>;
+  halfYear?: Readonly<Record<string, number>>;
   quarterly?: Readonly<Record<string, number>>;
 }
 
@@ -39,6 +40,7 @@ export interface CompanyDefinition {
   moneyScale: number;
   researchAndDevelopment?: ResearchAndDevelopmentSeries;
   annual: readonly RawPoint[];
+  halfYear?: readonly RawPoint[];
   quarterly: readonly RawPoint[];
 }
 
@@ -83,6 +85,11 @@ export function defineCompany(definition: CompanyDefinition): CompanyFundamental
       definition.annual,
       definition.moneyScale,
       definition.researchAndDevelopment?.annual,
+    ),
+    halfYear: points(
+      definition.halfYear ?? [],
+      definition.moneyScale,
+      definition.researchAndDevelopment?.halfYear,
     ),
     quarterly: points(
       definition.quarterly,

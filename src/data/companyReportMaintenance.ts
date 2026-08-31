@@ -75,6 +75,7 @@ export function assessCompanyReportFreshness(
   upcomingDays = 14,
 ): CompanyReportFreshness {
   const latest = company.quarterly[company.quarterly.length - 1]
+    ?? company.halfYear[company.halfYear.length - 1]
     ?? company.annual[company.annual.length - 1];
 
   if (!latest) {
@@ -139,6 +140,6 @@ export function listSecPeriodicFilings(
 }
 
 export function latestCompanyPeriodEnd(company: CompanyFundamentals): string {
-  return [...company.annual, ...company.quarterly]
+  return [...company.annual, ...company.halfYear, ...company.quarterly]
     .reduce((latest, point) => point.periodEnd > latest ? point.periodEnd : latest, '');
 }

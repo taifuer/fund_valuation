@@ -117,7 +117,7 @@ describe('company fundamentals offline dataset', () => {
       expect(company.sourceName.length, `${company.id} source name`).toBeGreaterThan(3);
       expect(company.sourceUrl, `${company.id} source url`).toMatch(/^https:\/\//);
 
-      for (const series of [company.annual, company.quarterly]) {
+      for (const series of [company.annual, company.halfYear, company.quarterly]) {
         expect(new Set(series.map((point) => point.period)).size, `${company.id} unique periods`).toBe(series.length);
         expect(
           series.map((point) => point.periodEnd),
@@ -138,7 +138,8 @@ describe('company fundamentals offline dataset', () => {
       }
       (company.employeeMarkers ?? []).forEach((marker) => {
         expect(
-          [...company.annual, ...company.quarterly].some((point) => point.period === marker.period),
+          [...company.annual, ...company.halfYear, ...company.quarterly]
+            .some((point) => point.period === marker.period),
           `${company.id} ${marker.period} methodology marker`,
         ).toBe(true);
         expect(marker.label.length).toBeGreaterThan(1);
@@ -146,7 +147,8 @@ describe('company fundamentals offline dataset', () => {
       });
       (company.metricMarkers ?? []).forEach((marker) => {
         expect(
-          [...company.annual, ...company.quarterly].some((point) => point.period === marker.period),
+          [...company.annual, ...company.halfYear, ...company.quarterly]
+            .some((point) => point.period === marker.period),
           `${company.id} ${marker.period} metric methodology marker`,
         ).toBe(true);
         expect(marker.label.length).toBeGreaterThan(1);
@@ -506,12 +508,24 @@ describe('company fundamentals offline dataset', () => {
     );
   });
 
-  it('keeps Huawei annual-only instead of manufacturing interim periods', () => {
+  it('keeps Huawei reported half years without manufacturing quarterly periods', () => {
     const huawei = companyFundamentalsDataset.companies.find((company) => company.id === 'huawei')!;
+    const halves = companySeries(huawei, 'half');
 
     expect(huawei.annual).toHaveLength(8);
     expect(huawei.quarterly).toEqual([]);
-    expect(companySeries(huawei, 'half')).toEqual([]);
+    expect(halves).toEqual(huawei.halfYear);
+    expect(halves).toHaveLength(2);
+    expect(halves[1]).toMatchObject({
+      period: 'FY2026 H1',
+      periodEnd: '2026-06-30',
+      employees: null,
+    });
+    expect(halves[1].revenue).toBeCloseTo(467_819_096_000, 0);
+    expect(halves[1].operatingProfit).toBeCloseTo(32_771_344_000, 0);
+    expect(halves[1].researchAndDevelopment).toBeCloseTo(121_382_454_000, 0);
+    expect(halves.every((point) => point.derived !== true)).toBe(true);
+    expect(huawei.latestReport?.publishedAt).toBe('2026-08-31');
     expect(huawei.annual.every((point) => point.researchAndDevelopment != null)).toBe(true);
   });
 

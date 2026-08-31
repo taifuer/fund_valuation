@@ -334,6 +334,7 @@ export interface CompanyFundamentals {
   employeeMarkers?: CompanyEmployeeMethodologyMarker[];
   metricMarkers?: CompanyMetricMethodologyMarker[];
   annual: CompanyFundamentalPoint[];
+  halfYear: CompanyFundamentalPoint[];
   quarterly: CompanyFundamentalPoint[];
 }
 

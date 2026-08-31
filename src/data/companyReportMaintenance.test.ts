@@ -20,6 +20,7 @@ function company(overrides: Partial<CompanyFundamentals> = {}): CompanyFundament
     sourceUrl: 'https://example.com',
     employeeScope: '期末员工',
     annual: [],
+    halfYear: [],
     quarterly: [{
       period: 'FY2026 Q1',
       periodEnd: '2026-03-31',
@@ -98,11 +99,19 @@ describe('company report maintenance', () => {
     ]);
   });
 
-  it('uses the newest period end across annual and quarterly data', () => {
+  it('uses the newest period end across annual, half-year and quarterly data', () => {
     expect(latestCompanyPeriodEnd(company({
       annual: [{
         period: 'FY2026',
         periodEnd: '2026-03-31',
+        revenue: 1,
+        operatingProfit: 1,
+        researchAndDevelopment: null,
+        employees: null,
+      }],
+      halfYear: [{
+        period: 'FY2027 H1',
+        periodEnd: '2026-09-30',
         revenue: 1,
         operatingProfit: 1,
         researchAndDevelopment: null,
@@ -116,6 +125,6 @@ describe('company report maintenance', () => {
         researchAndDevelopment: null,
         employees: null,
       }],
-    }))).toBe('2026-06-30');
+    }))).toBe('2026-09-30');
   });
 });

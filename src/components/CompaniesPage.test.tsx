@@ -215,15 +215,19 @@ describe('CompaniesPage', () => {
     expect(screen.getByText('23,247')).toBeInTheDocument();
   });
 
-  it('keeps Huawei on verified annual disclosures and exposes reported research spending', () => {
+  it('shows Huawei direct half-year disclosures without inferring quarters', () => {
     render(<CompaniesPage />);
 
     fireEvent.click(screen.getByRole('button', { name: /华为/ }));
 
     expect(screen.getByRole('heading', { name: '华为' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '季度' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '半年' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '年度' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '半年' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('公司直接披露口径')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /最新报告/ })).toHaveAttribute(
+      'href',
+      expect.stringContaining('shclearing.com.cn'),
+    );
 
     fireEvent.click(screen.getByRole('button', { name: '研发费用' }));
     expect(screen.getByRole('img', { name: '华为研发费用趋势' })).toBeInTheDocument();
@@ -277,11 +281,11 @@ describe('CompaniesPage', () => {
     expect(window.location.search).toContain('trend=yoy');
   });
 
-  it('returns to the preferred quarterly view after an annual-only company', () => {
+  it('returns to the preferred quarterly view after a non-quarterly company', () => {
     render(<CompaniesPage />);
 
     fireEvent.click(screen.getByRole('button', { name: /华为/ }));
-    expect(screen.getByRole('button', { name: '年度' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '半年' })).toHaveAttribute('aria-pressed', 'true');
 
     fireEvent.click(screen.getByRole('button', { name: /腾讯/ }));
     expect(screen.getByRole('button', { name: '季度' })).toHaveAttribute('aria-pressed', 'true');
