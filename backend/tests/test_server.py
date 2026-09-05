@@ -5,6 +5,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from pathlib import Path
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from unittest.mock import patch
@@ -37,12 +38,22 @@ class FakeResponse:
 
 class ServerDataRefreshTests(unittest.TestCase):
     def setUp(self) -> None:
+        root = Path(_TEMP_DATA.name)
+        for module in (server, __import__('backend.storage', fromlist=['storage'])):
+            for name, value in (("DB_PATH", root / 'fund_valuation.db'), ("DATA_DIR", root), ("RAW_DIR", root / 'raw')):
+                patcher = patch.object(module, name, value)
+                patcher.start()
+                self.addCleanup(patcher.stop)
+        self.assertTrue(server.DB_PATH.resolve().is_relative_to(root.resolve()))
         server.ensure_storage()
         with sqlite3.connect(server.DB_PATH) as conn:
             conn.executescript(
                 """
                 DELETE FROM response_cache;
                 DELETE FROM fund_nav_history;
+                DELETE FROM fund_nav_details;
+                DELETE FROM market_adjustment_factors;
+                DELETE FROM fund_disclosure_metadata;
                 DELETE FROM fund_holdings;
                 DELETE FROM fund_purchase_status;
                 DELETE FROM fund_profiles;
@@ -2351,7 +2362,8 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(result["errors"], [])
         self.assertEqual(server.read_fund_holdings_from_db("017436")[0]["reportDate"], "2026-06-30")
         self.assertEqual(server.read_fund_holdings_from_db("017091"), [])
-        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(fetch.call_count, 3)
+        self.assertIn('month=6', fetch.call_args.args[0])
         for call in fetch.call_args_list:
             self.assertEqual(call.kwargs["ttl_seconds"], server.FUND_HOLDINGS_REFRESH_TTL_SECONDS)
             self.assertIs(call.kwargs["force_refresh"], True)
@@ -2371,7 +2383,9 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(result["latestReports"], {"017091": "2026-06-30"})
         self.assertIn("code=159509", fetch.call_args.args[0])
         self.assertIn("ccmx_159509.html", fetch.call_args.kwargs["referer"])
-        parse.assert_called_once_with("017091", "payload")
+        self.assertEqual(parse.call_count, 2)
+        parse.assert_called_with("017091", "payload")
+        self.assertIn('year=2026', fetch.call_args.args[0])
         self.assertEqual(server.read_fund_holdings_from_db("017091")[0]["stockCode"], "NVDA")
 
     def test_configured_etf_portfolio_is_stored_without_invalid_stock_scrape(self) -> None:
@@ -2417,7 +2431,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             patch.object(
                 server,
                 "fetch_upstream",
-                side_effect=[RuntimeError("HTTP Error 514: Frequency Capped"), (200, "text/plain", b"payload")],
+                side_effect=[RuntimeError("HTTP Error 514: Frequency Capped"), (200, "text/plain", b"payload"), (200, "text/plain", b"payload")],
             ) as fetch,
             patch.object(server, "parse_fund_holdings", return_value=rows),
             patch.object(server.time, "sleep") as sleep,
@@ -2426,7 +2440,7 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         self.assertEqual(result["stored"], 1)
         self.assertEqual(result["errors"], [])
-        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(fetch.call_count, 3)
         sleep.assert_any_call(2)
         sleep.assert_any_call(server.FUND_HOLDINGS_REQUEST_DELAY_SECONDS)
 
@@ -2918,6 +2932,11 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(scheduled, [])
 
     def test_market_returns_adjusts_cn_etf_ex_rights_gap(self) -> None:
+        with server.get_conn() as conn:
+            conn.executemany("INSERT INTO market_adjustment_factors VALUES (?, ?, ?, ?, ?, ?, ?)", [
+                ('sh515070', '1900-01-01', 1, 1, 0, 'sina-hfq', 1),
+                ('sh515070', '2026-07-06', 1, 2, 0, 'sina-hfq', 1),
+            ])
         server.store_market_history(
             "sina-cn",
             "sh515070",
@@ -2937,9 +2956,103 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertGreater(one_month["returnPercent"], 10)
         self.assertLess(one_month["returnPercent"], 15)
         self.assertEqual(one_month["endClose"], 1.379)
-        self.assertAlmostEqual(one_month["endAdjustedClose"], 2.7815, places=3)
+        self.assertAlmostEqual(one_month["endAdjustedClose"], 2.758, places=3)
+
+    def test_unknown_official_change_survives_history_and_overview(self):
+        server.store_fund_history('017436', [
+            {'FSRQ': '2026-08-31', 'DWJZ': '2', 'JZZZL': '0'},
+            {'FSRQ': '2026-09-01', 'DWJZ': '2.01', 'JZZZL': ''},
+        ])
+        self.assertIsNone(server.read_fund_overview_summary_from_db('017436')['officialChange'])
+        self.assertEqual(len(server.read_fund_history_from_db('017436', 10, 1)), 2)
+
+    def test_cash_dividend_returns_and_chart_use_the_same_series(self):
+        server.store_fund_history('017436', [
+            {'FSRQ': '2026-08-25', 'DWJZ': 2, 'JZZZL': 0, 'LJJZ': 2},
+            {'FSRQ': '2026-09-01', 'DWJZ': 1.02, 'JZZZL': 1, 'LJJZ': 2.02},
+        ])
+        summary = server.read_fund_return_summary_from_db('017436')
+        self.assertAlmostEqual(summary['ranges']['1w']['returnPercent'], 1)
+        points = server.read_fund_performance_from_db('017436')
+        self.assertAlmostEqual((points[-1]['returnValue'] / points[0]['returnValue'] - 1) * 100, 1)
+
+    def test_standalone_fx_uses_dashboard_without_upstream(self):
+        fx = 'var hq_str_fx_susdcny="09:30:00,7.10,7.10,7.00,7.00,7.10,7.00,美元人民币,1.43,0.1,7.10,7.10,7.10,7.10,7.10,7.10,2026-09-04";'
+        server.store_dashboard_snapshot({'schemaVersion': 1, 'generatedAt': server.now_ms(), 'quotes': {}, 'quoteText': '', 'fxText': fx, 'marketStates': {}})
+        with patch.object(server, 'fetch_upstream', side_effect=AssertionError('read path must not fetch')):
+            client = server.app.test_client()
+            response = client.get('/api/dashboard?currencies=USD')
+            self.assertEqual(response.status_code, 200)
+            self.assertIn('美元人民币', response.get_json()['fxText'])
+            self.assertIn('fx_susdcny', client.get('/api/sina?list=fx_susdcny').get_data(as_text=True))
+
+    def test_fund_card_snapshot_is_lean_and_read_only(self):
+        server.store_fund_history('017436', [{'FSRQ': '2026-09-01', 'DWJZ': 2, 'JZZZL': None}])
+        server.store_dashboard_snapshot({'017436': {'officialNavDate': '2026-09-01', 'holdings': [{'name': 'A'}], 'holdingQuotes': {'A': {}}, 'preview': {'targetDate': '2026-09-02', 'holdingContributions': [{'large': True}], 'changePercent': 1}}}, server.FUND_ESTIMATE_SNAPSHOT_NAME)
+        with patch.object(server, 'build_fund_estimates', side_effect=AssertionError('worker only')):
+            card = server.fund_card_snapshot(['017436'])['cards']['017436']
+        self.assertNotIn('holdings', card['estimate'])
+        self.assertNotIn('holdingContributions', card['estimate']['preview'])
+        self.assertIsNone(card['official']['officialChange'])
+        server.store_fund_history('017436', [{'FSRQ': '2026-09-02', 'DWJZ': 2.02, 'JZZZL': 1}])
+        self.assertIsNone(server.fund_card_snapshot(['017436'])['cards']['017436']['estimate'])
+
+    def test_smaller_same_period_holdings_cannot_replace_expanded_disclosure(self):
+        rows = [{'reportDate': '2026-06-30', 'rank': rank, 'stockCode': f'A{rank}', 'name': 'A', 'weight': 0.01} for rank in range(1, 21)]
+        self.assertTrue(server.store_fund_holdings('017436', rows))
+        self.assertFalse(server.store_fund_holdings('017436', rows[:10]))
+        self.assertEqual(len(server.read_fund_holdings_from_db('017436')), 20)
+        invalid = [dict(row) for row in rows]
+        invalid[0]['weight'] = float('nan')
+        self.assertFalse(server.store_fund_holdings('017436', invalid))
+        self.assertEqual(server.fund_holding_disclosure('017436', rows)['count'], 20)
+
+    def test_semiannual_holdings_request_expands_the_exact_period(self):
+        rows = [{'reportDate': '2026-06-30', 'rank': rank, 'stockCode': f'A{rank}',
+                 'name': 'A', 'weight': 0.01} for rank in range(1, 21)]
+        with (
+            patch.object(server, 'fetch_upstream', return_value=(200, 'text/plain', b'payload')) as fetch,
+            patch.object(server, 'parse_fund_holdings', side_effect=[rows[:10], rows]),
+            patch.object(server.time, 'sleep'),
+        ):
+            result = server.refresh_latest_fund_holdings(['017436'])
+        self.assertEqual(result['stored'], 1)
+        self.assertEqual(len(server.read_fund_holdings_from_db('017436')), 20)
+        self.assertIn('year=2026&month=6', fetch.call_args.args[0])
+        self.assertIn('topline=1000', fetch.call_args.args[0])
+
+    def test_failed_expanded_refresh_keeps_previous_complete_holdings(self):
+        rows = [{'reportDate': '2026-06-30', 'rank': rank, 'stockCode': f'A{rank}',
+                 'name': 'A', 'weight': 0.01} for rank in range(1, 21)]
+        server.store_fund_holdings('017436', rows)
+        with (
+            patch.object(server, 'fetch_upstream', side_effect=[(200, 'text/plain', b'payload'), TimeoutError()]),
+            patch.object(server, 'parse_fund_holdings', return_value=rows[:10]),
+            patch.object(server.time, 'sleep'),
+        ):
+            result = server.refresh_latest_fund_holdings(['017436'])
+        self.assertEqual(result['updated'], 0)
+        self.assertEqual(len(server.read_fund_holdings_from_db('017436')), 20)
+
+    def test_fund_cards_exclude_unrelated_market_states(self):
+        server.store_dashboard_snapshot({'marketStates': {'gb_a': {'state': 'closed'}, 'gb_b': {'state': 'open'}}})
+        with patch.object(server, 'parse_default_fund_holdings_from_constants', return_value=[{'sinaSymbol': 'gb_a'}]):
+            snapshot = server.fund_card_snapshot(['017436'])
+        self.assertEqual(list(snapshot['marketStates']), ['gb_a'])
+
+    def test_valuation_close_timestamp_keeps_us_trading_day_and_beijing_time(self):
+        server.ensure_market_calendar_seeded()
+        stamp = server.valuation_close_timestamp({'us'}, '2026-07-31')
+        self.assertEqual(datetime.fromtimestamp(stamp / 1000, ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M'), '2026-08-01 04:00')
+        winter = server.valuation_close_timestamp({'us'}, '2026-01-06')
+        self.assertEqual(datetime.fromtimestamp(winter / 1000, ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M'), '2026-01-07 05:00')
 
     def test_market_history_returns_adjusted_cn_etf_series(self) -> None:
+        with server.get_conn() as conn:
+            conn.executemany("INSERT INTO market_adjustment_factors VALUES (?, ?, ?, ?, ?, ?, ?)", [
+                ('sz159558', '1900-01-01', 1, 1, 0, 'sina-hfq', 1),
+                ('sz159558', '2026-07-09', 1, 3, 0, 'sina-hfq', 1),
+            ])
         server.store_market_history(
             "sina-cn",
             "sz159558",
@@ -2955,7 +3068,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload[-1]["date"], "2026-07-09")
-        self.assertAlmostEqual(payload[-1]["close"], 4.215, places=3)
+        self.assertAlmostEqual(payload[-1]["close"], 4.638, places=3)
         self.assertEqual(payload[-1]["rawClose"], 1.546)
         self.assertTrue(payload[-1]["adjusted"])
 

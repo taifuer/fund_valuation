@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { FundEstimateProjection, Holding, QuoteData } from '../types';
 import HoldingsTable from './HoldingsTable';
@@ -66,6 +66,29 @@ const projection = {
 } satisfies FundEstimateProjection;
 
 describe('HoldingsTable projection details', () => {
+  const props = {
+    quotes: [quote], computedChange: 0.7, normalizedChange: 7, quoteCoverage: 0.1,
+    totalConfiguredWeight: 0.1, missingQuoteCount: 0, staleQuoteCount: 0,
+    missingFxCount: 0, currencyChanges: { USD: 0 },
+  };
+
+  it('does not invent a contribution for rows omitted by the server projection', () => {
+    render(<HoldingsTable {...props} holdings={[holding]} projectionRequired
+      projection={{...projection, holdingContributions:[]}} />);
+    expect(screen.getByText('未计入')).toBeInTheDocument();
+    expect(screen.queryByText('+7.00%')).not.toBeInTheDocument();
+    expect(screen.queryByText('+0.70%')).not.toBeInTheDocument();
+  });
+
+  it('keeps expanded portfolios compact without changing calculation totals', () => {
+    const rows = Array.from({length:30}, (_, index) => ({...holding, symbol:`S${index}`}));
+    render(<HoldingsTable {...props} holdings={rows} />);
+    expect(screen.getAllByRole('row')).toHaveLength(21);
+    fireEvent.click(screen.getByRole('button', {name:'显示全部 30 项'}));
+    expect(screen.getAllByRole('row')).toHaveLength(31);
+    fireEvent.click(screen.getByRole('button', {name:'收起'}));
+    expect(screen.getAllByRole('row')).toHaveLength(21);
+  });
   it('uses date-aligned contribution data instead of the raw quote change', () => {
     render(
       <HoldingsTable

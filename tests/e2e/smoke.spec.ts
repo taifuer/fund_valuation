@@ -77,6 +77,7 @@ test('company report calendar keeps official events readable without a runtime d
   await expect(page.getByRole('grid', { name: /财报日历/ })).toBeVisible();
   await expect(page.getByRole('combobox', { name: '选择财报月份' })).toBeVisible();
   await expect(page.getByText('当月事项')).toBeVisible();
+  await page.getByRole('combobox', { name: '选择财报月份' }).selectOption('2026-01');
   await expect(page.getByText('已披露').first()).toBeVisible();
   expect(companyApiRequests).toEqual([]);
 
@@ -167,6 +168,34 @@ test('mobile pages keep wide data tables inside local scrollers', async ({ page 
       document.documentElement.scrollWidth - document.documentElement.clientWidth
     ));
     expect(overflow, `${path} page overflow`).toBeLessThanOrEqual(1);
+  }
+});
+
+test('market metadata has balanced spacing and a stable loading slot', async ({ page }) => {
+  for (const path of ['/', '/funds', '/returns', '/risk']) {
+    await page.goto(path);
+    await expect(page.getByText(/北京时间/)).toBeVisible();
+    const selector = path === '/' ? '[class*="_sectionToggle_"]'
+      : path === '/funds' ? '[class*="_fundToolbar_"]' : '[aria-label="收益分析视图"]';
+    await expect(page.locator(selector).first()).toBeVisible();
+    const geometry = await page.evaluate(selector => {
+      const header = document.querySelector('header')!.getBoundingClientRect();
+      const time = document.querySelector('[class*="_datetime_"]')!.getBoundingClientRect();
+      const fx = document.querySelector('[class*="_fxRow_"]')!.getBoundingClientRect();
+      const content = document.querySelector(selector)!;
+      const before = content.getBoundingClientRect().top;
+      document.querySelector('[class*="_statusMessage_"]')!.textContent = '行情数据加载中...';
+      return {
+        top: time.top - header.bottom,
+        bottom: before - fx.bottom,
+        shift: content.getBoundingClientRect().top - before,
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    }, selector);
+    expect(geometry.top, `${path} top spacing`).toBe(20);
+    expect(geometry.bottom, `${path} bottom spacing`).toBe(20);
+    expect(geometry.shift, `${path} loading shift`).toBe(0);
+    expect(geometry.overflow, `${path} overflow`).toBeLessThanOrEqual(1);
   }
 });
 

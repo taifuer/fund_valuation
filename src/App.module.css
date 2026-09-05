@@ -24,7 +24,7 @@
 }
 
 .fundSection {
-  padding: 4px 16px 32px;
+  padding: 0 16px 32px;
   max-width: 1040px;
   margin: 0 auto;
 }
@@ -219,7 +219,7 @@
   backdrop-filter: blur(10px);
   background: rgba(248, 250, 252, 0.94);
   border-bottom: 1px solid #e2e8f0;
-  margin-top: 4px;
+  margin-top: 0;
   padding: 8px 0;
   position: sticky;
   top: 0;

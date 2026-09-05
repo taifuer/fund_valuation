@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import { intervalMetrics, formatReturn } from '../historyMetrics';
 import { nextChartIndex } from '../chartKeyboard';
 import { fetchMarketHistory } from '../api';
+import { useChartWidth } from '../hooks/useChartWidth';
+import { fitAxisTicks } from '../chartLayout';
 import type { IndexConfig, MarketHistoryPoint, QuoteData } from '../types';
 import styles from './MarketHistoryModal.module.css';
 
@@ -17,7 +20,7 @@ const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
   { key: '1w', label: '1周', days: 7 },
   { key: '1m', label: '1月', days: 30 },
   { key: '3m', label: '3月', days: 90 },
-  { key: '6m', label: '半年', days: 183 },
+  { key: '6m', label: '半年', days: 182 },
   { key: '1y', label: '1年', days: 365 },
   { key: '3y', label: '3年', days: 365 * 3 },
   { key: '5y', label: '5年', days: 365 * 5 },
@@ -26,6 +29,7 @@ const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
 ];
 
 const historyCache = new Map<string, MarketHistoryPoint[]>();
+const historyLoadedAt = new Map<string, number>();
 
 function cutoffDate(latestDate: string, days: number): string {
   const date = new Date(`${latestDate}T12:00:00+08:00`);
@@ -88,26 +92,13 @@ function formatPointDate(date: string): string {
   return date;
 }
 
-function maxDrawdown(points: MarketHistoryPoint[]): number {
-  let peak = points[0]?.close ?? 0;
-  let worst = 0;
-  for (const point of points) {
-    peak = Math.max(peak, point.close);
-    if (peak > 0) {
-      worst = Math.min(worst, ((point.close - peak) / peak) * 100);
-    }
-  }
-  return worst;
-}
-
-function makeChart(points: MarketHistoryPoint[]) {
+function makeChart(points: MarketHistoryPoint[], width: number) {
   if (points.length === 0) {
     return { path: '', min: 0, max: 0, xStart: 56, xEnd: 584, yTicks: [], pointPositions: [] };
   }
 
-  const width = 640;
-  const padLeft = 56;
-  const padRight = 56;
+  const padLeft = 64;
+  const padRight = 16;
   const padY = 14;
   const plotHeight = 190;
   const min = Math.min(...points.map((point) => point.close));
@@ -129,7 +120,7 @@ function makeChart(points: MarketHistoryPoint[]) {
 
   const path = pointPositions
     .map(({ x, y }, index) => {
-      return `${index === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`;
+      return `${index === 0 || (points[index].returnSegment ?? 0) !== (points[index - 1].returnSegment ?? 0) ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`;
     })
     .join(' ');
 
@@ -189,7 +180,7 @@ function pointerSvgX(event: React.PointerEvent<SVGSVGElement>): number {
   const matrix = svg.getScreenCTM();
   if (!matrix) {
     const rect = svg.getBoundingClientRect();
-    return ((event.clientX - rect.left) / rect.width) * 640;
+    return ((event.clientX - rect.left) / rect.width) * svg.viewBox.baseVal.width;
   }
   const point = svg.createSVGPoint();
   point.x = event.clientX;
@@ -204,6 +195,7 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
   const [loading, setLoading] = useState(!historyCache.get(cacheKey)?.length);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const { width: chartWidth, ref: chartRef } = useChartWidth();
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -220,7 +212,7 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
       setHistory(cached);
       setLoading(false);
       setError(null);
-      return;
+      if (Date.now() - (historyLoadedAt.get(cacheKey) ?? 0) < 5 * 60 * 1000) return;
     }
     if (!item.history) {
       setHistory([]);
@@ -229,19 +221,22 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
       return;
     }
 
-    setLoading(true);
+    setLoading(!cached?.length);
     setError(null);
     fetchMarketHistory(item.history)
       .then((data) => {
         if (cancelled) return;
         if (data.length > 0) {
           historyCache.set(cacheKey, data);
+          historyLoadedAt.set(cacheKey, Date.now());
         }
-        setHistory(data);
-        setError(data.length > 0 ? null : '暂无历史行情');
+        if (data.length > 0 || !cached?.length) setHistory(data);
+        setError(data.length > 0 ? null : cached?.length
+          ? '历史行情刷新失败，当前显示已缓存数据' : '暂无历史行情');
       })
       .catch(() => {
-        if (!cancelled) setError('历史行情加载失败');
+        if (!cancelled) setError(cached?.length
+          ? '历史行情刷新失败，当前显示已缓存数据' : '历史行情加载失败');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -266,31 +261,28 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
     if (visible.length < 2) return null;
     const first = visible[0];
     const last = visible[visible.length - 1];
-    const returnPct = first.close > 0 ? ((last.close - first.close) / first.close) * 100 : 0;
+    const performance = intervalMetrics(visible, point => point.close);
     const high = Math.max(...visible.map((point) => point.close));
     const low = Math.min(...visible.map((point) => point.close));
     return {
       first,
       last,
-      returnPct,
-      drawdown: maxDrawdown(visible),
+      ...performance,
       high,
       low,
     };
   }, [visible]);
 
-  const chart = useMemo(() => makeChart(visible), [visible]);
+  const chart = useMemo(() => makeChart(visible, chartWidth), [visible, chartWidth]);
   const xTicks = useMemo(
-    () => makeXTicks(visible, range, chart.xStart, chart.xEnd),
+    () => fitAxisTicks(makeXTicks(visible, range, chart.xStart, chart.xEnd)),
     [visible, range, chart.xStart, chart.xEnd],
   );
   const activeIndex = selectedIndex !== null && selectedIndex < visible.length ? selectedIndex : null;
   const activePoint = activeIndex !== null ? visible[activeIndex] : null;
   const activePosition = activeIndex !== null ? chart.pointPositions[activeIndex] : null;
-  const activeReturn = activePoint && visible[0]?.close
-    ? ((activePoint.close - visible[0].close) / visible[0].close) * 100
-    : 0;
-  const tooltipX = activePosition ? Math.min(Math.max(activePosition.x + 10, 64), 492) : 0;
+  const activeReturn = activePoint ? intervalMetrics([visible[0], activePoint], point => point.close).returnPct : null;
+  const tooltipX = activePosition ? Math.max(4, Math.min(activePosition.x + 10, chartWidth - 140)) : 0;
   const tooltipY = activePosition ? Math.min(Math.max(activePosition.y - 58, 8), 144) : 0;
   const up = (metrics?.returnPct ?? 0) >= 0;
   const displayLoading = loading;
@@ -344,33 +336,34 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
         {displayLoading && <div className={styles.state}>历史行情加载中...</div>}
         {!displayLoading && displayError && <div className={styles.stateError} role="alert">{displayError}</div>}
         {!displayLoading && !displayError && displayEmpty && <div className={styles.state}>暂无历史行情</div>}
-        {!displayLoading && !displayError && !displayEmpty && metrics && (
+        {!displayLoading && !displayEmpty && metrics && (
           <>
             <div className={styles.metrics}>
               <div>
                 <span>区间涨跌</span>
                 <strong className={up ? styles.up : styles.down}>
-                  {up ? '+' : ''}{metrics.returnPct.toFixed(2)}%
+                  {formatReturn(metrics.returnPct)}
                 </strong>
               </div>
               <div>
                 <span>最大回撤</span>
-                <strong className={styles.down}>{metrics.drawdown.toFixed(2)}%</strong>
+                <strong className={styles.down}>{metrics.drawdown === null ? '--' : `${metrics.drawdown.toFixed(2)}%`}</strong>
               </div>
               <div>
                 <span>最新价格</span>
-                <strong>{formatValue(metrics.last.close)}</strong>
+                <strong>{formatValue(metrics.last.rawClose ?? metrics.last.close)}</strong>
               </div>
               <div>
-                <span>高/低</span>
+                <span>{history.some(point => point.adjusted) ? '复权高/低' : '高/低'}</span>
                 <strong>{formatValue(metrics.high)} / {formatValue(metrics.low)}</strong>
               </div>
             </div>
 
             <div className={styles.chartWrap}>
               <svg
+                ref={chartRef}
                 className={styles.chart}
-                viewBox="0 0 640 218"
+                viewBox={`0 0 ${chartWidth} 218`}
                 role="img"
                 aria-label={`${item.name}历史走势，可用左右方向键选择数据点，Home 和 End 跳到首尾`}
                 tabIndex={0}
@@ -396,8 +389,8 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
                       <rect className={styles.tooltipBox} width="136" height="50" rx="6" />
                       <text className={styles.tooltipText} x="8" y="16">{formatPointDate(activePoint.date)}</text>
                       <text className={styles.tooltipText} x="8" y="31">价格 {formatValue(activePoint.close)}</text>
-                      <text className={activeReturn >= 0 ? styles.tooltipUp : styles.tooltipDown} x="8" y="46">
-                        区间 {activeReturn >= 0 ? '+' : ''}{activeReturn.toFixed(2)}%
+                      <text className={(activeReturn ?? 0) >= 0 ? styles.tooltipUp : styles.tooltipDown} x="8" y="46">
+                        区间 {formatReturn(activeReturn)}
                       </text>
                     </g>
                   </g>
@@ -412,6 +405,7 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
                 ))}
               </svg>
             </div>
+          <p className={styles.note}>{metrics.returnPct === null ? '区间存在待核实除权断点，暂不计算收益与回撤。' : history.some(point => point.adjusted) ? '走势与区间指标按分红、拆分数据调整；最新价格为未复权收盘价。' : ''}</p>
           </>
         )}
       </div>

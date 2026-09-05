@@ -28,6 +28,7 @@ def estimate_cumulative_return(
     fx_lookup: FxLookup,
     benchmark: dict[str, Any] | None = None,
     benchmark_lookup: BenchmarkLookup | None = None,
+    equity_weight: float = 1.0,
 ) -> dict[str, Any] | None:
     """Estimate cumulative CNY return between two fund valuation dates.
 
@@ -88,7 +89,8 @@ def estimate_cumulative_return(
     if covered_weight <= 0:
         return None
 
-    residual_weight = max(1.0 - covered_weight, 0.0)
+    equity_weight = max(covered_weight, min(equity_weight, 1.0))
+    residual_weight = max(equity_weight - covered_weight, 0.0)
     benchmark_return: float | None = None
     benchmark_source = ""
     benchmark_symbol = ""
@@ -222,10 +224,10 @@ def estimate_cumulative_return(
     elif benchmark_source == "composite":
         return None
     else:
-        estimated_return = contribution / covered_weight
+        estimated_return = contribution / covered_weight * equity_weight
         model = "coverageNormalizedFallback"
         for component in components:
-            component["contribution"] = component["weightedContribution"] / covered_weight
+            component["contribution"] = component["weightedContribution"] / covered_weight * equity_weight
 
     return {
         "return": estimated_return,
@@ -233,6 +235,7 @@ def estimate_cumulative_return(
         "holdingContribution": contribution,
         "coveredWeight": covered_weight,
         "residualWeight": residual_weight,
+        "equityWeight": equity_weight,
         "pricedHoldingCount": priced_count,
         "benchmarkReturn": benchmark_return,
         "benchmarkSource": benchmark_source,

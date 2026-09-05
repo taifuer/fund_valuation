@@ -400,3 +400,11 @@
   .riskTable .winRateCol { width: 80px; }
   .riskTable .dateCol { width: 148px; }
 }
+.skeletonCell {
+  display: block;
+  height: 18px;
+  max-width: 95px;
+  margin-block: 8px;
+  border-radius: 3px;
+  background: #edf0f2;
+}

@@ -43,7 +43,7 @@ export function useSystemStatus(enabled = true) {
 interface FundHistoryNav {
   navDate: string;
   nav: number;
-  officialChange: number;
+  officialChange: number | null;
 }
 
 function mergeOfficialNavs(
@@ -59,8 +59,8 @@ function mergeOfficialNavs(
 
     const historyIsNewer = hist.navDate && (!existing.navDate || hist.navDate > existing.navDate);
     const fundNavIsNewer = existing.navDate && hist.navDate && existing.navDate > hist.navDate;
-    const officialChange = fundNavIsNewer && existing.nav > 0 && hist.nav > 0
-      ? Number((((existing.nav - hist.nav) / hist.nav) * 100).toFixed(2))
+    const officialChange = fundNavIsNewer
+      ? existing.officialChange
       : hist.officialChange;
     merged.set(code, {
       ...existing,
@@ -354,7 +354,7 @@ export function useFundReturnData(funds: Fund[], enabled: boolean) {
           for (const [code, nav] of sinaNavs) {
             if (!navsData.has(code)) {
               const hist = historyData.get(code);
-              navsData.set(code, { ...nav, officialChange: hist?.officialChange ?? 0 });
+              navsData.set(code, { ...nav, officialChange: hist?.officialChange ?? null });
             }
           }
         }

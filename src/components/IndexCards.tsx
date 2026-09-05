@@ -151,7 +151,7 @@ function Card({
       </div>
       {ytdReturn && (
         <span className={styles.ytdReturn}>
-          今年 {ytdReturn.returnPercent >= 0 ? '+' : ''}{ytdReturn.returnPercent.toFixed(2)}%
+          今年 {ytdReturn.returnPercent === null ? '--' : `${ytdReturn.returnPercent >= 0 ? '+' : ''}${ytdReturn.returnPercent.toFixed(2)}%`}
         </span>
       )}
       <span className={`${styles.quoteDate} ${displayTime.estimated ? styles.quoteDateEstimated : ''}`}>

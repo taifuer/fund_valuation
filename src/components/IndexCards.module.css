@@ -1,7 +1,7 @@
 .container {
   max-width: 1040px;
   margin: 0 auto;
-  padding: 14px 16px 0;
+  padding: 0 16px;
 }
 
 .sectionToggle {
@@ -10,7 +10,7 @@
   border: 0;
   color: #64748b;
   cursor: pointer;
-  display: inline-flex;
+  display: flex;
   font: inherit;
   font-size: 13px;
   font-weight: 600;

@@ -51,6 +51,15 @@
 
    命令只为离线数据中已经存在的报告期间生成事件；如出现 `pending`，应先完成财报数据更新，不能只把申报日期写进日历。
 
+## 逐期来源补全
+
+```bash
+npm run data:companies:sources -- --write
+npm run data:companies:sources -- --company=apple --write
+```
+
+工具串行读取 SEC 当前及历史申报索引，按真实财年截止日和报告类型精确匹配，生成 `src/data/companyReportSources.sec.ts`。失败时不改写索引；既有来源保留，人工核验的 `reportReferences` 优先。它只补来源链接，不核验或改写每个财务数值，不把推导的 Q4 自动指向单个报告，也不自动覆盖重述口径。非美公司继续以逐期官方报告人工核验，无法精确匹配的明确显示“归档”。
+
 ## 财报日历
 
 日历与公司数据一样离线维护，日期分为两类：

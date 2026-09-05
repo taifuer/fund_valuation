@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import TableSkeleton from './TableSkeleton';
 import { fetchMarketReturnSummaries } from '../api';
 import { MARKET_ASSETS, RANKING_ETFS, RANKING_INDEX_ETFS, RANKING_INDICES, RANKING_SECTOR_ETFS } from '../constants';
 import { useFundReturnData } from '../hooks/usePageData';
@@ -166,13 +167,6 @@ function nextDirection(currentKey: SortKey, currentDirection: SortDirection, nex
   return defaultDirection(nextKey);
 }
 
-function rankStyle(index: number) {
-  if (index === 0) return styles.gold;
-  if (index === 1) return styles.silver;
-  if (index === 2) return styles.bronze;
-  return '';
-}
-
 function useMarketReturnRefreshTick() {
   const [tick, setTick] = useState(0);
 
@@ -197,7 +191,7 @@ export default function RiskPage({
     choiceFromSearch(window.location.search, 'order', SORT_DIRECTIONS, defaultDirection(sortKey))
   ));
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
-  const [returnsLoading, setReturnsLoading] = useState(false);
+  const [returnsLoading, setReturnsLoading] = useState(true);
   const refreshTick = useMarketReturnRefreshTick();
   const shouldLoadFunds = category === 'fund' || category === 'all';
   const fundData = useFundReturnData(funds, shouldLoadFunds);
@@ -271,6 +265,7 @@ export default function RiskPage({
     : category === 'all'
       ? returnsLoading || marketLoading || fundData.loading
       : returnsLoading || marketLoading;
+  const showSkeleton = loading && !items.some(item => item.maxDrawdownPercent !== null);
 
   useEffect(() => {
     onStatusMessageChange?.(loading ? '风险数据加载中...' : '');
@@ -396,22 +391,18 @@ export default function RiskPage({
               <th>截至</th>
             </tr>
           </thead>
-          <tbody>
-            {loading && items.length === 0 && (
-              <tr>
-                <td colSpan={8} className={styles.empty}>风险数据加载中...</td>
-              </tr>
-            )}
+          <tbody aria-busy={showSkeleton}>
+            {showSkeleton && <TableSkeleton rows={items.length || 10} columns={8} />}
             {!loading && items.length === 0 && (
               <tr>
                 <td colSpan={8} className={styles.empty}>暂无风险数据</td>
               </tr>
             )}
-            {items.map((item, index) => {
+            {!showSkeleton && items.map((item, index) => {
               const up = (item.returnPercent ?? 0) >= 0;
               return (
                 <tr key={item.id}>
-                  <td><span className={`${styles.rank} ${rankStyle(index)}`}>#{index + 1}</span></td>
+                  <td><span className={styles.rank}>#{index + 1}</span></td>
                   <td className={styles.nameCell}>
                     <strong>{item.name}</strong>
                     <span>{item.symbol}</span>

@@ -147,3 +147,21 @@
   line-height: 18px;
   padding: 4px 14px 8px;
 }
+.moreRow {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0;
+}
+
+.moreButton {
+  border: 1px solid #dce1e5;
+  border-radius: 4px;
+  background: #fff;
+  padding: 6px 12px;
+  min-height: 32px;
+  color: #505861;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.moreButton:hover { background: #f4f6f7; }

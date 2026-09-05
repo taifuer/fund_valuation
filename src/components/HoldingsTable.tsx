@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { FundEstimateProjection, Holding, MarketStateData, QuoteData } from '../types';
 import {
   displayStateLabel,
@@ -72,6 +73,8 @@ export default function HoldingsTable({
   estimateEnabled = true,
   projectionRequired = false,
 }: Props) {
+  const [showAll, setShowAll] = useState(false);
+  const displayedHoldings = showAll ? holdings : holdings.slice(0, 20);
   const quoteMap = new Map(quotes.map((q) => [q.symbol, q]));
   const contributionMap = new Map(
     (projection?.holdingContributions ?? []).map((item) => [item.sinaSymbol, item]),
@@ -117,10 +120,11 @@ export default function HoldingsTable({
           </tr>
         </thead>
         <tbody>
-          {holdings.map((h) => {
+          {displayedHoldings.map((h) => {
             const quoteSupported = isHoldingQuoteSupported(h.sinaSymbol, h.quoteSupported);
-            const q = quoteSupported ? quoteMap.get(h.sinaSymbol) : undefined;
             const contribution = contributionMap.get(h.sinaSymbol);
+            const excluded = estimateEnabled && projectionRequired && !contribution;
+            const q = quoteSupported && !excluded ? quoteMap.get(h.sinaSymbol) : undefined;
             const priceChange = contribution?.priceChangePercent ?? q?.changePercent ?? null;
             const up = (priceChange ?? 0) >= 0;
             const fxChange = contribution?.fxChangePercent ?? currencyChanges[h.currency] ?? 0;
@@ -128,7 +132,7 @@ export default function HoldingsTable({
               ? 0
               : ((1 + priceChange / 100) * (1 + fxChange / 100) - 1) * 100;
             const contrib = estimateEnabled
-              ? contribution?.contributionPercent ?? (q ? rmbChange * h.weight : 0)
+              ? contribution?.contributionPercent ?? (excluded ? null : q ? rmbChange * h.weight : 0)
               : null;
             const marketState = quoteMarketState(h.sinaSymbol, marketStates);
             const displayState = q ? quoteDisplayState({ quote: q, marketState }) : marketState;
@@ -149,7 +153,7 @@ export default function HoldingsTable({
                     <span className={styles.stockName}>{h.name}</span>
                   </div>
                 </td>
-                <td className={styles.right}>{(h.weight * 100).toFixed(1)}%</td>
+                <td className={styles.right}>{(h.weight * 100).toFixed(h.weight < 0.01 ? 2 : 1)}%</td>
                 <td className={styles.right}>{h.currency}</td>
                 <td className={`${styles.right} ${displayTime?.estimated ? styles.estimatedDate : ''}`}>
                   {displayTime?.label ?? '-'}
@@ -159,7 +163,7 @@ export default function HoldingsTable({
                   {priceChange == null ? '-' : signedPercent(priceChange)}
                 </td>
                 <td className={`${styles.right} ${fxChange >= 0 ? styles.up : styles.down}`}>
-                  {h.currency === 'CNY' ? '-' : signedPercent(fxChange)}
+                  {h.currency === 'CNY' || excluded ? '-' : signedPercent(fxChange)}
                 </td>
                 <td className={`${styles.right} ${(contrib ?? 0) >= 0 ? styles.up : styles.down}`}>
                   {estimateEnabled && hasValue && contrib != null ? signedPercent(contrib) : '-'}
@@ -168,7 +172,7 @@ export default function HoldingsTable({
                   <span
                     className={`${styles.stateTag} ${!estimateEnabled ? styles.stateOfficial : quoteSupported ? stateClassName(effectiveState) : styles.stateUnavailable}`}
                   >
-                    {!estimateEnabled ? '官方披露' : quoteSupported ? displayStateLabel(effectiveState) : '暂无行情'}
+                    {!estimateEnabled ? '官方披露' : excluded ? '未计入' : quoteSupported ? displayStateLabel(effectiveState) : '暂无行情'}
                   </span>
                 </td>
               </tr>
@@ -176,6 +180,11 @@ export default function HoldingsTable({
           })}
         </tbody>
       </table>
+      {holdings.length > 20 && <div className={styles.moreRow}>
+        <button type="button" className={styles.moreButton} onClick={() => setShowAll(value => !value)} aria-expanded={showAll}>
+          {showAll ? '收起' : `显示全部 ${holdings.length} 项`}
+        </button>
+      </div>}
       {estimateEnabled && projectionRequired && !projection ? (
         <div className={styles.footer}>复合代理数据准备中，暂不生成估值。</div>
       ) : estimateEnabled ? (

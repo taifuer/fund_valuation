@@ -42,6 +42,11 @@ from .config import (
     quote_supported_symbol as universe_quote_supported_symbol,
 )
 from .estimation import compounded_return, estimate_cumulative_return, select_calibration
+from .fund_disclosures import disclosure_history, disclosure_allocations
+from .performance import (
+    adjusted_market_rows, finite_number, fund_performance_rows,
+    history_risk_metrics, parse_sina_adjustments,
+)
 from .quotes import normalize_quote_text
 from .contracts import API_SCHEMA_VERSION, DASHBOARD_SCHEMA_VERSION, validate_dashboard_payload
 from .observability import REQUEST_METRICS, log_event
@@ -122,7 +127,7 @@ FUND_PROFILE_REFRESH_TTL_SECONDS = 7 * 24 * 60 * 60
 FUND_HOLDINGS_REFRESH_INTERVAL_SECONDS = 24 * 60 * 60
 FUND_HOLDINGS_REFRESH_TTL_SECONDS = FUND_HOLDINGS_REFRESH_INTERVAL_SECONDS
 FUND_HOLDINGS_REQUEST_DELAY_SECONDS = 0.25
-FUND_HOLDINGS_MAX_AGE_DAYS = 550
+FUND_HOLDINGS_MAX_AGE_DAYS = 200
 MARKET_RETURNS_CACHE_TTL_SECONDS = 30 * 60
 FUND_NAV_CACHE_TTL_SECONDS = 60
 UPSTREAM_HEALTH_ISSUE_TTL_MS = int(os.environ.get("FUND_VALUATION_HEALTH_ISSUE_TTL_SECONDS", "3600")) * 1000
@@ -1777,16 +1782,15 @@ def parse_sina_array_jsonp(text: str) -> list[dict[str, Any]]:
 
 def store_fund_history(code: str, rows: list[dict[str, Any]]) -> None:
     points = []
+    details = []
     fetched_at = now_ms()
     for row in rows:
         date = str(row.get("FSRQ") or "")
-        try:
-            nav = float(row.get("DWJZ") or 0)
-            change_percent = float(row.get("JZZZL") or 0)
-        except (TypeError, ValueError):
-            continue
-        if date and nav > 0:
+        nav = finite_number(row.get("DWJZ"))
+        change_percent = finite_number(row.get("JZZZL"))
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) and nav is not None and nav > 0:
             points.append((code, date, nav, change_percent, fetched_at))
+            details.append((code, date, finite_number(row.get("LJJZ")), "official" if change_percent is not None else "missing", fetched_at))
     if not points:
         return
     with get_conn() as conn:
@@ -1796,10 +1800,20 @@ def store_fund_history(code: str, rows: list[dict[str, Any]]) -> None:
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(code, date) DO UPDATE SET
               nav = excluded.nav,
-              change_percent = excluded.change_percent,
+              change_percent = COALESCE(excluded.change_percent, fund_nav_history.change_percent),
               fetched_at = excluded.fetched_at
             """,
             points,
+        )
+        conn.executemany(
+            """
+            INSERT INTO fund_nav_details VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(code, date) DO UPDATE SET
+              accumulated_nav = COALESCE(excluded.accumulated_nav, fund_nav_details.accumulated_nav),
+              change_source = CASE WHEN excluded.change_source = 'official' THEN 'official'
+                ELSE fund_nav_details.change_source END,
+              fetched_at = excluded.fetched_at
+            """, details,
         )
 
 
@@ -2077,7 +2091,7 @@ def fetch_and_store_fund_history(code: str, target_count: int, *, refresh: bool)
             break
 
 
-def latest_fund_history_point(code: str) -> tuple[str, float, float] | None:
+def latest_fund_history_point(code: str) -> tuple[str, float, float | None] | None:
     with get_conn() as conn:
         row = conn.execute(
             """
@@ -2091,7 +2105,7 @@ def latest_fund_history_point(code: str) -> tuple[str, float, float] | None:
         ).fetchone()
     if not row:
         return None
-    return str(row[0]), float(row[1]), float(row[2])
+    return str(row[0]), float(row[1]), finite_number(row[2])
 
 
 def invalidate_fund_history_response_caches() -> None:
@@ -2419,12 +2433,12 @@ def parse_fund_holdings(code: str, text: str) -> list[dict[str, Any]]:
     return holdings
 
 
-def store_fund_holdings(code: str, holdings: list[dict[str, Any]]) -> None:
+def store_fund_holdings(code: str, holdings: list[dict[str, Any]]) -> bool:
     if not holdings:
-        return
+        return False
     report_date = str(holdings[0].get("reportDate") or "")
     if not valid_fund_holding_report_date(report_date):
-        return
+        return False
     fetched_at = now_ms()
     points = []
     for item in holdings:
@@ -2432,9 +2446,9 @@ def store_fund_holdings(code: str, holdings: list[dict[str, Any]]) -> None:
             rank = int(item.get("rank") or 0)
             weight = float(item.get("weight") or 0)
         except (TypeError, ValueError):
-            continue
-        if rank <= 0 or weight <= 0:
-            continue
+            return False
+        if rank <= 0 or not math.isfinite(weight) or not 0 < weight <= 1 or item.get("reportDate") != report_date:
+            return False
         points.append((
             code,
             report_date,
@@ -2447,9 +2461,12 @@ def store_fund_holdings(code: str, holdings: list[dict[str, Any]]) -> None:
             str(item.get("currency") or "CNY"),
             fetched_at,
         ))
-    if not points:
-        return
+    if not points or len(points) > 1000 or sum(point[5] for point in points) > 1.05 or len({point[2] for point in points}) != len(points):
+        return False
     with get_conn() as conn:
+        existing_count = conn.execute("SELECT COUNT(*) FROM fund_holdings WHERE code = ? AND report_date = ?", (code, report_date)).fetchone()[0]
+        if existing_count > len(points):
+            return False
         conn.execute("DELETE FROM fund_holdings WHERE code = ? AND report_date = ?", (code, report_date))
         conn.executemany(
             """
@@ -2460,6 +2477,51 @@ def store_fund_holdings(code: str, holdings: list[dict[str, Any]]) -> None:
             """,
             points,
         )
+        source_code = fund_holdings_source_code(code)
+        source_url = f"https://fundf10.eastmoney.com/ccmx_{source_code}.html" if code not in CONFIGURED_FUND_PORTFOLIO_CODES else ""
+        revision = hashlib.sha256(json.dumps(fund_holdings_signature(holdings)).encode()).hexdigest()[:16]
+        conn.execute("""
+            INSERT INTO fund_disclosure_metadata(code, report_date, holdings_count, holdings_weight, source_url, revision, checked_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(code, report_date) DO UPDATE SET holdings_count=excluded.holdings_count,
+              holdings_weight=excluded.holdings_weight, source_url=excluded.source_url,
+              revision=excluded.revision, checked_at=excluded.checked_at
+        """, (code, report_date, len(points), sum(point[5] for point in points), source_url, revision, fetched_at))
+    return True
+
+
+def refresh_fund_disclosure_metadata(code: str) -> None:
+    status, _, body = fetch_upstream(
+        f"https://fund.eastmoney.com/pingzhongdata/{code}.js",
+        referer=f"https://fund.eastmoney.com/{code}.html",
+        content_type="text/plain; charset=utf-8", cache_key=f"fund-disclosure:{code}",
+        kind="fundhistory", ttl_seconds=24 * 60 * 60,
+    )
+    if status >= 400:
+        raise ValueError(f"fund disclosure HTTP {status}")
+    text = decode_body(body)
+    store_fund_history(code, disclosure_history(text))
+    with get_conn() as conn:
+        conn.executemany("""
+            INSERT INTO fund_disclosure_metadata(code, report_date, equity_weight, checked_at)
+            VALUES (?, ?, ?, ?) ON CONFLICT(code, report_date) DO UPDATE SET
+              equity_weight=excluded.equity_weight, checked_at=excluded.checked_at
+        """, [(code, day, weight, now_ms()) for day, weight in disclosure_allocations(text)])
+
+
+def fund_holding_disclosure(code: str, holdings: list[dict[str, Any]]) -> dict[str, Any]:
+    report_date = str(holdings[0].get("reportDate") or "") if holdings else ""
+    with get_conn() as conn:
+        row = conn.execute("SELECT equity_weight, source_url, revision, checked_at FROM fund_disclosure_metadata WHERE code=? AND report_date=?", (code, report_date)).fetchone()
+    weight = sum(float(item.get("weight") or 0) for item in holdings)
+    equity = row[0] if row else None
+    # A different portfolio date/denominator must not silently suppress exposure.
+    applied = equity is not None and equity >= weight and code not in CONFIGURED_FUND_PORTFOLIO_CODES and code not in FUND_HOLDINGS_TARGET_ETFS
+    return {"reportDate": report_date, "count": len(holdings), "weight": weight,
+            "equityWeight": equity, "allocationApplied": applied,
+            "sourceUrl": row[1] if row else "", "revision": row[2] if row else "",
+            "checkedAt": row[3] if row else None,
+            "kind": "configured" if code in CONFIGURED_FUND_PORTFOLIO_CODES else "proxy" if code in FUND_HOLDINGS_TARGET_ETFS else "expanded" if len(holdings) > 10 else "topHoldings"}
 
 
 def valid_fund_holding_report_date(value: str) -> bool:
@@ -2523,12 +2585,12 @@ def refresh_missing_fund_holdings(
                 unavailable += 1
             continue
         source_code = fund_holdings_source_code(code)
-        query = urlencode({"type": "jjcc", "code": source_code, "topline": 10, "year": year, "month": quarter})
+        query = urlencode({"type": "jjcc", "code": source_code, "topline": 1000, "year": year, "month": quarter * 3})
         status, _, body = fetch_upstream(
             f"https://fundf10.eastmoney.com/FundArchivesDatas.aspx?{query}",
             referer=f"https://fundf10.eastmoney.com/ccmx_{quote(source_code)}.html",
             content_type="text/plain; charset=utf-8",
-            cache_key=f"fundholdings:{source_code}:{year}:{quarter}",
+            cache_key=f"fundholdings:expanded:{source_code}:{year}:{quarter}",
             kind="fundholdings",
             ttl_seconds=30 * 24 * 60 * 60,
         )
@@ -2608,14 +2670,14 @@ def refresh_latest_fund_holdings(
         if configured_rows:
             return code, configured_rows, ""
         source_code = fund_holdings_source_code(code)
-        query = urlencode({"type": "jjcc", "code": source_code, "topline": 10, "year": "", "month": ""})
+        query = urlencode({"type": "jjcc", "code": source_code, "topline": 1000, "year": "", "month": ""})
         for attempt in range(2):
             try:
                 status, _, body = fetch_upstream(
                     f"https://fundf10.eastmoney.com/FundArchivesDatas.aspx?{query}",
                     referer=f"https://fundf10.eastmoney.com/ccmx_{quote(source_code)}.html",
                     content_type="text/plain; charset=utf-8",
-                    cache_key=f"fundholdings:{source_code}",
+                    cache_key=f"fundholdings:expanded:{source_code}",
                     kind="fundholdings",
                     ttl_seconds=FUND_HOLDINGS_REFRESH_TTL_SECONDS,
                     force_refresh=force_refresh,
@@ -2630,7 +2692,27 @@ def refresh_latest_fund_holdings(
                 time.sleep(FUND_HOLDINGS_REQUEST_DELAY_SECONDS)
         if status >= 400:
             return code, [], f"HTTP {status}"
-        return code, parse_fund_holdings(code, decode_body(body)), ""
+        rows = parse_fund_holdings(code, decode_body(body))
+        report_date = str(rows[0].get("reportDate") or "") if rows else ""
+        if report_date.endswith(("06-30", "12-31")) and len(rows) <= 10:
+            query = urlencode({"type": "jjcc", "code": source_code, "topline": 1000,
+                               "year": report_date[:4], "month": int(report_date[5:7])})
+            try:
+                expanded_status, _, expanded_body = fetch_upstream(
+                    f"https://fundf10.eastmoney.com/FundArchivesDatas.aspx?{query}",
+                    referer=f"https://fundf10.eastmoney.com/ccmx_{quote(source_code)}.html",
+                    content_type="text/plain; charset=utf-8",
+                    cache_key=f"fundholdings:expanded:{source_code}:{report_date}", kind="fundholdings",
+                    ttl_seconds=FUND_HOLDINGS_REFRESH_TTL_SECONDS, force_refresh=force_refresh,
+                )
+                expanded = parse_fund_holdings(code, decode_body(expanded_body)) if expanded_status < 400 else []
+                if expanded and expanded[0]['reportDate'] == report_date and len(expanded) > len(rows):
+                    rows = expanded
+            except Exception:
+                pass
+            finally:
+                time.sleep(FUND_HOLDINGS_REQUEST_DELAY_SECONDS)
+        return code, rows, ""
 
     fetched: dict[str, tuple[list[dict[str, Any]], str]] = {}
     for code in fund_codes:
@@ -2658,7 +2740,9 @@ def refresh_latest_fund_holdings(
             unavailable += 1
             continue
         changed = report_date != existing_date or fund_holdings_signature(rows) != fund_holdings_signature(existing)
-        store_fund_holdings(code, rows)
+        if not store_fund_holdings(code, rows):
+            unavailable += 1
+            continue
         stored += 1
         updated += int(changed)
         if changed:
@@ -2804,6 +2888,20 @@ def market_completed_valuation_date(market: str, target_date: str, current: date
     return bool(closes) and local.hour * 60 + local.minute >= max(closes)
 
 
+def valuation_close_timestamp(markets: list[str], target_date: str) -> int:
+    timestamps: list[int] = []
+    for market in markets:
+        day = market_value_date_on_or_before(market, target_date)
+        row = market_calendar_row(market, day) if day else None
+        if not row:
+            continue
+        closes = [parse_hhmm(str(end)) for start, end in row["sessions"] if parse_hhmm(str(start)) < parse_hhmm(str(end))]
+        if closes:
+            local = datetime.fromisoformat(str(day)).replace(tzinfo=ZoneInfo(str(MARKET_CALENDARS[market]["timezone"])))
+            timestamps.append(int((local + timedelta(minutes=max(closes))).timestamp() * 1000))
+    return max(timestamps, default=0)
+
+
 def quote_market_date(symbol: str, quote_time: str) -> str | None:
     market = market_key_for_symbol(symbol)
     if not market or market not in MARKET_CALENDARS or not quote_time:
@@ -2868,6 +2966,7 @@ def fund_estimate_input_signature(holding_report_date: str, cumulative: dict[str
         "benchmarkSymbol": str(cumulative.get("benchmarkSymbol") or ""),
         "benchmarkComponents": benchmark_components,
         "components": components,
+        "equityWeight": cumulative.get("equityWeight", 1.0),
     }
     encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()[:24]
@@ -3088,10 +3187,10 @@ def build_fund_estimates(
                 row = conn.execute(
                     """
                     SELECT close FROM stock_daily_history
-                    WHERE sina_symbol = ? AND date <= ?
+                    WHERE sina_symbol = ? AND date <= ? AND date >= date(?, '-10 days')
                     ORDER BY date DESC LIMIT 1
                     """,
-                    (symbol, day),
+                    (symbol, day, day),
                 ).fetchone()
                 carried_stock_cache[key] = float(row[0]) if row else None
             return carried_stock_cache[key]
@@ -3104,10 +3203,10 @@ def build_fund_estimates(
                 row = conn.execute(
                     """
                     SELECT rate FROM fx_daily_history
-                    WHERE currency = ? AND date <= ?
+                    WHERE currency = ? AND date <= ? AND date >= date(?, '-10 days')
                     ORDER BY date DESC LIMIT 1
                     """,
-                    (currency, day),
+                    (currency, day, day),
                 ).fetchone()
                 fx_cache[key] = float(row[0]) if row else None
             return fx_cache[key]
@@ -3133,10 +3232,10 @@ def build_fund_estimates(
             row = conn.execute(
                 """
                 SELECT close FROM market_history
-                WHERE source = ? AND symbol = ? AND date <= ?
+                WHERE source = ? AND symbol = ? AND date <= ? AND date >= date(?, '-10 days')
                 ORDER BY date DESC LIMIT 1
                 """,
-                (source, symbol, day),
+                (source, symbol, day, day),
             ).fetchone()
             return float(row[0]) if row else None
 
@@ -3244,6 +3343,9 @@ def build_fund_estimates(
             base_date = str(official["navDate"])
             base_nav = float(official["nav"])
             holdings = read_fund_holdings_from_db(code) or parse_default_fund_holdings_from_constants(code)
+            if not holdings or not current_fund_holding_report_date(str(holdings[0].get("reportDate") or "")):
+                continue
+            disclosure = fund_holding_disclosure(code, holdings)
             supported = [
                 holding for holding in holdings
                 if universe_quote_supported_symbol(
@@ -3254,6 +3356,7 @@ def build_fund_estimates(
             if not supported:
                 continue
             benchmark = universe_fund_benchmark(code)
+            equity_weight = float(disclosure["equityWeight"]) if disclosure["allocationApplied"] and not (benchmark and benchmark.get("components")) else 1.0
             required_markets = {
                 market
                 for holding in supported
@@ -3298,6 +3401,7 @@ def build_fund_estimates(
                     fx_lookup=fx_lookup,
                     benchmark=benchmark,
                     benchmark_lookup=benchmark_lookup,
+                    equity_weight=equity_weight,
                 )
                 if cumulative is None:
                     return None
@@ -3323,6 +3427,7 @@ def build_fund_estimates(
                         fx_lookup=fx_lookup,
                         benchmark=benchmark,
                         benchmark_lookup=benchmark_lookup,
+                        equity_weight=equity_weight,
                     )
                     if previous_result is not None:
                         previous_return = float(previous_result["return"])
@@ -3478,6 +3583,12 @@ def build_fund_estimates(
                     "phase": phase,
                     "complete": complete,
                     "asOf": as_of,
+                    "quoteAsOf": valuation_close_timestamp(required_markets, target) if complete else max((
+                        int(datetime.fromisoformat(str(raw["time"])).replace(tzinfo=ZoneInfo("Asia/Shanghai")).timestamp() * 1000)
+                        for holding in supported
+                        if isinstance((raw := quotes.get(str(holding.get("sinaSymbol") or ""))), dict)
+                        and re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?", str(raw.get("time") or ""))
+                    ), default=as_of),
                 }
 
             pending = projection(pending_target, "pending") if pending_target else None
@@ -3489,8 +3600,20 @@ def build_fund_estimates(
                 "modelVersion": FUND_ESTIMATE_MODEL_VERSION,
                 "officialNavDate": base_date,
                 "officialNav": base_nav,
-                "officialChange": float(official["officialChange"]),
+                "officialChange": official["officialChange"],
                 "holdingReportDate": str(supported[0].get("reportDate") or ""),
+                "holdingDisclosure": disclosure,
+                "holdings": [{
+                    **holding,
+                    "symbol": holding.get("stockCode", holding.get("symbol", "")),
+                    "name": holding.get("stockName", holding.get("name", "")),
+                } for holding in holdings],
+                "holdingQuotes": {
+                    holding["sinaSymbol"]: quotes[holding["sinaSymbol"]]
+                    for holding in supported if holding.get("sinaSymbol") in quotes
+                },
+                "holdingMarketStates": {holding['sinaSymbol']: states[holding['sinaSymbol']]
+                                        for holding in supported if holding.get('sinaSymbol') in states},
                 "pending": pending,
                 "preview": preview,
             }
@@ -3513,10 +3636,34 @@ def available_fund_estimates(codes: list[str]) -> dict[str, Any]:
         for code in codes
         if isinstance(snapshot.get(code), dict)
     }
-    missing = [code for code in codes if code not in results]
-    if missing:
-        results.update(build_fund_estimates(missing))
     return results
+
+
+def fund_card_snapshot(codes: list[str]) -> dict[str, Any]:
+    estimates = available_fund_estimates(codes)
+    dashboard = read_dashboard_snapshot() or {}
+    cards = {}
+    card_symbols: set[str] = set()
+    for code in codes:
+        official = read_fund_overview_summary_from_db(code)
+        estimate = estimates.get(code)
+        card_holdings = parse_default_fund_holdings_from_constants(code) or (estimate or {}).get('holdings', [])[:10]
+        card_symbols.update(str(holding.get('sinaSymbol') or '') for holding in card_holdings)
+        if estimate and (not official or estimate.get("officialNavDate") != official["navDate"]):
+            estimate = None
+        if estimate:
+            estimate = {key: value for key, value in estimate.items() if key not in {"holdings", "holdingQuotes", "holdingMarketStates"}}
+            for kind in ("pending", "preview"):
+                if isinstance(estimate.get(kind), dict):
+                    estimate[kind] = {key: value for key, value in estimate[kind].items()
+                                      if key not in {"holdingContributions", "benchmarkComponents"}}
+            estimate["officialChange"] = official["officialChange"]
+        cards[code] = {"official": official, "estimate": estimate}
+    return {
+        "schemaVersion": 1, "generatedAt": dashboard.get("generatedAt", 0),
+        "fxText": dashboard.get("fxText", ""), "cards": cards,
+        "marketStates": {symbol: state for symbol, state in dashboard.get("marketStates", {}).items() if symbol in card_symbols},
+    }
 
 
 def refresh_ecb_fx_history(*, start_date: str | None = None, force_refresh: bool = False) -> int:
@@ -4415,7 +4562,7 @@ def read_fund_history_from_db(code: str, page_size: int, page_index: int) -> lis
         {
             "FSRQ": str(date),
             "DWJZ": f"{float(nav):.4f}",
-            "JZZZL": f"{float(change_percent):.2f}",
+            "JZZZL": f"{float(change_percent):.2f}" if change_percent is not None else "",
         }
         for date, nav, change_percent in rows
     ]
@@ -4423,19 +4570,18 @@ def read_fund_history_from_db(code: str, page_size: int, page_index: int) -> lis
 
 def read_fund_overview_summary_from_db(code: str) -> dict[str, Any] | None:
     rows = read_fund_history_from_db(code, 2, 1)
-    if len(rows) < 2:
+    if not rows:
         return None
     try:
         nav = float(rows[0]["DWJZ"])
-        previous_nav = float(rows[1]["DWJZ"])
     except (KeyError, TypeError, ValueError):
         return None
-    official_change = ((nav - previous_nav) / previous_nav) * 100 if previous_nav else 0
+    official_change = finite_number(rows[0]["JZZZL"])
     return {
         "code": code,
         "navDate": rows[0]["FSRQ"],
         "nav": nav,
-        "officialChange": round(official_change, 2),
+        "officialChange": round(official_change, 2) if official_change is not None else None,
     }
 
 
@@ -4460,50 +4606,24 @@ MARKET_RETURN_RANGES: dict[str, tuple[str, int | None]] = {
 }
 
 
-def history_risk_metrics(points: list[tuple[str, float]], start_date: str, end_date: str) -> dict[str, float | None]:
-    window = [
-        value
-        for date, value in points
-        if start_date <= date <= end_date and value > 0
-    ]
-    if len(window) < 2:
-        return {"maxDrawdownPercent": None, "winRatePercent": None}
-
-    peak = window[0]
-    max_drawdown = 0.0
-    positive_days = 0
-    comparable_days = 0
-    for value in window:
-        peak = max(peak, value)
-        if peak > 0:
-            max_drawdown = min(max_drawdown, (value - peak) / peak * 100)
-    for previous, current in zip(window, window[1:]):
-        if previous <= 0:
-            continue
-        comparable_days += 1
-        if current > previous:
-            positive_days += 1
-
-    win_rate = positive_days / comparable_days * 100 if comparable_days else None
-
-    return {
-        "maxDrawdownPercent": round(max_drawdown, 2),
-        "winRatePercent": round(win_rate, 2) if win_rate is not None else None,
-    }
-
-
-def read_fund_return_summary_from_db(code: str) -> dict[str, Any] | None:
+def read_fund_performance_from_db(code: str) -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute(
             """
-            SELECT date, nav
-            FROM fund_nav_history
-            WHERE code = ?
-            ORDER BY date ASC
+            SELECT h.date, h.nav, h.change_percent, d.accumulated_nav
+            FROM fund_nav_history h LEFT JOIN fund_nav_details d
+              ON h.code = d.code AND h.date = d.date
+            WHERE h.code = ? ORDER BY h.date ASC
             """,
             (code,),
         ).fetchall()
-    points = [(str(date), float(nav)) for date, nav in rows if float(nav) > 0]
+    return fund_performance_rows(rows)
+
+
+def read_fund_return_summary_from_db(code: str) -> dict[str, Any] | None:
+    rows = read_fund_performance_from_db(code)
+    by_date = {row["date"]: row for row in rows}
+    points = [(row["date"], row["returnValue"]) for row in rows]
     if len(points) < 2:
         return None
 
@@ -4544,6 +4664,8 @@ def read_fund_return_summary_from_db(code: str) -> dict[str, Any] | None:
         start_date, start_nav = start
         if start_date == latest_date or start_nav <= 0:
             continue
+        if by_date[start_date]["returnSegment"] != by_date[latest_date]["returnSegment"]:
+            continue
         return_percent = ((latest_nav - start_nav) / start_nav) * 100
         ranges[key] = {
             "key": key,
@@ -4552,8 +4674,9 @@ def read_fund_return_summary_from_db(code: str) -> dict[str, Any] | None:
             **history_risk_metrics(points, start_date, latest_date),
             "startDate": start_date,
             "endDate": latest_date,
-            "startNav": round(start_nav, 4),
-            "endNav": round(latest_nav, 4),
+            "startNav": round(by_date[start_date]["nav"], 4),
+            "endNav": round(by_date[latest_date]["nav"], 4),
+            "returnBasis": "distributionAdjusted",
         }
 
     return {
@@ -4615,37 +4738,27 @@ def cn_etf_history_needs_adjustment(source: str, symbol: str) -> bool:
     return source == "sina-cn" and CN_ETF_HISTORY_SYMBOL_RE.fullmatch(symbol) is not None
 
 
-def adjust_market_history_for_corporate_actions(rows: list[dict[str, float | str]]) -> list[dict[str, float | str]]:
-    adjusted_rows: list[dict[str, float | str]] = []
-    factor = 1.0
-    previous_raw_close: float | None = None
-    previous_adjusted_close: float | None = None
-    has_adjustment = False
-
-    for row in rows:
-        raw_close = float(row["close"])
-        if previous_raw_close and previous_raw_close > 0 and previous_adjusted_close and previous_adjusted_close > 0:
-            ratio = raw_close / previous_raw_close
-            if (
-                0 < ratio < MARKET_HISTORY_CORPORATE_ACTION_LOW_RATIO
-                or ratio > MARKET_HISTORY_CORPORATE_ACTION_HIGH_RATIO
-            ):
-                factor = previous_adjusted_close / raw_close
-                has_adjustment = True
-
-        adjusted_close = raw_close * factor
-        adjusted_row: dict[str, float | str] = {
-            "date": str(row["date"]),
-            "close": round(adjusted_close, 6),
-        }
-        if has_adjustment:
-            adjusted_row["rawClose"] = raw_close
-            adjusted_row["adjusted"] = True
-        adjusted_rows.append(adjusted_row)
-        previous_raw_close = raw_close
-        previous_adjusted_close = adjusted_close
-
-    return adjusted_rows
+def refresh_market_adjustment_factors(symbol: str) -> int:
+    url = f"https://finance.sina.com.cn/realstock/company/{quote(symbol)}/hfq.js"
+    status, _, body = fetch_upstream(
+        url, referer="https://finance.sina.com.cn/", content_type="text/plain",
+        cache_key=f"market-adjustments:{symbol}", kind="market-adjustments", ttl_seconds=24 * 3600,
+    )
+    factors = parse_sina_adjustments(decode_body(body)) if status < 400 else []
+    if not factors:
+        return 0
+    with get_conn() as conn:
+        conn.executemany(
+            """
+            INSERT INTO market_adjustment_factors VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(symbol, date) DO UPDATE SET factor=excluded.factor,
+              shares=excluded.shares, cash=excluded.cash, source=excluded.source,
+              fetched_at=excluded.fetched_at
+            """,
+            [(symbol, row["date"], row["factor"], row["shares"], row["cash"], url, now_ms()) for row in factors],
+        )
+    response_cache_clear_prefix("api:marketreturns:")
+    return len(factors)
 
 
 def read_market_history_from_db(source: str, symbol: str, *, adjust_corporate_actions: bool = False) -> list[dict[str, float | str]]:
@@ -4661,7 +4774,15 @@ def read_market_history_from_db(source: str, symbol: str, *, adjust_corporate_ac
         ).fetchall()
     history_rows = [{"date": str(date), "close": float(close)} for date, close in rows]
     if adjust_corporate_actions and cn_etf_history_needs_adjustment(source, symbol):
-        return adjust_market_history_for_corporate_actions(history_rows)
+        with get_conn() as conn:
+            factors = conn.execute(
+                "SELECT date, factor, shares, cash FROM market_adjustment_factors WHERE symbol=? ORDER BY date",
+                (symbol,),
+            ).fetchall()
+        return adjusted_market_rows(history_rows, [
+            {"date": day, "factor": factor, "shares": shares, "cash": cash}
+            for day, factor, shares, cash in factors
+        ])
     return history_rows
 
 
@@ -4765,7 +4886,8 @@ def market_history_should_refresh_for_returns(
 
 def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, Any] | None:
     rows = read_market_history_from_db(source, symbol, adjust_corporate_actions=True)
-    raw_rows = read_market_history_from_db(source, symbol)
+    raw_rows = [{"date": row["date"], "close": row.get("rawClose", row["close"])} for row in rows]
+    segments = {str(row["date"]): row.get("returnSegment", 0) for row in rows}
     points = [
         (str(row["date"]), float(row["close"]))
         for row in rows
@@ -4815,6 +4937,8 @@ def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, An
         start_date, start_close = start
         if start_date == latest_date or start_close <= 0:
             continue
+        if segments[start_date] != segments[latest_date]:
+            continue
         return_percent = ((latest_close - start_close) / start_close) * 100
         ranges[key] = {
             "key": key,
@@ -4829,14 +4953,11 @@ def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, An
             "endAdjustedClose": round(latest_close, 4),
         }
 
-    if not ranges:
-        return None
-
     latest_return_percent = ((latest_close - previous_close) / previous_close) * 100
     latest_return = {
         "key": "latest",
         "label": "最新",
-        "returnPercent": round(latest_return_percent, 2),
+        "returnPercent": round(latest_return_percent, 2) if segments[previous_date] == segments[latest_date] else None,
         "startDate": previous_date,
         "endDate": latest_date,
         "startClose": round(raw_previous_close, 4),
@@ -4852,7 +4973,7 @@ def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, An
         "latest": latest_return,
         "ranges": ranges,
         "label": ytd["label"] if ytd else "",
-        "returnPercent": ytd["returnPercent"] if ytd else 0,
+        "returnPercent": ytd["returnPercent"] if ytd else None,
         "startDate": ytd["startDate"] if ytd else "",
         "endDate": latest_date,
         "startClose": ytd["startClose"] if ytd else 0,
@@ -5354,6 +5475,10 @@ def refresh_configured_fund_history() -> list[str]:
     full_backfill_started = False
     for code in configured_fund_codes_from_constants():
         try:
+            refresh_fund_disclosure_metadata(code)
+        except Exception as exc:
+            errors.append(f"fund disclosure {code}: {exc}")
+        try:
             latest_date, _fetched_at = latest_fund_history_meta(code)
             row_count = count_fund_history_rows(code)
             if row_count <= FUND_HISTORY_AUTO_REFRESH_ROWS + 20 and not full_backfill_started:
@@ -5374,6 +5499,11 @@ def refresh_configured_market_history() -> list[str]:
     for item in configured_market_return_items_from_constants():
         try:
             source, symbol = item.split(":", 1)
+            if cn_etf_history_needs_adjustment(source, symbol):
+                try:
+                    refresh_market_adjustment_factors(symbol)
+                except Exception as exc:
+                    errors.append(f"adjustment {symbol}: {exc}")
             if source == "twse-official" and symbol == "TWII":
                 if not market_history_should_refresh_for_returns(source, symbol):
                     continue
@@ -5659,6 +5789,9 @@ def sina() -> Response:
             max_age_seconds=20 * 60,
             max_age_by_symbol=max_ages,
         )
+        fx_lines = quote_lines_by_symbol(str((read_dashboard_snapshot() or {}).get("fxText") or ""))
+        snapshot_text += "\n".join(fx_lines[symbol] for symbol in missing if symbol in fx_lines) + "\n"
+        missing = [symbol for symbol in missing if symbol not in fx_lines]
         fetched_text = ""
         status = 200
         if missing and refresh:
@@ -5882,16 +6015,14 @@ def publish_dashboard_snapshot() -> dict[str, Any]:
 @app.get("/api/dashboard")
 def dashboard() -> Response:
     enforce_rate_limit("dashboard")
-    symbols = sorted(require_symbol_list(
-        "symbols",
-        pattern=SINA_SYMBOL_RE,
-        max_symbols=MAX_SINA_SYMBOLS_PER_REQUEST,
-    ))
     currencies = sorted(dict.fromkeys(
         currency
         for currency in request.args.get("currencies", "").split(",")
         if currency in {"USD", "EUR", "JPY", "KRW", "HKD"}
     ))
+    symbols = sorted(require_symbol_list(
+        "symbols", pattern=SINA_SYMBOL_RE, max_symbols=MAX_SINA_SYMBOLS_PER_REQUEST,
+    )) if request.args.get("symbols") or not currencies else []
     now_arg = request.args.get("now", "")
     cache_key = f"api:dashboard:{now_arg}:{','.join(currencies)}:{','.join(symbols)}"
 
@@ -6004,7 +6135,7 @@ def fund_holdings() -> Response:
         query = urlencode({
             "type": "jjcc",
             "code": source_code,
-            "topline": 10,
+            "topline": 1000,
             "year": "",
             "month": "",
         })
@@ -6013,7 +6144,7 @@ def fund_holdings() -> Response:
             url,
             referer=f"https://fundf10.eastmoney.com/ccmx_{quote(source_code)}.html",
             content_type="text/plain; charset=utf-8",
-            cache_key=f"fundholdings:{source_code}",
+            cache_key=f"fundholdings:expanded:{source_code}",
             kind="fundholdings",
             ttl_seconds=86400,
             force_refresh=refresh,
@@ -6084,6 +6215,8 @@ def fund_valuation_basis() -> Response:
 def fund_estimates() -> Response:
     enforce_rate_limit("fundestimates")
     codes = require_fund_codes()
+    if request.args.get("view") == "cards":
+        return cached_json_response(f"api:fundestimates:cards:{','.join(sorted(codes))}", 15, lambda: fund_card_snapshot(codes))
     cache_key = f"api:fundestimates:{','.join(sorted(codes))}"
     return cached_json_response(cache_key, 15, lambda: available_fund_estimates(codes))
 
@@ -6112,6 +6245,13 @@ def fund_history() -> Response:
             results[code] = merged_rows
         elif cached_rows:
             results[code] = cached_rows
+    if request.args.get("performance") == "1":
+        for code, rows in results.items():
+            performance = {row["date"]: row for row in read_fund_performance_from_db(code)}
+            for row in rows:
+                point = performance.get(row["FSRQ"])
+                if point:
+                    row.update({key: point[key] for key in ("returnValue", "returnSegment", "adjusted")})
     return json_response(results)
 
 

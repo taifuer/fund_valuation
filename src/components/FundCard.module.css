@@ -360,3 +360,11 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
+.disclosureNote {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #687078;
+}
+
+.disclosureNote a { color: inherit; text-underline-offset: 3px; }

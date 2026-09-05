@@ -62,7 +62,13 @@ const fundManagementAuthCompiled = ts.transpileModule(fundManagementAuthSource, 
   },
 });
 await writeFile(fundManagementAuthPath, fundManagementAuthCompiled.outputText, 'utf8');
+const httpPath = join(outDir, `http-dep.${Date.now()}.mjs`);
+const httpSource = await readFile(new URL('../src/http.ts', import.meta.url), 'utf8');
+await writeFile(httpPath, ts.transpileModule(httpSource, {
+  compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
+}).outputText, 'utf8');
 const { parseSinaVar } = await importTsModule('../src/api.ts', 'api', {
+  "from './http';": `from '${pathToFileURL(httpPath).href}';`,
   "from './quoteMath';": `from '${pathToFileURL(quoteMathPath).href}';`,
   "from './quoteCapabilities';": `from '${pathToFileURL(quoteCapabilitiesPath).href}';`,
   "from './fundManagementAuth';": `from '${pathToFileURL(fundManagementAuthPath).href}';`,

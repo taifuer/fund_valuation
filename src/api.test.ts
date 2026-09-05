@@ -195,7 +195,7 @@ describe('dashboard API contract', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it('retries an unchanged live snapshot once without blocking the first load', async () => {
+  it('returns an unchanged live snapshot immediately without a forced retry', async () => {
     vi.useFakeTimers();
     try {
       const fetchMock = vi.fn()
@@ -204,22 +204,22 @@ describe('dashboard API contract', () => {
         .mockResolvedValueOnce({ ok: true, json: async () => liveDashboardPayload(3210, 200) });
       vi.stubGlobal('fetch', fetchMock);
 
+      const startTime = Date.now();
       const first = await fetchDashboardSnapshot(['s_sh000001'], []);
       const pendingSecond = fetchDashboardSnapshot(['s_sh000001'], []);
-      await vi.advanceTimersByTimeAsync(15_000);
       const second = await pendingSecond;
 
       expect(first?.quotes.get('s_sh000001')?.price).toBe(3200);
-      expect(second?.quotes.get('s_sh000001')?.price).toBe(3210);
-      expect(fetchMock).toHaveBeenCalledTimes(3);
-      expect(fetchMock.mock.calls[2]?.[0]).toContain('refresh=1');
+      expect(second?.quotes.get('s_sh000001')?.price).toBe(3200);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(Date.now()).toBe(startTime);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('loads a currencies-only snapshot without sending an empty dashboard request', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
+  it('loads currencies from the worker snapshot without a separate Sina request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...dashboardPayload(3200), quotes: {}, marketStates: {} }) });
     vi.stubGlobal('fetch', fetchMock);
 
     const snapshot = await fetchDashboardSnapshot([], ['KRW']);
@@ -227,8 +227,8 @@ describe('dashboard API contract', () => {
     expect(snapshot?.quotes.size).toBe(0);
     expect(snapshot?.marketStates.size).toBe(0);
     expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/api/sina?list=fx_skrwcny'));
-    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/api/dashboard'));
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/dashboard?');
+    expect(fetchMock.mock.calls[0][0]).toContain('currencies=KRW');
   });
 
   it('reads the runtime fund-management mode', async () => {

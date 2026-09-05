@@ -55,7 +55,7 @@ export default function FundNavTable({ fundCode }: Props) {
           <div className={styles.title}>每日净值</div>
           <div className={styles.subtitle}>近3个月官方单位净值</div>
         </div>
-        {!loading && !error && rows.length > 0 && (
+        {!loading && rows.length > 0 && (
           <div className={styles.count}>共 {rows.length} 条</div>
         )}
       </div>
@@ -63,7 +63,7 @@ export default function FundNavTable({ fundCode }: Props) {
       {loading && <div className={styles.state}>净值加载中...</div>}
       {!loading && error && <div className={styles.stateError} role="alert">{error}</div>}
       {!loading && !error && rows.length === 0 && <div className={styles.state}>暂无历史净值</div>}
-      {!loading && !error && rows.length > 0 && (
+      {!loading && rows.length > 0 && (
         <>
           <div className={styles.tableWrap}>
             <table className={styles.table}>
@@ -76,13 +76,13 @@ export default function FundNavTable({ fundCode }: Props) {
               </thead>
               <tbody>
                 {pageRows.map((row) => {
-                  const up = row.changePercent >= 0;
+                  const up = (row.changePercent ?? 0) >= 0;
                   return (
                     <tr key={row.date}>
                       <td>{formatDate(row.date)}</td>
                       <td>{row.nav.toFixed(4)}</td>
                       <td className={up ? styles.up : styles.down}>
-                        {up ? '+' : ''}{row.changePercent.toFixed(2)}%
+                        {row.changePercent == null ? '--' : `${up ? '+' : ''}${row.changePercent.toFixed(2)}%`}
                       </td>
                     </tr>
                   );

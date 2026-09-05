@@ -29,6 +29,16 @@ export function canonicalPathForPage(page: PageKey): string {
   return PAGE_PATHS[page];
 }
 
+const pageSearch = new Map<PageKey, string>();
+
+export function rememberPageSearch() {
+  pageSearch.set(pageFromPathname(window.location.pathname), window.location.search);
+}
+
+export function restoredPagePath(page: PageKey): string {
+  return `${PAGE_PATHS[page]}${pageSearch.get(page) ?? ''}`;
+}
+
 export function fundExpansionPath(code: string, expanded: boolean): string {
   return expanded ? `/funds/${code}` : '/funds';
 }
@@ -52,4 +62,5 @@ export function replaceSearchParams(updates: Record<string, string | null>) {
   const query = params.toString();
   const target = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
   window.history.replaceState({}, '', target);
+  rememberPageSearch();
 }

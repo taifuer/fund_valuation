@@ -65,12 +65,14 @@
 }
 
 .meta {
+  --meta-space: 20px;
   display: flex;
   flex-direction: column;
   margin: 0 auto;
   max-width: 1040px;
   min-width: 0;
-  padding: 14px 16px 0;
+  padding: var(--meta-space) 16px;
+  position: relative;
 }
 
 .statusBar {
@@ -116,6 +118,7 @@
   justify-content: center;
   gap: 6px;
   margin-top: 4px;
+  min-height: 25px;
 }
 
 .fxItem {
@@ -152,11 +155,18 @@
 }
 
 .statusMessage {
+  bottom: 0;
   color: #64748b;
   font-size: 12px;
-  line-height: 1.6;
-  margin-top: 6px;
+  height: var(--meta-space);
+  left: 16px;
+  line-height: var(--meta-space);
+  overflow: hidden;
+  position: absolute;
+  right: 16px;
   text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .live {

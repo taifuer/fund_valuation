@@ -11,9 +11,12 @@ interface FundHistoryState {
 interface CacheEntry {
   data: FundHistoryPoint[];
   targetSize: number;
+  loadedAt: number;
 }
 
 const historyCache = new Map<string, CacheEntry>();
+const pendingHistory = new Map<string, Promise<FundHistoryPoint[]>>();
+const CACHE_TTL_MS = 5 * 60 * 1000;
 
 export function useFundHistory(fundCode: string, targetSize = 3000): FundHistoryState {
   const cached = historyCache.get(fundCode);
@@ -31,22 +34,32 @@ export function useFundHistory(fundCode: string, targetSize = 3000): FundHistory
       setHistory(current.data);
       setLoading(false);
       setError(null);
-      return;
+      if (Date.now() - current.loadedAt < CACHE_TTL_MS) return;
+    } else {
+      setHistory([]);
+      setLoading(true);
     }
 
-    setLoading(true);
     setError(null);
-    fetchFundHistorySeries(fundCode, targetSize)
+    const key = `${fundCode}:${targetSize}`;
+    let pending = pendingHistory.get(key);
+    if (!pending) {
+      pending = fetchFundHistorySeries(fundCode, targetSize).then(data => {
+        if (data.length > 0) historyCache.set(fundCode, { data, targetSize, loadedAt: Date.now() });
+        return data;
+      }).finally(() => pendingHistory.delete(key));
+      pendingHistory.set(key, pending);
+    }
+    pending
       .then((data) => {
         if (cancelled) return;
-        if (data.length > 0) {
-          historyCache.set(fundCode, { data, targetSize });
-        }
-        setHistory(data);
-        setError(data.length > 0 ? null : '暂无历史净值');
+        if (data.length > 0 || !current?.data.length) setHistory(data);
+        setError(data.length > 0 ? null : current?.data.length
+          ? '历史净值刷新失败，当前显示已缓存数据' : '暂无历史净值');
       })
       .catch(() => {
-        if (!cancelled) setError('历史净值加载失败');
+        if (!cancelled) setError(current?.data.length
+          ? '历史净值刷新失败，当前显示已缓存数据' : '历史净值加载失败');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

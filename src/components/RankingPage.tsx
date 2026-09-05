@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchMarketReturnSummaries } from '../api';
 import { MARKET_ASSETS, RANKING_ETFS, RANKING_INDEX_ETFS, RANKING_INDICES, RANKING_SECTOR_ETFS } from '../constants';
-import { getMarketState } from '../marketHours';
+import { getMarketState, marketLocalDate } from '../marketHours';
 import { startAdaptivePolling } from '../polling';
 import { rankingStateLabel } from '../displayStatus';
+import TableSkeleton from './TableSkeleton';
 import { useFundReturnData } from '../hooks/usePageData';
 import { choiceFromSearch, replaceSearchParams } from '../routing';
 import type { FundEstimate } from '../hooks/useQuotes';
@@ -120,6 +121,7 @@ function makeMarketItems(
     const useLatestCloseReturn = range === 'today'
       && latestReturn != null
       && shouldUseLatestCloseReturn(item, quote, state);
+    const quoteDate = quote ? marketLocalDate(item.sinaSymbol, quote.regularTime ?? quote.time) ?? quote.time?.slice(0, 10) : undefined;
     return {
       id: `${category}:${item.sinaSymbol}`,
       name: item.name,
@@ -133,10 +135,10 @@ function makeMarketItems(
         ? (useLatestCloseReturn ? latestReturn.endClose : quote?.price ?? latestReturn?.endClose ?? null)
         : rangeReturn?.endClose ?? summary?.endClose ?? null,
       startDate: range === 'today'
-        ? (useLatestCloseReturn ? latestReturn.startDate : quote?.time?.slice(0, 10) ?? latestReturn?.startDate)
+        ? (useLatestCloseReturn ? latestReturn.startDate : quoteDate ?? latestReturn?.startDate)
         : rangeReturn?.startDate,
       endDate: range === 'today'
-        ? (useLatestCloseReturn ? latestReturn.endDate : quote?.time?.slice(0, 10) ?? latestReturn?.endDate)
+        ? (useLatestCloseReturn ? latestReturn.endDate : quoteDate ?? latestReturn?.endDate)
         : rangeReturn?.endDate,
       sourceLabel: range === 'today' && useLatestCloseReturn
         ? '最新收盘'
@@ -225,7 +227,7 @@ export default function RankingPage({
   const [sortKey, setSortKey] = useState<SortKey>(() => choiceFromSearch(window.location.search, 'sort', SORT_KEYS, 'return'));
   const [sortDirection, setSortDirection] = useState<SortDirection>(() => choiceFromSearch(window.location.search, 'order', SORT_DIRECTIONS, 'desc'));
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
-  const [returnsLoading, setReturnsLoading] = useState(false);
+  const [returnsLoading, setReturnsLoading] = useState(true);
   const refreshTick = useMarketReturnRefreshTick();
   const shouldLoadFunds = category === 'fund';
   const fundData = useFundReturnData(funds, shouldLoadFunds);
@@ -296,6 +298,7 @@ export default function RankingPage({
   const loading = category === 'fund'
     ? fundData.loading
     : marketLoading || (returnsLoading && marketReturns.size === 0);
+  const showSkeleton = (loading || returnsLoading) && !items.some(item => item.returnPercent !== null);
 
   useEffect(() => {
     onStatusMessageChange?.(loading ? '收益数据加载中...' : '');
@@ -402,18 +405,14 @@ export default function RankingPage({
               <th>截至</th>
             </tr>
           </thead>
-          <tbody>
-            {loading && items.length === 0 && (
-              <tr>
-                <td colSpan={7} className={styles.empty}>收益数据加载中...</td>
-              </tr>
-            )}
+          <tbody aria-busy={showSkeleton}>
+            {showSkeleton && <TableSkeleton rows={items.length || 10} columns={7} />}
             {!loading && items.length === 0 && (
               <tr>
                 <td colSpan={7} className={styles.empty}>暂无收益数据</td>
               </tr>
             )}
-            {items.map((item, index) => {
+            {!showSkeleton && items.map((item, index) => {
               const up = (item.returnPercent ?? 0) >= 0;
               return (
                 <tr key={item.id}>

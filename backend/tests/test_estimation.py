@@ -6,6 +6,18 @@ from backend.estimation import estimate_cumulative_return, linear_fit, select_ca
 
 
 class EstimateCalculationTests(unittest.TestCase):
+    def test_disclosed_equity_weight_does_not_treat_cash_as_stocks(self) -> None:
+        result = estimate_cumulative_return(
+            [{"sinaSymbol": "gb_a", "weight": 0.6, "currency": "CNY"}],
+            base_date="a", target_date="b", equity_weight=0.8,
+            price_lookup=lambda _symbol, day: 100 if day == "a" else 110,
+            fx_lookup=lambda _currency, _day: 1,
+            benchmark={"source": "sina-us", "symbol": ".NDX", "currency": "CNY"},
+            benchmark_lookup=lambda _source, _symbol, day: 100 if day == "a" else 105,
+        )
+        self.assertAlmostEqual(result['return'], 0.07)
+        self.assertAlmostEqual(result['residualWeight'], 0.2)
+
     def test_uses_benchmark_for_undisclosed_weight(self) -> None:
         prices = {
             ("gb_a", "2026-07-29"): 100,

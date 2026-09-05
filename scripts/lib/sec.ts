@@ -10,7 +10,7 @@ interface SecTickerRecord {
 }
 
 export interface SecSubmissionResponse {
-  filings: { recent: SecRecentFilings };
+  filings: { recent: SecRecentFilings; files?: Array<{ name: string; filingTo: string }> };
 }
 
 const SEC_HEADERS = {

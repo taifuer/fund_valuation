@@ -26,6 +26,21 @@ from backend.storage import (
 
 
 class StorageMigrationTests(unittest.TestCase):
+    def test_schema_twelve_preserves_missing_returns_without_fabricating_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'legacy.db'
+            with sqlite3.connect(path) as conn:
+                conn.executescript('''
+                    CREATE TABLE fund_nav_history(code TEXT, date TEXT, nav REAL, change_percent REAL NOT NULL, fetched_at INTEGER, PRIMARY KEY(code,date));
+                    INSERT INTO fund_nav_history VALUES ('A','2026-06-01',1,0,1),('A','2026-06-02',1.01,0,1),('A','2026-06-03',1.01,0,1);
+                    PRAGMA user_version = 11;
+                ''')
+            migrate_database(path)
+            with sqlite3.connect(path) as conn:
+                rows = conn.execute('SELECT change_percent FROM fund_nav_history ORDER BY date').fetchall()
+                conn.execute("UPDATE fund_nav_history SET change_percent=NULL WHERE date='2026-06-03'")
+            self.assertEqual(rows, [(0,), (None,), (0,)])
+
     def test_migration_creates_current_schema_and_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "test.db"

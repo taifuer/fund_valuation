@@ -10,6 +10,7 @@ import { quoteDisplayState, quoteDisplayTime, quoteMarketState } from '../displa
 import styles from './FundCard.module.css';
 
 const HoldingsTable = lazy(() => import('./HoldingsTable'));
+const FundHoldingsPanel = lazy(() => import('./FundHoldingsPanel'));
 const FundNavTable = lazy(() => import('./FundNavTable'));
 const FundHistoryChart = lazy(() => import('./FundHistoryChart'));
 const FundProfilePanel = lazy(() => import('./FundProfilePanel'));
@@ -91,7 +92,7 @@ function FundDetails({
         </button>
       </div>
       <Suspense fallback={<div className={styles.tabLoading}>详情加载中...</div>}>
-        {activeTab === 'holdings' && (estimate ? (
+        {activeTab === 'holdings' && (estimate?.holdingsQuotes.length ? (
           <HoldingsTable
             holdings={fund.holdings}
             quotes={estimate.holdingsQuotes}
@@ -109,7 +110,7 @@ function FundDetails({
             projectionRequired={projectionRequired}
           />
         ) : (
-          <div className={styles.tabLoading}>持仓数据加载中...</div>
+          <FundHoldingsPanel fund={fund} projection={projection} marketStates={marketStates} />
         ))}
         {activeTab === 'nav' && <FundNavTable fundCode={fund.code} />}
         {activeTab === 'trend' && <FundHistoryChart fundCode={fund.code} />}
@@ -295,7 +296,7 @@ const FundCard = memo(function FundCard({
   const officialKindLabel = `${formatDate(officialNAV.navDate)} 已出净值`;
   const up = displayChange >= 0;
   const estBoxCls = up ? styles.estimateBox : styles.estimateBoxDown;
-  const officialUp = officialNAV.officialChange >= 0;
+  const officialUp = (officialNAV.officialChange ?? 0) >= 0;
   const officialBoxCls = officialUp ? styles.estimateBox : styles.estimateBoxDown;
   const estimateIsPrimary = !officialOnly && sortMode !== 'official';
   const tagCls = displayState === 'LIVE'
@@ -313,7 +314,7 @@ const FundCard = memo(function FundCard({
     CLOSED: '已收盘',
   }[displayState];
   const timeLabel = projection
-    ? (projection.kind === 'preview' ? formatAsOf(projection.asOf) : '')
+    ? (projection.kind === 'preview' ? formatAsOf(projection.quoteAsOf ?? projection.asOf) : '')
     : estimateTimeLabel(estimate.holdingsQuotes, displayState === 'CLOSED', marketStates);
   return (
     <div id={`fund-${fund.code}`} className={cardClassName}>
@@ -353,7 +354,7 @@ const FundCard = memo(function FundCard({
                   : unavailableEstimateLabel}
               </span>
               <span className={`${styles.estLiveTag} ${tagCls}`}>{estimateStateLabel}</span>
-              <span className={styles.navDataTime}>{timeLabel ?? ''}</span>
+              <span className={styles.navDataTime} title={projection ? `快照计算时间 ${formatAsOf(projection.asOf)}（北京时间）` : undefined}>{timeLabel ?? ''}</span>
             </div>
           )}
 
@@ -368,7 +369,7 @@ const FundCard = memo(function FundCard({
               {officialNAV.nav.toFixed(4)}
             </span>
             <span className={`${styles.navBoxChange} ${officialUp ? styles.up : styles.down}`}>
-              {officialUp ? '+' : ''}{officialNAV.officialChange.toFixed(2)}%
+              {officialNAV.officialChange == null ? '--' : `${officialUp ? '+' : ''}${officialNAV.officialChange.toFixed(2)}%`}
             </span>
             {officialOnly && <span className={styles.officialOnlyTag}>仅官方净值</span>}
           </div>

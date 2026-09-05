@@ -3,6 +3,19 @@ import { describe, expect, it, vi } from 'vitest';
 import Header from './Header';
 
 describe('Header', () => {
+  it('keeps one live region for loading updates without inserting another row', () => {
+    const props = { fxRates: new Map(), activePage: 'overview' as const, onPageChange: vi.fn() };
+    const { rerender } = render(<Header {...props} />);
+    const region = screen.getByRole('status');
+    expect(region).toBeEmptyDOMElement();
+    rerender(<Header {...props} statusMessage="行情数据加载中..." />);
+    expect(screen.getByRole('status')).toBe(region);
+    expect(region).toHaveTextContent('行情数据加载中...');
+    expect(region).toHaveAttribute('title', '行情数据加载中...');
+    rerender(<Header {...props} />);
+    expect(region).toBeEmptyDOMElement();
+  });
+
   it('describes the dashboard coverage in the brand subtitle', () => {
     render(<Header fxRates={new Map()} activePage="overview" onPageChange={vi.fn()} />);
     expect(screen.getByText('Markets · Companies · ETFs · QDII Funds')).toBeInTheDocument();

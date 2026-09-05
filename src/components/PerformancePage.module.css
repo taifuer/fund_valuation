@@ -1,7 +1,7 @@
 .viewHeader {
   margin: 0 auto;
   max-width: 1040px;
-  padding: 14px 16px 0;
+  padding: 0 16px;
   width: 100%;
 }
 
@@ -34,7 +34,7 @@
 
 @media (max-width: 720px) {
   .viewHeader {
-    padding: 10px 12px 0;
+    padding: 0 12px;
   }
 
   .viewNav {

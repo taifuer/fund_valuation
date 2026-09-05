@@ -64,12 +64,12 @@ def backfill_fund_holdings(code: str, years: int) -> int:
     current_year = datetime.now(ZoneInfo("Asia/Shanghai")).year
     for year in range(current_year, current_year - max(years, 0), -1):
         for quarter in (4, 3, 2, 1):
-            query = urlencode({"type": "jjcc", "code": code, "topline": 10, "year": year, "month": quarter})
+            query = urlencode({"type": "jjcc", "code": code, "topline": 1000, "year": year, "month": quarter * 3})
             status, _, body = fetch_upstream(
                 f"https://fundf10.eastmoney.com/FundArchivesDatas.aspx?{query}",
                 referer=f"https://fundf10.eastmoney.com/ccmx_{code}.html",
                 content_type="text/plain; charset=utf-8",
-                cache_key=f"fundholdings:{code}:{year}:{quarter}",
+                cache_key=f"fundholdings:expanded:{code}:{year}:{quarter}",
                 kind="fundholdings",
                 ttl_seconds=24 * 60 * 60,
             )

@@ -128,7 +128,6 @@ export default function Header({
                 {time}（北京时间）
               </span>
             </div>
-            {displayRates.length > 0 && (
               <div className={styles.fxRow}>
                 {displayRates.map((rate) => {
                   const up = rate.changePercent >= 0;
@@ -143,10 +142,7 @@ export default function Header({
                   );
                 })}
               </div>
-            )}
-            {statusMessage && (
-              <div className={styles.statusMessage}>{statusMessage}</div>
-            )}
+              <div className={styles.statusMessage} role="status" aria-live="polite" title={statusMessage || undefined}>{statusMessage}</div>
           </div>
         </div>
       )}

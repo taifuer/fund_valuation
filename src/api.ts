@@ -1,3 +1,4 @@
+import { request } from './http';
 import type {
   QuoteData,
   Fund,
@@ -340,7 +341,7 @@ function parseSinaFund(line: string): FundNavData | null {
     name: fields[0],
     navDate: fields[4] || '',
     nav: parseFloat(fields[1]) || 0,
-    officialChange: 0,
+    officialChange: null,
     estimatedNav: parseFloat(fields[1]) || 0,
     estimatedChange: 0,
   };
@@ -396,7 +397,7 @@ export async function fetchAllQuotes(sinaSymbols: string[]): Promise<Map<string,
   await Promise.all(batches.map(async (batch) => {
     const url = apiUrl(`/api/sina?list=${batch.join(',')}`);
     try {
-      const res = await fetch(url);
+      const res = await request(url);
       if (!res.ok) return;
       const text = await res.text();
       const fetchedAt = Date.now();
@@ -428,7 +429,7 @@ export async function fetchSinaFundNavs(codes: string[], refresh = false): Promi
   const refreshParam = refresh ? '&refresh=1' : '';
   const url = apiUrl(`/api/sina?list=${symbols.join(',')}${refreshParam}`);
   try {
-    const res = await fetch(url, { headers: fundManagementHeaders() });
+    const res = await request(url, { headers: fundManagementHeaders() });
     if (!res.ok) return results;
     const text = await res.text();
     for (const line of text.split('\n')) {
@@ -468,7 +469,7 @@ export async function fetchFxRates(currencies: string[]): Promise<Map<string, Fx
 
   const url = apiUrl(`/api/sina?list=${symbols.join(',')}`);
   try {
-    const res = await fetch(url);
+    const res = await request(url);
     if (!res.ok) return results;
     const text = await res.text();
     const fetchedAt = Date.now();
@@ -545,10 +546,7 @@ export interface DataHealth {
 
 const dashboardSnapshotPending = new Map<string, Promise<DashboardSnapshot | null>>();
 const overviewSnapshotPending = new Map<string, Promise<OverviewSnapshot | null>>();
-const dashboardSnapshotGeneratedAt = new Map<string, number>();
-const overviewSnapshotGeneratedAt = new Map<string, number>();
 const DASHBOARD_BROWSER_CACHE_TTL_MS = 2 * 60 * 1000;
-const DASHBOARD_STALE_RETRY_DELAY_MS = 15_000;
 
 function dashboardStorageKey(cacheKey: string): string {
   let hash = 5381;
@@ -584,13 +582,7 @@ function storeDashboard(cacheKey: string, payload: unknown) {
 }
 
 async function fetchWithTimeout(url: string, timeoutMs = 4_000, init: RequestInit = {}): Promise<Response> {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    window.clearTimeout(timer);
-  }
+  return request(url, init, timeoutMs);
 }
 
 export function parseDashboardSnapshotPayload(
@@ -662,35 +654,6 @@ export function parseDashboardSnapshotPayload(
   return { generatedAt, quotes, fxRates, marketStates };
 }
 
-function hasLiveMarket(snapshot: DashboardSnapshot): boolean {
-  return [...snapshot.marketStates.values()].some(
-    (state) => state.state === 'live' && state.market !== 'crypto',
-  );
-}
-
-function waitForDashboardRetry(): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, DASHBOARD_STALE_RETRY_DELAY_MS));
-}
-
-async function retryUnchangedSnapshot<T extends DashboardSnapshot>(
-  snapshot: T,
-  previousGeneratedAt: number,
-  requestFresh: () => Promise<T | null>,
-): Promise<T> {
-  if (
-    previousGeneratedAt <= 0
-    || snapshot.generatedAt <= 0
-    || snapshot.generatedAt > previousGeneratedAt
-    || !hasLiveMarket(snapshot)
-  ) {
-    return snapshot;
-  }
-
-  await waitForDashboardRetry();
-  const refreshed = await requestFresh();
-  return refreshed && refreshed.generatedAt > snapshot.generatedAt ? refreshed : snapshot;
-}
-
 export async function fetchDashboardSnapshot(
   symbols: string[],
   currencies: string[],
@@ -698,14 +661,6 @@ export async function fetchDashboardSnapshot(
   const uniqueSymbols = [...new Set(symbols.filter(Boolean))];
   const uniqueCurrencies = [...new Set(currencies.filter((currency) => currency !== 'CNY'))];
   if (uniqueSymbols.length > 160) return null;
-  if (uniqueSymbols.length === 0) {
-    return {
-      generatedAt: 0,
-      quotes: new Map(),
-      fxRates: await fetchFxRates(uniqueCurrencies),
-      marketStates: new Map(),
-    };
-  }
   const cacheKey = `${uniqueSymbols.join(',')}|${uniqueCurrencies.join(',')}`;
   const pending = dashboardSnapshotPending.get(cacheKey);
   if (pending) return pending;
@@ -731,14 +686,7 @@ export async function fetchDashboardSnapshot(
 
     const snapshot = await requestSnapshot();
     if (!snapshot) return storedSnapshot;
-    const previousGeneratedAt = dashboardSnapshotGeneratedAt.get(cacheKey) ?? 0;
-    const selected = await retryUnchangedSnapshot(
-      snapshot,
-      previousGeneratedAt,
-      () => requestSnapshot(true),
-    );
-    if (selected.generatedAt > 0) dashboardSnapshotGeneratedAt.set(cacheKey, selected.generatedAt);
-    return selected;
+    return snapshot;
   })().catch(() => storedSnapshot).finally(() => {
     dashboardSnapshotPending.delete(cacheKey);
   });
@@ -792,7 +740,7 @@ export async function fetchOverviewSnapshot(
           name: code,
           navDate: String(raw.navDate ?? ''),
           nav: Number.isFinite(nav) ? nav : 0,
-          officialChange: Number(raw.officialChange) || 0,
+          officialChange: nullableNumber(raw.officialChange),
           estimatedNav: Number.isFinite(nav) ? nav : 0,
           estimatedChange: 0,
         });
@@ -802,14 +750,7 @@ export async function fetchOverviewSnapshot(
 
     const snapshot = await requestSnapshot();
     if (!snapshot) return storedSnapshot ? { ...storedSnapshot, fundSummaries: new Map() } : null;
-    const previousGeneratedAt = overviewSnapshotGeneratedAt.get(cacheKey) ?? 0;
-    const selected = await retryUnchangedSnapshot(
-      snapshot,
-      previousGeneratedAt,
-      () => requestSnapshot(true),
-    );
-    if (selected.generatedAt > 0) overviewSnapshotGeneratedAt.set(cacheKey, selected.generatedAt);
-    return selected;
+    return snapshot;
   })().catch(() => storedSnapshot ? { ...storedSnapshot, fundSummaries: new Map() } : null).finally(() => {
     overviewSnapshotPending.delete(cacheKey);
   });
@@ -820,7 +761,7 @@ export async function fetchOverviewSnapshot(
 
 export async function fetchDataHealth(): Promise<DataHealth | null> {
   try {
-    const res = await fetch(apiUrl('/api/datahealth'));
+    const res = await request(apiUrl('/api/datahealth'));
     if (!res.ok) return null;
     return await res.json() as DataHealth;
   } catch {
@@ -835,7 +776,7 @@ export interface ApiMeta {
 }
 
 export async function fetchApiMeta(): Promise<ApiMeta> {
-  const res = await fetch(apiUrl('/api/meta'), { cache: 'no-store' });
+  const res = await request(apiUrl('/api/meta'), { cache: 'no-store' });
   if (!res.ok) throw new Error(`API meta request failed (${res.status})`);
   const raw = await res.json();
   const mode: FundManagementMode = ['disabled', 'open', 'token'].includes(raw.fundManagementMode)
@@ -849,7 +790,7 @@ export async function fetchApiMeta(): Promise<ApiMeta> {
 }
 
 export async function verifyFundManagementToken(token: string): Promise<boolean> {
-  const res = await fetch(apiUrl('/api/fund-management/verify'), {
+  const res = await request(apiUrl('/api/fund-management/verify'), {
     method: 'POST',
     cache: 'no-store',
     headers: { 'X-Fund-Management-Token': token.trim() },
@@ -859,7 +800,7 @@ export async function verifyFundManagementToken(token: string): Promise<boolean>
 
 export async function fetchSystemStatus(): Promise<SystemStatus> {
   try {
-    const res = await fetch(apiUrl('/api/status'), { cache: 'no-store' });
+    const res = await request(apiUrl('/api/status'), { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const raw = await res.json();
     return {
@@ -881,7 +822,7 @@ export async function fetchSystemStatus(): Promise<SystemStatus> {
 }
 
 export async function fetchQuoteDiagnostics(token: string): Promise<Record<string, unknown>> {
-  const res = await fetch(apiUrl('/api/diagnostics/quotes'), {
+  const res = await request(apiUrl('/api/diagnostics/quotes'), {
     cache: 'no-store',
     headers: { 'X-Diagnostics-Token': token },
   });
@@ -905,6 +846,9 @@ interface FundHistoryRow {
   FSRQ: string;
   DWJZ: string;
   JZZZL: string;
+  returnValue?: number;
+  returnSegment?: number;
+  adjusted?: boolean;
 }
 
 interface FundHoldingRaw {
@@ -934,11 +878,15 @@ interface SinaFuturesKlineRow {
 }
 
 interface NormalizedMarketPointRow {
+  adjusted?: boolean;
   date?: string;
   day?: string;
   d?: string;
   close?: string | number;
   c?: string | number;
+  rawClose?: number;
+  returnSegment?: number;
+  quality?: string;
 }
 
 function parseSinaJsonpArray<T>(text: string): T[] {
@@ -963,26 +911,25 @@ function parseJsonArray<T>(text: string): T[] {
 
 export async function fetchFundHistory(
   codes: string[],
-): Promise<Map<string, { navDate: string; nav: number; officialChange: number }>> {
-  const results = new Map<string, { navDate: string; nav: number; officialChange: number }>();
+): Promise<Map<string, { navDate: string; nav: number; officialChange: number | null }>> {
+  const results = new Map<string, { navDate: string; nav: number; officialChange: number | null }>();
   const url = apiUrl(`/api/fundhistory?codes=${codes.join(',')}`);
   try {
-    const res = await fetch(url, { headers: fundManagementHeaders() });
+    const res = await request(url, { headers: fundManagementHeaders() });
     if (!res.ok) return results;
     const json = asObject(await res.json());
     if (!json) return results;
     for (const code of codes) {
       const rawRows = json[code];
-      if (!Array.isArray(rawRows) || rawRows.length < 2) continue;
+      if (!Array.isArray(rawRows) || rawRows.length < 1) continue;
       const rows = rawRows as FundHistoryRow[];
       // rows[0] = latest disclosed NAV, rows[1] = its previous NAV.
       const nav = parseFloat(rows[0].DWJZ) || 0;
-      const prevNav = parseFloat(rows[1].DWJZ) || nav;
-      const officialChange = prevNav ? ((nav - prevNav) / prevNav) * 100 : 0;
+      const officialChange = nullableNumber(rows[0].JZZZL);
       results.set(code, {
         navDate: rows[0].FSRQ,
         nav,
-        officialChange: Number(officialChange.toFixed(2)),
+        officialChange,
       });
     }
   } catch { /* skip */ }
@@ -995,7 +942,7 @@ export async function fetchFundPurchaseStatuses(codes: string[]): Promise<Map<st
 
   const url = apiUrl(`/api/fundpurchase?codes=${codes.join(',')}`);
   try {
-    const res = await fetch(url, { headers: fundManagementHeaders() });
+    const res = await request(url, { headers: fundManagementHeaders() });
     if (!res.ok) return results;
     const json = await res.json();
     for (const code of codes) {
@@ -1012,7 +959,7 @@ export async function fetchFundProfiles(codes: string[], refresh = false): Promi
 
   try {
     const refreshParam = refresh ? '&refresh=1' : '';
-    const res = await fetch(apiUrl(`/api/fundprofiles?codes=${codes.join(',')}${refreshParam}`), {
+    const res = await request(apiUrl(`/api/fundprofiles?codes=${codes.join(',')}${refreshParam}`), {
       headers: fundManagementHeaders(),
     });
     if (!res.ok) return results;
@@ -1031,7 +978,7 @@ export async function fetchFundHoldings(codes: string[], refresh = false): Promi
 
   try {
     const refreshParam = refresh ? '&refresh=1' : '';
-    const res = await fetch(apiUrl(`/api/fundholdings?codes=${codes.join(',')}${refreshParam}`), {
+    const res = await request(apiUrl(`/api/fundholdings?codes=${codes.join(',')}${refreshParam}`), {
       headers: fundManagementHeaders(),
     });
     if (!res.ok) return results;
@@ -1072,7 +1019,7 @@ export async function fetchFundValuationBases(
   const results = new Map<string, FundValuationBasis>();
   if (funds.length === 0) return results;
   try {
-    const res = await fetch(apiUrl('/api/fundvaluationbasis'), {
+    const res = await request(apiUrl('/api/fundvaluationbasis'), {
       method: 'POST',
       headers: fundManagementHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
@@ -1102,7 +1049,7 @@ export async function fetchFundEstimates(codes: string[]): Promise<Map<string, F
   const results = new Map<string, FundEstimateResult>();
   if (codes.length === 0) return results;
   try {
-    const res = await fetch(apiUrl(`/api/fundestimates?codes=${codes.join(',')}`), {
+    const res = await request(apiUrl(`/api/fundestimates?codes=${codes.join(',')}`), {
       headers: fundManagementHeaders(),
     });
     if (!res.ok) return results;
@@ -1112,8 +1059,34 @@ export async function fetchFundEstimates(codes: string[]): Promise<Map<string, F
       if (!raw || raw.code !== code || !/^\d{4}-\d{2}-\d{2}$/.test(raw.officialNavDate)) continue;
       results.set(code, raw);
     }
-  } catch { /* retain the browser-side estimate as a compatibility fallback */ }
+  } catch { /* unavailable estimates remain empty; never invent a browser fallback */ }
   return results;
+}
+
+export interface FundCardSnapshot extends DashboardSnapshot {
+  cards: Map<string, { official: FundNavData | null; estimate: FundEstimateResult | null }>;
+}
+
+export async function fetchFundCardSnapshot(codes: string[]): Promise<FundCardSnapshot> {
+  const res = await request(apiUrl(`/api/fundestimates?view=cards&codes=${codes.join(',')}`), {
+    headers: fundManagementHeaders(),
+  });
+  if (!res.ok) throw new Error(`基金快照加载失败 (${res.status})`);
+  const json = await res.json();
+  if (json.schemaVersion !== 1 || !asObject(json.cards)) throw new Error('基金快照格式不正确');
+  const snapshot = parseDashboardSnapshotPayload(json, Object.keys(json.marketStates ?? {}), Date.now());
+  const cards: FundCardSnapshot['cards'] = new Map();
+  for (const code of codes) {
+    const card = json.cards[code];
+    if (!card) continue;
+    const raw = card.official;
+    const nav = raw && Number(raw.nav) > 0 ? {
+      code, name:code, navDate:String(raw.navDate), nav:Number(raw.nav),
+      officialChange:nullableNumber(raw.officialChange), estimatedNav:0, estimatedChange:0,
+    } : null;
+    cards.set(code, {official:nav, estimate:card.estimate ?? null});
+  }
+  return {...snapshot, cards};
 }
 
 export async function fetchFundReturnSummaries(codes: string[]): Promise<Map<string, FundReturnSummary>> {
@@ -1121,7 +1094,7 @@ export async function fetchFundReturnSummaries(codes: string[]): Promise<Map<str
   if (codes.length === 0) return results;
 
   try {
-    const res = await fetch(apiUrl(`/api/fundreturns?codes=${codes.join(',')}`), {
+    const res = await request(apiUrl(`/api/fundreturns?codes=${codes.join(',')}`), {
       headers: fundManagementHeaders(),
     });
     if (!res.ok) return results;
@@ -1139,8 +1112,8 @@ export async function fetchFundHistorySeries(
   targetSize = 3000,
 ): Promise<FundHistoryPoint[]> {
   try {
-    const url = apiUrl(`/api/fundhistory?codes=${code}&pageSize=${targetSize}&pageIndex=1`);
-    const res = await fetch(url, { headers: fundManagementHeaders() });
+    const url = apiUrl(`/api/fundhistory?codes=${code}&pageSize=${targetSize}&pageIndex=1&performance=1`);
+    const res = await request(url, { headers: fundManagementHeaders() });
     if (!res.ok) return [];
     const json = await res.json();
     const rows: FundHistoryRow[] = json[code] ?? [];
@@ -1151,7 +1124,10 @@ export async function fetchFundHistorySeries(
       .map((row) => ({
         date: row.FSRQ,
         nav: parseFloat(row.DWJZ) || 0,
-        changePercent: parseFloat(row.JZZZL) || 0,
+        changePercent: nullableNumber(row.JZZZL),
+        returnValue: row.returnValue,
+        returnSegment: row.returnSegment,
+        adjusted: row.adjusted,
       }))
       .filter((point) => point.date && point.nav > 0)
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -1164,13 +1140,19 @@ function parseClose(value: unknown): number {
   return typeof value === 'number' ? value : parseFloat(String(value ?? ''));
 }
 
+function nullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 export async function fetchMarketHistory(config: MarketHistoryConfig): Promise<MarketHistoryPoint[]> {
   try {
     const params = new URLSearchParams({
       source: config.source,
       symbol: config.symbol,
     });
-    const res = await fetch(apiUrl(`/api/markethistory?${params.toString()}`));
+    const res = await request(apiUrl(`/api/markethistory?${params.toString()}`));
     if (!res.ok) return [];
     const text = await res.text();
     let points: MarketHistoryPoint[] = [];
@@ -1180,6 +1162,10 @@ export async function fetchMarketHistory(config: MarketHistoryConfig): Promise<M
       points = normalizedRows.map((row) => ({
         date: row.date ?? row.day ?? row.d ?? '',
         close: parseClose(row.close ?? row.c),
+        rawClose: row.rawClose,
+        adjusted: row.adjusted,
+        returnSegment: row.returnSegment,
+        quality: row.quality,
       }));
     } else if (config.source === 'sina-cn') {
       const rows = JSON.parse(text) as SinaCnKlineRow[];
@@ -1248,7 +1234,7 @@ export async function fetchMarketReturnSummaries(
 
   try {
     const items = missing.map((config) => `${config.source}:${config.symbol}`).join(',');
-    const res = await fetch(apiUrl(`/api/marketreturns?items=${encodeURIComponent(items)}`));
+    const res = await request(apiUrl(`/api/marketreturns?items=${encodeURIComponent(items)}`));
     if (!res.ok) return results;
     const json = await res.json();
     for (const config of missing) {
@@ -1270,7 +1256,7 @@ export async function fetchMarketStates(symbols: string[]): Promise<Map<string, 
   if (unique.length === 0) return results;
 
   try {
-    const res = await fetch(apiUrl(`/api/marketstates?symbols=${unique.join(',')}`));
+    const res = await request(apiUrl(`/api/marketstates?symbols=${unique.join(',')}`));
     if (!res.ok) return results;
     const json = await res.json();
     for (const symbol of unique) {
@@ -1287,7 +1273,7 @@ export async function fetchFundNavs(codes: string[], refresh = false): Promise<M
   const refreshParam = refresh ? '&refresh=1' : '';
   const url = apiUrl(`/api/fundnav?codes=${codes.join(',')}${refreshParam}`);
   try {
-    const res = await fetch(url, { headers: fundManagementHeaders() });
+    const res = await request(url, { headers: fundManagementHeaders() });
     if (!res.ok) return results;
     const json = asObject(await res.json());
     if (!json) return results;
@@ -1300,7 +1286,7 @@ export async function fetchFundNavs(codes: string[], refresh = false): Promise<M
         name: r.name,
         navDate: r.jzrq,
         nav: parseFloat(r.dwjz) || 0,
-        officialChange: 0, // filled later via fetchFundHistory
+        officialChange: null, // filled later via fetchFundHistory
         estimatedNav: parseFloat(r.gsz) || 0,
         estimatedChange: parseFloat(r.gszzl) || 0,
       });

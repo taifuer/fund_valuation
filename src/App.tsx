@@ -15,7 +15,8 @@ import {
   type FundSortMode,
 } from './fundSorting';
 import {
-  PAGE_PATHS,
+  rememberPageSearch,
+  restoredPagePath,
   canonicalPathForPage,
   expandedFundCodeFromPathname,
   fundExpansionPath,
@@ -232,7 +233,7 @@ export default function App() {
   const fundManagementAvailable = fundManagementMode !== 'disabled';
   const fundManagementGranted = fundManagementMode === 'open' || fundManagementUnlocked;
   const funds = useMemo(() => {
-    if (!fundManagementGranted) return FUNDS;
+    if (!fundManagementGranted || (managedFunds.hiddenDefaultCodes.length === 0 && managedFunds.customFunds.length === 0)) return FUNDS;
     const hidden = new Set(managedFunds.hiddenDefaultCodes);
     const defaultFunds = FUNDS.filter((fund) => !hidden.has(fund.code));
     const defaultCodes = new Set(FUNDS.map((fund) => fund.code));
@@ -405,8 +406,9 @@ export default function App() {
   }, [activePage, fundCollapsed]);
 
   function navigatePage(page: PageKey) {
-    const path = PAGE_PATHS[page];
-    if (window.location.pathname !== path) {
+    rememberPageSearch();
+    const path = restoredPagePath(page);
+    if (`${window.location.pathname}${window.location.search}` !== path) {
       window.history.pushState({}, '', path);
     }
     setActivePage(page);

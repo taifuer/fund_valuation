@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react';
+import { intervalMetrics, formatReturn } from '../historyMetrics';
 import { nextChartIndex } from '../chartKeyboard';
 import type { FundHistoryPoint } from '../types';
 import { useFundHistory } from '../hooks/useFundHistory';
+import { useChartWidth } from '../hooks/useChartWidth';
+import { fitAxisTicks } from '../chartLayout';
 import styles from './FundHistoryChart.module.css';
 
 interface Props {
@@ -15,7 +18,7 @@ const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
   { key: '1w', label: '1周', days: 7 },
   { key: '1m', label: '1月', days: 30 },
   { key: '3m', label: '3月', days: 90 },
-  { key: '6m', label: '半年', days: 183 },
+  { key: '6m', label: '半年', days: 182 },
   { key: '1y', label: '1年', days: 365 },
   { key: '3y', label: '3年', days: 365 * 3 },
   { key: '5y', label: '5年', days: 365 * 5 },
@@ -80,25 +83,12 @@ function selectYearToDate(points: FundHistoryPoint[]): FundHistoryPoint[] {
   return sliced.length >= 2 ? sliced : points.slice(-2);
 }
 
-function maxDrawdown(points: FundHistoryPoint[]): number {
-  let peak = points[0]?.nav ?? 0;
-  let worst = 0;
-  for (const point of points) {
-    peak = Math.max(peak, point.nav);
-    if (peak > 0) {
-      worst = Math.min(worst, ((point.nav - peak) / peak) * 100);
-    }
-  }
-  return worst;
-}
-
-function makeChart(points: FundHistoryPoint[]) {
+function makeChart(points: FundHistoryPoint[], width: number) {
   if (points.length === 0) {
     return { path: '', min: 0, max: 0, xStart: 56, xEnd: 584, yTicks: [], pointPositions: [] };
   }
-  const width = 640;
   const padLeft = 56;
-  const padRight = 56;
+  const padRight = 16;
   const padY = 14;
   const plotHeight = 180;
   const min = Math.min(...points.map((point) => point.nav));
@@ -175,7 +165,7 @@ function pointerSvgX(event: React.PointerEvent<SVGSVGElement>): number {
   const matrix = svg.getScreenCTM();
   if (!matrix) {
     const rect = svg.getBoundingClientRect();
-    return ((event.clientX - rect.left) / rect.width) * 640;
+    return ((event.clientX - rect.left) / rect.width) * svg.viewBox.baseVal.width;
   }
   const point = svg.createSVGPoint();
   point.x = event.clientX;
@@ -187,6 +177,7 @@ export default function FundHistoryChart({ fundCode }: Props) {
   const [range, setRange] = useState<RangeKey>('3m');
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const { history, loading, error } = useFundHistory(fundCode);
+  const { width: chartWidth, ref: chartRef } = useChartWidth();
 
   const selectedRange = RANGES.find((item) => item.key === range) ?? RANGES[2];
   const visible = useMemo(() => {
@@ -198,12 +189,11 @@ export default function FundHistoryChart({ fundCode }: Props) {
     if (visible.length < 2) return null;
     const first = visible[0];
     const last = visible[visible.length - 1];
-    const returnPct = first.nav > 0 ? ((last.nav - first.nav) / first.nav) * 100 : 0;
+    const performance = intervalMetrics(visible, point => point.returnValue ?? point.nav);
     const high = Math.max(...visible.map((point) => point.nav));
     const low = Math.min(...visible.map((point) => point.nav));
     return {
-      returnPct,
-      drawdown: maxDrawdown(visible),
+      ...performance,
       high,
       low,
       first,
@@ -211,18 +201,16 @@ export default function FundHistoryChart({ fundCode }: Props) {
     };
   }, [visible]);
 
-  const chart = useMemo(() => makeChart(visible), [visible]);
+  const chart = useMemo(() => makeChart(visible, chartWidth), [visible, chartWidth]);
   const xTicks = useMemo(
-    () => makeXTicks(visible, range, chart.xStart, chart.xEnd),
+    () => fitAxisTicks(makeXTicks(visible, range, chart.xStart, chart.xEnd)),
     [visible, range, chart.xStart, chart.xEnd],
   );
   const activeIndex = selectedIndex !== null && selectedIndex < visible.length ? selectedIndex : null;
   const activePoint = activeIndex !== null ? visible[activeIndex] : null;
   const activePosition = activeIndex !== null ? chart.pointPositions[activeIndex] : null;
-  const activeReturn = activePoint && visible[0]?.nav
-    ? ((activePoint.nav - visible[0].nav) / visible[0].nav) * 100
-    : 0;
-  const tooltipX = activePosition ? Math.min(Math.max(activePosition.x + 10, 64), 492) : 0;
+  const activeReturn = activePoint ? intervalMetrics([visible[0], activePoint], point => point.returnValue ?? point.nav).returnPct : null;
+  const tooltipX = activePosition ? Math.max(4, Math.min(activePosition.x + 10, chartWidth - 140)) : 0;
   const tooltipY = activePosition ? Math.min(Math.max(activePosition.y - 58, 8), 132) : 0;
   const up = (metrics?.returnPct ?? 0) >= 0;
 
@@ -260,33 +248,34 @@ export default function FundHistoryChart({ fundCode }: Props) {
 
       {loading && <div className={styles.state}>历史净值加载中...</div>}
       {!loading && error && <div className={styles.stateError} role="alert">{error}</div>}
-      {!loading && !error && metrics && (
+      {!loading && metrics && (
         <>
           <div className={styles.metrics}>
             <div>
               <span>区间涨跌</span>
               <strong className={up ? styles.up : styles.down}>
-                {up ? '+' : ''}{metrics.returnPct.toFixed(2)}%
+                {formatReturn(metrics.returnPct)}
               </strong>
             </div>
             <div>
               <span>最大回撤</span>
-              <strong className={styles.down}>{metrics.drawdown.toFixed(2)}%</strong>
+              <strong className={styles.down}>{metrics.drawdown === null ? '--' : `${metrics.drawdown.toFixed(2)}%`}</strong>
             </div>
             <div>
               <span>最新净值</span>
               <strong>{metrics.last.nav.toFixed(4)}</strong>
             </div>
             <div>
-              <span>高/低</span>
+              <span>净值高/低</span>
               <strong>{metrics.high.toFixed(4)} / {metrics.low.toFixed(4)}</strong>
             </div>
           </div>
 
           <div className={styles.chartWrap}>
             <svg
+              ref={chartRef}
               className={styles.chart}
-              viewBox="0 0 640 206"
+              viewBox={`0 0 ${chartWidth} 206`}
               role="img"
               aria-label="官方历史单位净值走势，可用左右方向键选择数据点，Home 和 End 跳到首尾"
               tabIndex={0}
@@ -312,8 +301,8 @@ export default function FundHistoryChart({ fundCode }: Props) {
                     <rect className={styles.tooltipBox} width="136" height="50" rx="6" />
                     <text className={styles.tooltipText} x="8" y="16">{activePoint.date}</text>
                     <text className={styles.tooltipText} x="8" y="31">净值 {activePoint.nav.toFixed(4)}</text>
-                    <text className={activeReturn >= 0 ? styles.tooltipUp : styles.tooltipDown} x="8" y="46">
-                      区间 {activeReturn >= 0 ? '+' : ''}{activeReturn.toFixed(2)}%
+                    <text className={(activeReturn ?? 0) >= 0 ? styles.tooltipUp : styles.tooltipDown} x="8" y="46">
+                      区间 {formatReturn(activeReturn)}
                     </text>
                   </g>
                 </g>
@@ -328,6 +317,7 @@ export default function FundHistoryChart({ fundCode }: Props) {
               ))}
             </svg>
           </div>
+        <p className={styles.note}>折线为单位净值；区间收益与回撤按可获取的分红、拆分数据调整。{metrics.returnPct === null ? '区间存在待核实断点，暂不计算收益。' : ''}</p>
         </>
       )}
     </div>

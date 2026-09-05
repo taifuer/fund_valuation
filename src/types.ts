@@ -68,7 +68,7 @@ export interface FundNavData {
   name: string;
   navDate: string; // 净值日期
   nav: number; // 单位净值
-  officialChange: number; // 最新已披露官方净值的日涨跌幅 (%)
+  officialChange: number | null; // Missing disclosure is not a zero return.
   estimatedNav: number; // 实时估算净值
   estimatedChange: number; // 平台估算涨跌幅 (%)
 }
@@ -128,6 +128,8 @@ export interface FundEstimateProjection {
   phase: FundEstimatePhase;
   complete: boolean;
   asOf: number;
+  quoteAsOf?: number;
+  inputSignature?: string;
 }
 
 export interface FundEstimateResult {
@@ -135,8 +137,22 @@ export interface FundEstimateResult {
   modelVersion: string;
   officialNavDate: string;
   officialNav: number;
-  officialChange: number;
+  officialChange: number | null;
   holdingReportDate: string;
+  holdingDisclosure?: {
+    reportDate: string;
+    count: number;
+    weight: number;
+    equityWeight: number | null;
+    allocationApplied: boolean;
+    sourceUrl: string;
+    revision: string;
+    checkedAt: number | null;
+    kind: 'configured' | 'proxy' | 'expanded' | 'topHoldings';
+  };
+  holdings?: Holding[];
+  holdingQuotes?: Record<string, QuoteData>;
+  holdingMarketStates?: Record<string, MarketStateData>;
   pending: FundEstimateProjection | null;
   preview: FundEstimateProjection | null;
 }
@@ -158,7 +174,10 @@ export interface FundPurchaseData {
 export interface FundHistoryPoint {
   date: string;
   nav: number;
-  changePercent: number;
+  changePercent: number | null;
+  returnValue?: number;
+  returnSegment?: number;
+  adjusted?: boolean;
 }
 
 export type FundReturnRangeKey = '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | 'ytd';
@@ -182,8 +201,12 @@ export interface FundReturnSummary {
 }
 
 export interface MarketHistoryPoint {
+  adjusted?: boolean;
   date: string;
   close: number;
+  rawClose?: number;
+  returnSegment?: number;
+  quality?: string;
 }
 
 export interface MarketReturnSummary {
@@ -193,7 +216,7 @@ export interface MarketReturnSummary {
   latest?: MarketLatestReturn;
   ranges?: Partial<Record<FundReturnRangeKey, MarketRangeReturn>>;
   label: string;
-  returnPercent: number;
+  returnPercent: number | null;
   startDate: string;
   endDate: string;
   startClose: number;
@@ -203,7 +226,7 @@ export interface MarketReturnSummary {
 export interface MarketLatestReturn {
   key: 'latest';
   label: string;
-  returnPercent: number;
+  returnPercent: number | null;
   startDate: string;
   endDate: string;
   startClose: number;
