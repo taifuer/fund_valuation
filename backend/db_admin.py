@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import sqlite3
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -78,6 +79,7 @@ def optimize_database(
             "DELETE FROM market_quote_snapshots WHERE captured_at < ?",
             (snapshot_cutoff_ms,),
         ).rowcount
+        conn.execute("DELETE FROM dashboard_snapshots WHERE name LIKE 'fund-detail:%' AND generated_at < ?", (snapshot_cutoff_ms,))
         duplicate_snapshot = conn.execute(
             """
             SELECT COUNT(*), COALESCE(SUM(length(raw_line)), 0)
@@ -171,6 +173,25 @@ def backup_database(source: Path, destination: Path) -> Path:
     return destination
 
 
+def verify_backup_restore(source: Path) -> dict[str, object]:
+    """Exercise restoration and migration in a disposable directory only."""
+    verify_database(source)
+    tables = ('fund_nav_history', 'market_history', 'fund_holdings', 'stock_daily_history', 'fx_daily_history')
+    with tempfile.TemporaryDirectory(prefix='fund-restore-check-') as directory:
+        restored = Path(directory) / 'restored.db'
+        with sqlite3.connect(f'{source.resolve().as_uri()}?mode=ro', uri=True) as original, sqlite3.connect(restored) as target:
+            counts = {table: original.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]
+                      for table in tables if original.execute('SELECT 1 FROM sqlite_master WHERE name=?', (table,)).fetchone()}
+            original.backup(target)
+        migrate_database(restored)
+        status = verify_database(restored)
+        with sqlite3.connect(restored) as conn:
+            for table, count in counts.items():
+                if conn.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0] != count:
+                    raise RuntimeError(f'Restore verification lost rows: {table}')
+        return {'integrity': status['integrity'], 'schemaVersion': status['schemaVersion'], 'preservedRows': counts}
+
+
 def default_backup_path(source: Path) -> Path:
     stamp = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d-%H%M%S")
     configured = os.environ.get("FUND_VALUATION_BACKUP_DIR", "").strip()
@@ -251,6 +272,8 @@ def parse_args() -> argparse.Namespace:
     restore_parser.add_argument("backup", type=Path)
     restore_parser.add_argument("--database", type=Path, default=DB_PATH)
     restore_parser.add_argument("--confirm", metavar="RESTORE")
+    verify_parser = subparsers.add_parser('verify-backup', help='Restore and migrate a backup in an isolated temporary directory')
+    verify_parser.add_argument('backup', type=Path)
 
     optimize_parser = subparsers.add_parser("optimize", help="Prune regenerable caches and run safe SQLite maintenance")
     optimize_parser.add_argument("--database", type=Path, default=DB_PATH)
@@ -285,6 +308,9 @@ def main() -> None:
     if args.command == "migrate":
         version = migrate_database(args.database)
         print(f"Database migrated to schema version {version}: {args.database}")
+        return
+    if args.command == 'verify-backup':
+        print(json.dumps(verify_backup_restore(args.backup), indent=2))
         return
     if args.command == "backup":
         destination = args.output or default_backup_path(args.database)

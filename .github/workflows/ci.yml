@@ -102,7 +102,8 @@ jobs:
           curl --fail http://127.0.0.1:18080/risk | grep -q '<div id="root"></div>'
           curl --fail --silent http://127.0.0.1:18080/brand-mark.png | cmp --silent - public/brand-mark.png
           docker compose --profile tools run --rm db-tools | grep -q '"integrity": "ok"'
-          docker compose --profile tools run --rm db-tools python -m backend.db_admin backup | grep -q 'Backup created:'
+          docker compose --profile tools run --rm db-tools python -m backend.db_admin backup --output /app/backups/ci-restore.db | grep -q 'Backup created:'
+          docker compose --profile tools run --rm db-tools python -m backend.db_admin verify-backup /app/backups/ci-restore.db | grep -q '"integrity": "ok"'
       - name: Upload Compose logs
         if: failure()
         uses: actions/upload-artifact@v4

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import math
 from typing import Any
 
 
 PriceLookup = Callable[[str, str], float | None]
 FxLookup = Callable[[str, str], float | None]
 BenchmarkLookup = Callable[[str, str, str], float | None]
+PriceReturnLookup = Callable[[str, str, str, float, float], float | None]
 
 
 def compounded_return(price_return: float, fx_return: float) -> float:
@@ -14,7 +16,7 @@ def compounded_return(price_return: float, fx_return: float) -> float:
 
 
 def relative_change(current: float | None, basis: float | None) -> float | None:
-    if current is None or basis is None or current <= 0 or basis <= 0:
+    if current is None or basis is None or not math.isfinite(current) or not math.isfinite(basis) or current <= 0 or basis <= 0:
         return None
     return current / basis - 1
 
@@ -29,6 +31,7 @@ def estimate_cumulative_return(
     benchmark: dict[str, Any] | None = None,
     benchmark_lookup: BenchmarkLookup | None = None,
     equity_weight: float = 1.0,
+    price_return_lookup: PriceReturnLookup | None = None,
 ) -> dict[str, Any] | None:
     """Estimate cumulative CNY return between two fund valuation dates.
 
@@ -47,11 +50,13 @@ def estimate_cumulative_return(
         symbol = str(holding.get("sinaSymbol") or "")
         weight = float(holding.get("weight") or 0)
         currency = str(holding.get("currency") or "CNY")
-        if not symbol or weight <= 0:
+        if not symbol or weight <= 0 or holding.get("currency") == "":
             continue
         base_price = price_lookup(symbol, base_date)
         target_price = price_lookup(symbol, target_date)
         price_return = relative_change(target_price, base_price)
+        if price_return is not None and price_return_lookup is not None:
+            price_return = price_return_lookup(symbol, base_date, target_date, base_price, target_price)
         if price_return is None:
             continue
         base_fx = 1.0
@@ -259,6 +264,22 @@ def linear_fit(pairs: list[tuple[float, float]]) -> tuple[float, float]:
     beta = covariance / variance
     alpha = mean_y - beta * mean_x
     return alpha, beta
+
+
+def estimate_aligned_returns(holdings: list[dict[str, Any]], *, target_date: str,
+                             previous_date: str | None, **kwargs) -> tuple[dict | None, dict | None]:
+    current = estimate_cumulative_return(holdings, target_date=target_date, **kwargs)
+    previous = estimate_cumulative_return(holdings, target_date=previous_date, **kwargs) if previous_date else None
+    if current and previous:
+        current_symbols = {row['sinaSymbol'] for row in current['components']}
+        previous_symbols = {row['sinaSymbol'] for row in previous['components']}
+        if current_symbols != previous_symbols:
+            # Changing quote coverage must not manufacture a daily gain/loss.
+            common = current_symbols & previous_symbols
+            aligned = [row for row in holdings if row.get('sinaSymbol') in common]
+            current = estimate_cumulative_return(aligned, target_date=target_date, **kwargs)
+            previous = estimate_cumulative_return(aligned, target_date=previous_date, **kwargs)
+    return current, previous
 
 
 def mean_absolute_error(pairs: list[tuple[float, float]], alpha: float = 0.0, beta: float = 1.0) -> float:

@@ -1,0 +1,37 @@
+name: Company report review
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 1 * * 1,4'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: company-report-review
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Collect review candidates serially
+        continue-on-error: true
+        run: npm run data:companies:check -- --all --output=data/company-review.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: company-report-review
+          path: data/company-review.json
+          retention-days: 14
+          if-no-files-found: warn

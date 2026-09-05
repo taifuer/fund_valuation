@@ -14,6 +14,7 @@ from backend.db_admin import (
     optimize_database,
     prune_raw_responses,
     restore_database,
+    verify_backup_restore,
 )
 from backend.storage import (
     CACHE_BODY_COMPRESSION_MAGIC,
@@ -94,6 +95,20 @@ class StorageMigrationTests(unittest.TestCase):
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION + 1}")
             with self.assertRaisesRegex(RuntimeError, "newer than supported"):
                 migrate_database(path)
+
+    def test_isolated_restore_does_not_change_backup_or_live_database(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'source.db'
+            migrate_database(path)
+            with sqlite3.connect(path) as conn:
+                conn.execute("INSERT INTO fund_nav_history VALUES ('A','2026-09-01',1.23,0,1)")
+                conn.execute('PRAGMA user_version=12')
+            result = verify_backup_restore(path)
+            self.assertEqual(result['schemaVersion'], SCHEMA_VERSION)
+            self.assertEqual(result['preservedRows']['fund_nav_history'], 1)
+            with sqlite3.connect(path) as conn:
+                self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 12)
+                self.assertEqual(conn.execute('SELECT nav FROM fund_nav_history').fetchone()[0], 1.23)
 
     def test_schema_six_estimate_table_gains_raw_change_column(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

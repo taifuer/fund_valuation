@@ -44,6 +44,8 @@ export default function DiagnosticsPage() {
 
   const background = payload?.backgroundRefresh as Record<string, unknown> | undefined;
   const requestMetrics = payload?.requestMetrics as Record<string, unknown> | undefined;
+  const requestRoutes = (requestMetrics?.routes ?? []) as Array<Record<string, unknown>>;
+  const workerTasks = (payload?.workerTasks ?? []) as Array<Record<string, unknown>>;
   const historyCoverage = payload?.historyCoverage as Record<string, unknown> | undefined;
   const coverageSummary = historyCoverage?.summary as Record<string, unknown> | undefined;
   const coverageFunds = Array.isArray(historyCoverage?.funds)
@@ -87,6 +89,28 @@ export default function DiagnosticsPage() {
             <div><span>持仓缺口</span><strong>{numberValue(coverageSummary ?? null, 'missingHoldingPeriods')}</strong></div>
             <div><span>缺历史标的</span><strong>{numberValue(coverageSummary ?? null, 'marketsWithoutHistory')}</strong></div>
             <div><span>汇率缺失</span><strong>{numberValue(coverageSummary ?? null, 'fxCurrenciesMissing')}</strong></div>
+          </section>
+          <section className={styles.panel}>
+            <h3>接口耗时 · 当前进程最近 256 次请求</h3>
+            <div className={styles.tableWrap}><table>
+              <thead><tr><th>接口</th><th>请求数</th><th>平均 / ms</th><th>P95 / ms</th><th>样本数</th></tr></thead>
+              <tbody>{requestRoutes.map(route => <tr key={String(route.route)}>
+                <td>{String(route.route)}</td><td>{String(route.count)}</td><td>{String(route.averageDurationMs)}</td>
+                <td>{String(route.p95DurationMs ?? '--')}</td><td>{String(route.sampleCount ?? '--')}</td>
+              </tr>)}</tbody>
+            </table></div>
+          </section>
+          <section className={styles.panel}>
+            <h3>后台任务</h3>
+            <div className={styles.tableWrap}><table>
+              <thead><tr><th>任务</th><th>状态</th><th>最近成功 · 北京时间</th><th>耗时 / 秒</th><th>错误</th></tr></thead>
+              <tbody>{workerTasks.map(task => <tr key={String(task.name)}>
+                <td>{String(task.name)}</td>
+                <td>{Number(task.startedAt) > Number(task.finishedAt) ? '运行中 / 待完成' : task.error ? '失败' : '完成'}</td>
+                <td>{task.lastSuccessAt ? new Date(Number(task.lastSuccessAt)).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '--'}</td>
+                <td>{(Number(task.durationMs) / 1000).toFixed(1)}</td><td>{String(task.error || '--')}</td>
+              </tr>)}</tbody>
+            </table></div>
           </section>
           <section className={styles.panel}>
             <h3>异常项目</h3>

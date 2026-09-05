@@ -19,7 +19,7 @@ export default function FundHoldingsPanel({ fund, projection, marketStates }: Pr
     let cancelled = false;
     async function load() {
       try {
-        const estimates = await fetchFundEstimates([fund.code]);
+        const estimates = await fetchFundEstimates([fund.code], projection?.snapshotId);
         const next = estimates.get(fund.code) ?? null;
         const rows = next?.holdings ?? (await fetchFundHoldings([fund.code])).get(fund.code) ?? fund.holdings;
         if (!cancelled) { setResult(next); setHoldings(rows); setError(''); }
@@ -31,11 +31,11 @@ export default function FundHoldingsPanel({ fund, projection, marketStates }: Pr
     }
     void load();
     return () => { cancelled = true; };
-  }, [fund.code, projection?.asOf]);
+  }, [fund.code, projection?.snapshotId, projection?.asOf]);
   if (loading) return <div className={styles.tabLoading} role="status">持仓数据加载中...</div>;
   if (error) return <div className={styles.tabLoading} role="alert">{error}</div>;
-  const candidate = projection ? result?.[projection.kind] ?? null : result?.pending ?? result?.preview ?? null;
-  const mismatch = projection && candidate && (projection.targetDate !== candidate.targetDate ||
+  const candidate = projection ? result?.[projection.kind] ?? null : null;
+  const mismatch = projection && (!candidate || projection.snapshotId !== candidate.snapshotId || projection.asOf !== candidate.asOf || projection.targetDate !== candidate.targetDate ||
     (projection.inputSignature && candidate.inputSignature && projection.inputSignature !== candidate.inputSignature));
   if (mismatch) return <div className={styles.tabLoading} role="status">估值快照已更新，等待卡片同步。</div>;
   const selected = candidate;

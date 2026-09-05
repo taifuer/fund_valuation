@@ -6,6 +6,7 @@ import {
   expectedPeriodSearchTerms,
   probeCompanyReleaseSource,
   sourceMentionsExpectedPeriod,
+  extractReportCandidates,
 } from '../../scripts/lib/company-releases';
 
 const sampleCompany: CompanyFundamentals = {
@@ -34,6 +35,12 @@ const freshness: CompanyReportFreshness = {
 };
 
 describe('non-US company release checks', () => {
+  it('extracts period-specific HTTPS report candidates without upgrading them to verified references', () => {
+    const body = '<a href="/2025-q2.pdf">2025 Q2 Results</a><a href="/2026-q2.pdf"><span>2026 Q2 Results</span></a><a href="javascript:alert(1)">2026 Q2 Results</a><a href="/archive">History</a>';
+    expect(extractReportCandidates(body, 'https://example.com/ir', ['FY2026 Q2'])).toEqual([
+      { period: 'FY2026 Q2', title: '2026 Q2 Results', url: 'https://example.com/2026-q2.pdf' },
+    ]);
+  });
   it('classifies common official disclosure hosts', () => {
     expect(companyReleaseProvider('https://www1.hkexnews.hk/listedco/listconews/')).toBe('港交所');
     expect(companyReleaseProvider('https://www.cninfo.com.cn/new/index')).toBe('巨潮资讯');

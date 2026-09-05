@@ -11,7 +11,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("FUND_VALUATION_DATA_DIR", ROOT_DIR / "data"))
 DB_PATH = DATA_DIR / "fund_valuation.db"
 RAW_DIR = DATA_DIR / "raw"
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 CACHE_BODY_COMPRESSION_MAGIC = b"\x00FVCZ1"
 CACHE_BODY_COMPRESSION_MIN_BYTES = 16 * 1024
 
@@ -191,6 +191,19 @@ MIGRATIONS: dict[int, str] = {
           equity_weight REAL, holdings_count INTEGER, holdings_weight REAL,
           source_url TEXT NOT NULL DEFAULT '', revision TEXT NOT NULL DEFAULT '',
           checked_at INTEGER NOT NULL, PRIMARY KEY (code, report_date)
+        );
+    """,
+    13: """
+        CREATE TABLE IF NOT EXISTS stock_price_basis (
+          sina_symbol TEXT NOT NULL, date TEXT NOT NULL, basis TEXT NOT NULL,
+          source TEXT NOT NULL, fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (sina_symbol, date)
+        );
+        CREATE TABLE IF NOT EXISTS worker_task_status (
+          name TEXT PRIMARY KEY, started_at INTEGER NOT NULL DEFAULT 0,
+          finished_at INTEGER NOT NULL DEFAULT 0, success_at INTEGER NOT NULL DEFAULT 0,
+          error_at INTEGER NOT NULL DEFAULT 0, duration_ms REAL NOT NULL DEFAULT 0,
+          run_count INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT ''
         );
     """,
 }

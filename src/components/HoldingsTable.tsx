@@ -154,7 +154,7 @@ export default function HoldingsTable({
                   </div>
                 </td>
                 <td className={styles.right}>{(h.weight * 100).toFixed(h.weight < 0.01 ? 2 : 1)}%</td>
-                <td className={styles.right}>{h.currency}</td>
+                <td className={styles.right}>{h.currency || '--'}</td>
                 <td className={`${styles.right} ${displayTime?.estimated ? styles.estimatedDate : ''}`}>
                   {displayTime?.label ?? '-'}
                 </td>

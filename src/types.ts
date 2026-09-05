@@ -19,7 +19,7 @@ export interface Holding {
   name: string;
   sinaSymbol: string; // sina format: gb_AAPL, sz300502, etc.
   weight: number;
-  currency: 'CNY' | 'USD' | 'EUR' | 'JPY' | 'KRW' | 'HKD';
+  currency: 'CNY' | 'USD' | 'EUR' | 'JPY' | 'KRW' | 'HKD' | 'TWD' | '';
   market?: string;
   reportDate?: string;
   quoteSupported?: boolean;
@@ -130,6 +130,7 @@ export interface FundEstimateProjection {
   asOf: number;
   quoteAsOf?: number;
   inputSignature?: string;
+  snapshotId?: string;
 }
 
 export interface FundEstimateResult {

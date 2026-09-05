@@ -15,6 +15,8 @@ from zoneinfo import ZoneInfo
 
 from .db_admin import ensure_recent_backup, optimize_database, positive_int_env
 from .storage import DB_PATH
+from .observability import run_task
+from .valuation_quality import valuation_quality_report
 from .server import (
     BACKGROUND_REFRESH_INTERVAL_SECONDS,
     FUND_HOLDINGS_REFRESH_INTERVAL_SECONDS,
@@ -41,6 +43,8 @@ from .server import (
     refresh_fund_valuation_histories,
     refresh_latest_fund_history,
     refresh_latest_fund_holdings,
+    repair_stored_holding_identities,
+    store_dashboard_snapshot,
     release_background_job,
 )
 
@@ -111,6 +115,7 @@ def main() -> None:
     args = parser.parse_args()
 
     ensure_storage()
+    repair_stored_holding_identities()
     owner = f"worker:{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
     maintenance_interval = max(args.interval, 15 * 60)
     print(f"Refresh worker started: owner={owner}, tick=60s", flush=True)
@@ -129,6 +134,7 @@ def main() -> None:
         "valuation_history": 0.0,
         "backup": 0.0,
         "cleanup": 0.0,
+        "valuation_quality": 0.0,
     }
 
     def refresh_quotes(symbols: list[str], currencies: list[str]) -> None:
@@ -151,14 +157,14 @@ def main() -> None:
         with app.app_context():
             if "fund_history_latest" in flags:
                 try:
-                    result = refresh_latest_fund_history()
+                    result = run_task("fund_history_latest", refresh_latest_fund_history)
                     tasks.append(
                         f"fund-history-latest:{result['updated']}/{result['checked']}"
                         f" failed:{result['failed']}"
                     )
                     errors.extend(f"fund-history-latest: {error}" for error in result["errors"])
                     if result["updated"]:
-                        estimate_result = refresh_fund_estimate_snapshots()
+                        estimate_result = run_task("fund_estimates", refresh_fund_estimate_snapshots)
                         tasks.append(f"fund-estimates:{estimate_result['funds']}")
                 except Exception as exc:
                     errors.append(f"fund-history-latest: {exc}")
@@ -170,50 +176,50 @@ def main() -> None:
                     errors.append(f"fund-nav: {exc}")
             if "market_history" in flags:
                 try:
-                    errors.extend(refresh_configured_market_history())
+                    errors.extend(run_task("market_history", refresh_configured_market_history))
                     tasks.append("market-history")
                 except Exception as exc:
                     errors.append(f"market-history: {exc}")
             if "fx_history" in flags:
                 try:
-                    rows = refresh_configured_fx_history()
+                    rows = run_task("fx_history", refresh_configured_fx_history)
                     tasks.append(f"fx-history:{rows}")
                 except Exception as exc:
                     errors.append(f"fx-history: {exc}")
             if "fund_purchase" in flags:
                 try:
-                    prewarm_purchase_status_cache()
+                    run_task("fund_purchase", prewarm_purchase_status_cache)
                     tasks.append("fund-purchase")
                 except Exception as exc:
                     errors.append(f"fund-purchase: {exc}")
             if "fund_holdings" in flags:
                 try:
-                    result = refresh_latest_fund_holdings()
+                    result = run_task("fund_holdings", refresh_latest_fund_holdings)
                     tasks.append(f"fund-holdings:{result['updated']}/{result['checked']}")
                     errors.extend(f"fund-holdings: {error}" for error in result["errors"])
                     if result.get("changedCodes"):
-                        profile_result = refresh_fund_profiles(result["changedCodes"], force_refresh=True)
+                        profile_result = run_task("fund_profiles", refresh_fund_profiles, result["changedCodes"], force_refresh=True)
                         tasks.append(f"fund-profiles:{profile_result['updated']}/{profile_result['checked']}")
                         errors.extend(f"fund-profiles: {error}" for error in profile_result["errors"])
                 except Exception as exc:
                     errors.append(f"fund-holdings: {exc}")
             if "fund_profiles" in flags:
                 try:
-                    result = refresh_fund_profiles()
+                    result = run_task("fund_profiles", refresh_fund_profiles)
                     tasks.append(f"fund-profiles:{result['updated']}/{result['checked']}")
                     errors.extend(f"fund-profiles: {error}" for error in result["errors"])
                 except Exception as exc:
                     errors.append(f"fund-profiles: {exc}")
             if "fund_history_full" in flags:
                 try:
-                    errors.extend(refresh_configured_fund_history())
+                    errors.extend(run_task("fund_history_full", refresh_configured_fund_history))
                     prewarm_response_cache()
                     tasks.append("fund-history-full")
                 except Exception as exc:
                     errors.append(f"fund-history-full: {exc}")
             if "valuation_history" in flags:
                 try:
-                    result = refresh_fund_valuation_histories()
+                    result = run_task("valuation_history", refresh_fund_valuation_histories)
                     tasks.append(
                         f"valuation-history:{result['updated']}/{result['checked']}"
                         f" failed:{result['failed']}"
@@ -224,7 +230,7 @@ def main() -> None:
             if "backup" in flags and os.environ.get("FUND_VALUATION_AUTO_BACKUP", "0") == "1":
                 try:
                     configured_backup_dir = os.environ.get("FUND_VALUATION_BACKUP_DIR", "").strip()
-                    backup = ensure_recent_backup(
+                    backup = run_task("backup", ensure_recent_backup,
                         DB_PATH,
                         backup_dir=Path(configured_backup_dir) if configured_backup_dir else None,
                         interval_hours=int(os.environ.get("FUND_VALUATION_BACKUP_INTERVAL_HOURS", "24")),
@@ -237,7 +243,7 @@ def main() -> None:
                     errors.append(f"backup: {exc}")
             if "cleanup" in flags:
                 try:
-                    optimize_database(
+                    run_task("cleanup", optimize_database,
                         DB_PATH,
                         response_cache_retention_days=positive_int_env("FUND_VALUATION_RESPONSE_CACHE_RETENTION_DAYS", 14),
                         snapshot_retention_days=positive_int_env("FUND_VALUATION_SNAPSHOT_RETENTION_DAYS", 7),
@@ -246,6 +252,13 @@ def main() -> None:
                     tasks.append("cleanup")
                 except Exception as exc:
                     errors.append(f"cleanup: {exc}")
+            if "valuation_quality" in flags:
+                try:
+                    report = run_task("valuation_quality", valuation_quality_report, DB_PATH)
+                    store_dashboard_snapshot(report, "valuation-quality")
+                    tasks.append("valuation-quality")
+                except Exception as exc:
+                    errors.append(f"valuation-quality: {exc}")
             state = background_refresh_state_snapshot()
             updates = {
                 "lastRunAt": now_ms(),
@@ -278,7 +291,7 @@ def main() -> None:
                 quotes_refreshed = False
                 if acquired and current >= due["cash_quotes"]:
                     try:
-                        refresh_quotes(cash_symbols, [])
+                        run_task("cash_quotes", refresh_quotes, cash_symbols, [])
                         tasks.append("cash-quotes")
                         quotes_refreshed = True
                     except Exception as exc:
@@ -286,7 +299,7 @@ def main() -> None:
                     due["cash_quotes"] = current + cash_interval
                 if acquired and current >= due["continuous_quotes"]:
                     try:
-                        refresh_quotes(continuous_symbols, ["EUR", "HKD", "JPY", "KRW", "USD"])
+                        run_task("continuous_quotes", refresh_quotes, continuous_symbols, ["EUR", "HKD", "JPY", "KRW", "USD"])
                         tasks.append("continuous-quotes")
                         quotes_refreshed = True
                     except Exception as exc:
@@ -295,14 +308,14 @@ def main() -> None:
                 if acquired and quotes_refreshed:
                     dashboard_payload = None
                     try:
-                        dashboard_payload = publish_dashboard_snapshot()
+                        dashboard_payload = run_task("dashboard_snapshot", publish_dashboard_snapshot)
                         tasks.append("dashboard-snapshot")
                     except Exception as exc:
                         errors.append(f"dashboard-snapshot: {exc}")
                     try:
                         if dashboard_payload is None:
                             raise RuntimeError("dashboard snapshot unavailable")
-                        estimate_result = refresh_fund_estimate_snapshots(dashboard_payload)
+                        estimate_result = run_task("fund_estimates", refresh_fund_estimate_snapshots, dashboard_payload)
                         tasks.append(f"fund-estimates:{estimate_result['funds']}")
                     except Exception as exc:
                         errors.append(f"fund-estimates: {exc}")
@@ -319,6 +332,7 @@ def main() -> None:
                         "valuation_history": 24 * 60 * 60,
                         "backup": 60 * 60,
                         "cleanup": 24 * 60 * 60,
+                        "valuation_quality": 7 * 24 * 60 * 60,
                     }
                     if current >= due["fund_history_latest"]:
                         maintenance_flags.add("fund_history_latest")

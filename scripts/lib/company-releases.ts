@@ -1,5 +1,6 @@
 import type { CompanyFundamentals } from '../../src/types';
 import type { CompanyReportFreshness } from '../../src/data/companyReportMaintenance';
+import { parse, type DefaultTreeAdapterMap } from 'parse5';
 
 export type CompanyReleaseProvider =
   | '港交所'
@@ -18,6 +19,7 @@ export interface CompanyReleaseProbe {
   status: '来源可用' | '需要人工核查' | '命中报告候选' | '访问受限' | '来源异常';
   source: string;
   error?: string;
+  candidateLinks?: Array<{ period: string; title: string; url: string }>;
 }
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -54,6 +56,9 @@ export function expectedPeriodSearchTerms(period: string): string[] {
       `q${number} ${year}`,
       `${year} q${number}`,
       `${number}q ${year}`,
+      `${year} ${number}q`,
+      `${number}q${year}`,
+      `${year}q${number}`,
       `${ordinal} quarter ${year}`,
       `${year} ${ordinal} quarter`,
       `${year}年第${chineseOrdinal}季度`,
@@ -74,7 +79,9 @@ export function expectedPeriodSearchTerms(period: string): string[] {
       `${year} ${ordinal} half`,
       `${year} half year results`,
       `${year}年半年度报告`,
+      `${year}年半年度報告`,
       `${year}年中期业绩`,
+      `${year}年中期業績`,
     ];
   }
 
@@ -88,6 +95,7 @@ export function expectedPeriodSearchTerms(period: string): string[] {
       `${year} annual results`,
       `${year} annual report`,
       `${year}年度报告`,
+      `${year}年度報告`,
       `${year}年报`,
       `${year} 사업보고서`,
     ];
@@ -100,6 +108,37 @@ export function sourceMentionsExpectedPeriod(source: string, period?: string): b
   const normalized = normalizeSearchText(source);
   return expectedPeriodSearchTerms(period)
     .some((term) => normalized.includes(normalizeSearchText(term)));
+}
+
+export function extractReportCandidates(body: string, baseUrl: string, periods: string[]) {
+  const links: Array<{ title: string; url: string }> = [];
+  type Node = DefaultTreeAdapterMap['node'];
+  const text = (node: Node): string => node.nodeName === '#text' && 'value' in node ? node.value
+    : 'childNodes' in node ? node.childNodes.map(text).join(' ') : '';
+  const walk = (node: Node) => {
+    if ('tagName' in node && node.tagName === 'a') {
+      const href = node.attrs.find(attr => attr.name === 'href')?.value;
+      if (href) {
+        try {
+          const url = new URL(href, baseUrl);
+          if (url.protocol === 'https:') links.push({ title: text(node).trim(), url: url.href });
+        } catch { /* malformed upstream link */ }
+      }
+    }
+    if ('childNodes' in node) node.childNodes.forEach(walk);
+  };
+  walk(parse(body));
+  const seen = new Set<string>();
+  return periods.flatMap(period => links.filter(link => {
+    let decodedUrl = link.url;
+    try { decodedUrl = decodeURI(decodedUrl); } catch { /* keep the original URL */ }
+    const evidence = `${link.title} ${decodedUrl}`;
+    const key = `${period}:${link.url}`;
+    if (seen.has(key) || !/\.pdf(?:[?#]|$)|report|results|earnings|报告|報告|业绩|業績|실적/i.test(evidence)
+      || !sourceMentionsExpectedPeriod(evidence, period)) return false;
+    seen.add(key);
+    return true;
+  }).map(link => ({ period, ...link })));
 }
 
 export async function probeCompanyReleaseSource(
@@ -142,13 +181,17 @@ export async function probeCompanyReleaseSource(
     const body = contentType.includes('html') || contentType.includes('text')
       ? await response.text()
       : '';
+    if (body.length > 2_000_000) throw new Error('Report archive exceeds size limit');
+    const periods = [...new Set([...company.annual, ...company.halfYear, ...company.quarterly].map(point => point.period))];
+    if (freshness.expectedPeriod) periods.push(freshness.expectedPeriod);
+    const candidateLinks = extractReportCandidates(body, company.sourceUrl, periods);
     if (sourceMentionsExpectedPeriod(body, freshness.expectedPeriod)) {
-      return { ...common, status: '命中报告候选' };
+      return { ...common, status: '命中报告候选', candidateLinks };
     }
     if (freshness.status === 'review') {
-      return { ...common, status: '需要人工核查' };
+      return { ...common, status: '需要人工核查', candidateLinks };
     }
-    return { ...common, status: '来源可用' };
+    return { ...common, status: '来源可用', candidateLinks };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const accessRestricted = /abort|timeout/i.test(message);

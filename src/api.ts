@@ -992,7 +992,7 @@ export async function fetchFundHoldings(codes: string[], refresh = false): Promi
           const name = String(row.name ?? '').trim();
           const sinaSymbol = String(row.sinaSymbol ?? '').trim();
           const weight = Number(row.weight);
-          const currency = row.currency ?? 'CNY';
+          const currency = row.currency ?? '';
           if (!symbol || !name || !Number.isFinite(weight) || weight <= 0) return null;
           return {
             symbol,
@@ -1045,11 +1045,11 @@ export async function fetchFundValuationBases(
   return results;
 }
 
-export async function fetchFundEstimates(codes: string[]): Promise<Map<string, FundEstimateResult>> {
+export async function fetchFundEstimates(codes: string[], snapshotId?: string): Promise<Map<string, FundEstimateResult>> {
   const results = new Map<string, FundEstimateResult>();
   if (codes.length === 0) return results;
   try {
-    const res = await request(apiUrl(`/api/fundestimates?codes=${codes.join(',')}`), {
+    const res = await request(apiUrl(`/api/fundestimates?codes=${codes.join(',')}${snapshotId ? `&snapshot=${encodeURIComponent(snapshotId)}` : ''}`), {
       headers: fundManagementHeaders(),
     });
     if (!res.ok) return results;

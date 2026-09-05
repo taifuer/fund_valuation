@@ -12,6 +12,8 @@ import {
   secDomesticCompanies,
 } from './lib/sec';
 import { probeCompanyReleaseSource } from './lib/company-releases';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
 const args = new Set(process.argv.slice(2));
 const asOfArg = [...args].find((arg) => arg.startsWith('--as-of='));
@@ -19,8 +21,13 @@ const asOf = asOfArg?.slice('--as-of='.length) ?? new Date().toISOString().slice
 const offline = args.has('--offline');
 const showAll = args.has('--all');
 const strict = args.has('--strict');
+const output = [...args].find(arg => arg.startsWith('--output='))?.slice('--output='.length);
+const ids = [...args].find(arg => arg.startsWith('--companies='))?.slice('--companies='.length).split(',');
+const selected = companyFundamentalsDataset.companies.filter(company => !ids || ids.includes(company.id));
+if (!selected.length) throw new Error('No matching companies');
+const report: Record<string, unknown> = { asOf, datasetUpdatedAt: companyFundamentalsDataset.updatedAt, offline, reviewOnly: true };
 
-const localCandidates = companyFundamentalsDataset.companies
+const localCandidates = selected
   .map((company) => ({ company, freshness: assessCompanyReportFreshness(company, asOf) }))
   .filter(({ freshness }) => freshness.status === 'upcoming' || freshness.status === 'review')
   .map(({ company, freshness }) => ({
@@ -41,11 +48,15 @@ if (localCandidates.length > 0) {
 }
 
 if (!offline) {
-  const cikByTicker = await loadSecCikByTicker();
-  const companies = secDomesticCompanies(companyFundamentalsDataset.companies);
   const failures: string[] = [];
+  const companies = secDomesticCompanies(selected);
+  let cikByTicker = new Map<string, number>();
+  if (companies.length) {
+    try { cikByTicker = await loadSecCikByTicker(); }
+    catch (error) { failures.push(`SEC ticker lookup: ${String(error)}`); }
+  }
 
-  const filings = await mapWithConcurrency(companies, 4, async (company) => {
+  const filings = await mapWithConcurrency(companies, 1, async (company) => {
     const cik = cikByTicker.get(company.ticker.toUpperCase());
     if (cik == null) {
       failures.push(`${company.name}: ticker ${company.ticker} not found`);
@@ -76,6 +87,7 @@ if (!offline) {
 
   const completed = filings.filter((filing) => filing != null);
   const updates = completed.filter((filing) => filing.status === '有新财报');
+  report.sec = { completed, failures };
   console.log('\nSEC filing comparison:');
   if (updates.length > 0 || showAll) console.table(showAll ? completed : updates);
   console.log(`${completed.length}/${companies.length} checked; ${updates.length} update(s) found.`);
@@ -86,15 +98,16 @@ if (!offline) {
     process.exitCode = 2;
   }
 
-  const nonUsCompanies = companyFundamentalsDataset.companies
+  const nonUsCompanies = selected
     .filter((company) => company.region !== 'usa');
-  const probes = await mapWithConcurrency(nonUsCompanies, 3, async (company) => (
+  const probes = await mapWithConcurrency(nonUsCompanies, 1, async (company) => (
     probeCompanyReleaseSource(company, assessCompanyReportFreshness(company, asOf))
   ));
   const actionable = probes.filter((probe) => probe.status !== '来源可用');
   const candidates = probes.filter((probe) => probe.status === '命中报告候选');
   const sourceFailures = probes.filter((probe) => probe.status === '来源异常');
   const restrictedSources = probes.filter((probe) => probe.status === '访问受限');
+  report.nonUs = probes;
 
   console.log('\nNon-US official-source check:');
   if (showAll || actionable.length > 0) console.table(showAll ? probes : actionable);
@@ -120,4 +133,10 @@ if (!offline) {
   if (strict && (candidates.length > 0 || sourceFailures.length > 0)) {
     process.exitCode = candidates.length > 0 ? 2 : 1;
   }
+}
+report.calendarCandidates = localCandidates;
+if (output) {
+  await mkdir(dirname(output), { recursive: true });
+  await writeFile(output, `${JSON.stringify(report, null, 2)}\n`);
+  console.log(`Review-only report: ${output}. Financial figures and source references were not modified.`);
 }

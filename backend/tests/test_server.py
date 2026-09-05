@@ -60,6 +60,8 @@ class ServerDataRefreshTests(unittest.TestCase):
                 DELETE FROM market_history;
                 DELETE FROM market_calendar;
                 DELETE FROM stock_daily_history;
+                DELETE FROM stock_price_basis;
+                DELETE FROM worker_task_status;
                 DELETE FROM fx_daily_history;
                 DELETE FROM fund_estimate_snapshots;
                 DELETE FROM market_quote_snapshots;
@@ -601,6 +603,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             5.0, 2.5, 0.5, 0.4, 10, "test-input-signature",
         ))
         self.assertEqual(json.loads(row[-1]), {
+            "disclosedWeight": None,
             "holdingContributions": [{"sinaSymbol": "gb_aapl", "contributionPercent": 5.0}],
             "benchmarkChangePercent": 6.25,
             "benchmarkFxChangePercent": -0.1,
@@ -768,7 +771,8 @@ class ServerDataRefreshTests(unittest.TestCase):
         })
 
     def test_available_fund_estimates_reads_worker_snapshot(self) -> None:
-        expected = {"code": "017436", "officialNavDate": "2026-07-30"}
+        expected = {"code": "017436", "officialNavDate": "2026-07-30", "officialNav": 2}
+        server.store_fund_history('017436', [{'FSRQ': '2026-07-30', 'DWJZ': 2, 'JZZZL': 1}])
         server.store_dashboard_snapshot(
             {"017436": expected},
             server.FUND_ESTIMATE_SNAPSHOT_NAME,
@@ -1059,8 +1063,8 @@ class ServerDataRefreshTests(unittest.TestCase):
         }))
 
         self.assertEqual(rows, [
-            {"date": "2026-07-31", "close": 151.3},
-            {"date": "2026-08-03", "close": 150.3},
+            {"date": "2026-07-31", "close": 151.3, "basis": "qfq", "source": "tencent"},
+            {"date": "2026-08-03", "close": 150.3, "basis": "qfq", "source": "tencent"},
         ])
 
     def test_hk_stock_history_falls_back_to_tencent_when_sina_has_no_rows(self) -> None:
@@ -1090,7 +1094,7 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         self.assertTrue(updated)
         self.assertEqual(len(calls), 2)
-        self.assertEqual(calls[1][1], "stockhistory-fallback:tencent:hk00522")
+        self.assertEqual(calls[1][1], "stockhistory-fallback:tencent-raw:hk00522")
         with sqlite3.connect(server.DB_PATH) as conn:
             rows = conn.execute(
                 "SELECT date,close FROM stock_daily_history WHERE sina_symbol=? ORDER BY date",
@@ -1112,6 +1116,15 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         self.assertTrue(updated)
         fetch.assert_called_once()
+
+    def test_qfq_history_cannot_overwrite_raw_stock_prices(self):
+        raw = json.dumps({'data': {'hk00522': {'day': [['2026-09-01', '100', '100']]}}})
+        adjusted = json.dumps({'data': {'hk00522': {'qfqday': [['2026-09-01', '50', '50']]}}})
+        self.assertEqual(server.store_stock_history('hk00522', raw), 1)
+        self.assertEqual(server.store_stock_history('hk00522', adjusted), 0)
+        with server.get_conn() as conn:
+            self.assertEqual(conn.execute("SELECT close FROM stock_daily_history WHERE sina_symbol='hk00522'").fetchone()[0], 100)
+            self.assertEqual(conn.execute("SELECT basis,source FROM stock_price_basis WHERE sina_symbol='hk00522'").fetchone(), ('raw', 'tencent'))
 
     def test_dashboard_aggregates_market_snapshot_and_uses_cache(self) -> None:
         quote_body = 'var hq_str_s_sh000001="上证指数,3000,10,0.33";'.encode("gb18030")
@@ -2988,12 +3001,15 @@ class ServerDataRefreshTests(unittest.TestCase):
 
     def test_fund_card_snapshot_is_lean_and_read_only(self):
         server.store_fund_history('017436', [{'FSRQ': '2026-09-01', 'DWJZ': 2, 'JZZZL': None}])
-        server.store_dashboard_snapshot({'017436': {'officialNavDate': '2026-09-01', 'holdings': [{'name': 'A'}], 'holdingQuotes': {'A': {}}, 'preview': {'targetDate': '2026-09-02', 'holdingContributions': [{'large': True}], 'changePercent': 1}}}, server.FUND_ESTIMATE_SNAPSHOT_NAME)
+        server.store_dashboard_snapshot({'017436': {'officialNavDate': '2026-09-01', 'officialNav': 2, 'holdings': [{'name': 'A'}], 'holdingQuotes': {'A': {}}, 'preview': {'targetDate': '2026-09-02', 'holdingContributions': [{'large': True}], 'changePercent': 1}}}, server.FUND_ESTIMATE_SNAPSHOT_NAME)
         with patch.object(server, 'build_fund_estimates', side_effect=AssertionError('worker only')):
             card = server.fund_card_snapshot(['017436'])['cards']['017436']
         self.assertNotIn('holdings', card['estimate'])
         self.assertNotIn('holdingContributions', card['estimate']['preview'])
         self.assertIsNone(card['official']['officialChange'])
+        server.store_fund_history('017436', [{'FSRQ': '2026-09-01', 'DWJZ': 2.01, 'JZZZL': None}])
+        self.assertIsNone(server.fund_card_snapshot(['017436'])['cards']['017436']['estimate'])
+        self.assertEqual(server.available_fund_estimates(['017436']), {})
         server.store_fund_history('017436', [{'FSRQ': '2026-09-02', 'DWJZ': 2.02, 'JZZZL': 1}])
         self.assertIsNone(server.fund_card_snapshot(['017436'])['cards']['017436']['estimate'])
 
@@ -3006,6 +3022,36 @@ class ServerDataRefreshTests(unittest.TestCase):
         invalid[0]['weight'] = float('nan')
         self.assertFalse(server.store_fund_holdings('017436', invalid))
         self.assertEqual(server.fund_holding_disclosure('017436', rows)['count'], 20)
+
+    def test_stored_unsupported_identities_repaired_without_network(self):
+        with server.get_conn() as conn:
+            conn.executemany('INSERT INTO fund_holdings VALUES (?,?,?,?,?,?,?,?,?,?)', [
+                ('017436', '2026-06-30', 1, '4004', 'RESONAC', 0.02, 'tw', '', 'TWD', 1),
+                ('017436', '2026-06-30', 2, 'AAPL', 'Apple', 0.1, 'us', 'gb_aapl', 'USD', 1),
+            ])
+        with patch.object(server, 'fetch_upstream', side_effect=AssertionError('offline repair')):
+            self.assertEqual(server.repair_stored_holding_identities(), 1)
+            self.assertEqual(server.repair_stored_holding_identities(), 0)
+        rows = server.read_fund_holdings_from_db('017436')
+        self.assertEqual(rows[0]['sinaSymbol'], 'jp4004')
+        self.assertEqual(rows[1]['sinaSymbol'], 'gb_aapl')
+
+    def test_pinned_snapshot_survives_worker_refresh_and_is_bounded(self):
+        identifiers = []
+        for version in range(5):
+            result = {'code': '017436', 'officialNav': 2, 'officialNavDate': '2026-09-01',
+                      'preview': {'targetDate': '2026-09-02', 'asOf': version + 1, 'changePercent': version}}
+            with patch.object(server, 'build_fund_estimates', return_value={'017436': result}), patch.object(server, 'store_fund_estimate_snapshots', return_value=1):
+                server.refresh_fund_estimate_snapshots()
+            identifiers.append(result['preview']['snapshotId'])
+        client = server.app.test_client()
+        response = client.get(f'/api/fundestimates?codes=017436&snapshot={identifiers[-2]}')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['017436']['preview']['changePercent'], 3)
+        self.assertEqual(client.get(f'/api/fundestimates?codes=017436&snapshot={identifiers[0]}').status_code, 409)
+        self.assertEqual(client.get('/api/fundestimates?codes=017436&snapshot=../../x').status_code, 400)
+        with server.get_conn() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM dashboard_snapshots WHERE name LIKE 'fund-detail:%'").fetchone()[0], 3)
 
     def test_semiannual_holdings_request_expands_the_exact_period(self):
         rows = [{'reportDate': '2026-06-30', 'rank': rank, 'stockCode': f'A{rank}',

@@ -41,15 +41,17 @@ from .config import (
     fund_estimate_enabled as universe_fund_estimate_enabled,
     quote_supported_symbol as universe_quote_supported_symbol,
 )
-from .estimation import compounded_return, estimate_cumulative_return, select_calibration
+from .estimation import compounded_return, estimate_aligned_returns, select_calibration
 from .fund_disclosures import disclosure_history, disclosure_allocations
+from .holding_identity import classify_holding_symbol
+from .holding_prices import history_basis, holding_price_return
 from .performance import (
     adjusted_market_rows, finite_number, fund_performance_rows,
     history_risk_metrics, parse_sina_adjustments,
 )
 from .quotes import normalize_quote_text
 from .contracts import API_SCHEMA_VERSION, DASHBOARD_SCHEMA_VERSION, validate_dashboard_payload
-from .observability import REQUEST_METRICS, log_event
+from .observability import REQUEST_METRICS, log_event, task_run, worker_task_snapshot
 from .fx_history import fx_history_summary, latest_fx_history_date, store_ecb_reference_rates
 from .data_coverage import historical_data_coverage, missing_holding_requests
 from .storage import (
@@ -137,15 +139,6 @@ QUOTE_SNAPSHOT_RETENTION_DAYS = int(os.environ.get("FUND_VALUATION_SNAPSHOT_RETE
 BACKGROUND_JOB_NAME = "data-refresh"
 FUND_HISTORY_SYNC_SNAPSHOT_NAME = "fund-history-sync-status"
 
-# Some East Money reports omit an exchange link for overseas securities. Keep
-# the small alias table explicit so numeric Japanese tickers are not confused
-# with Taiwan listings and ISIN-only rows can still be quoted.
-JAPAN_HOLDING_ALIASES: dict[str, str] = {
-    "285A": "285A",
-    "6857": "6857",
-    "JP3236330001": "285A",
-    "JP3684400009": "3110",
-}
 FUND_HOLDINGS_TARGET_ETFS: dict[str, str] = {
     "017091": "159509",
 }
@@ -204,7 +197,7 @@ RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
     "marketreturns": (120, 60),
 }
 
-FUND_ESTIMATE_MODEL_VERSION = "date_aligned_benchmark_v1"
+FUND_ESTIMATE_MODEL_VERSION = "date_aligned_benchmark_v2"
 FUND_ESTIMATE_SNAPSHOT_NAME = "fund-estimates"
 FUND_ESTIMATE_CALIBRATION_MAX_SAMPLES = 120
 EASTMONEY_GLOBAL_QUOTES: dict[str, tuple[str, str]] = {
@@ -2343,47 +2336,6 @@ def js_string_unescape(value: str) -> str:
     )
 
 
-def classify_holding_symbol(stock_code: str, href: str, stock_name: str) -> tuple[str, str, str]:
-    code = stock_code.strip().upper()
-    href_match = re.search(r"/unify/r/(\d+)\.([A-Za-z0-9.]+)", href)
-    if href_match:
-        market_id, raw_symbol = href_match.groups()
-        symbol = raw_symbol.upper()
-        if market_id in {"105", "106"}:
-            return "us", f"gb_{symbol.lower()}", "USD"
-        if market_id == "116":
-            return "hk", f"hk{symbol.zfill(5)}", "HKD"
-        if market_id == "0":
-            return "cn", f"sz{symbol.lower()}", "CNY"
-        if market_id == "1":
-            return "cn", f"sh{symbol.lower()}", "CNY"
-
-    if re.fullmatch(r"\d{5}", code):
-        return "hk", f"hk{code}", "HKD"
-    if re.fullmatch(r"\d{6}", code) and (stock_name.startswith(("三星", "SK")) or code in {"005930", "000660"}):
-        return "kr", f"kr{code}", "KRW"
-    if re.fullmatch(r"(00|30)\d{4}", code):
-        return "cn", f"sz{code}", "CNY"
-    if re.fullmatch(r"(60|68)\d{4}", code):
-        return "cn", f"sh{code}", "CNY"
-    japan_code = JAPAN_HOLDING_ALIASES.get(code)
-    if not japan_code:
-        normalized_name = stock_name.upper()
-        if "KIOXIA" in normalized_name or "铠侠" in stock_name:
-            japan_code = "285A"
-        elif "ADVANTEST" in normalized_name or "爱德万" in stock_name:
-            japan_code = "6857"
-        elif "NITTO BOSEKI" in normalized_name or "日东纺" in stock_name:
-            japan_code = "3110"
-    if japan_code:
-        return "jp", f"jp{japan_code}", "JPY"
-    if code.startswith("JP") or code.endswith("JP"):
-        return "jp", "", "JPY"
-    if re.fullmatch(r"\d{4}", code):
-        return "tw", "", "TWD"
-    return "unknown", "", "CNY"
-
-
 def parse_fund_holdings(code: str, text: str) -> list[dict[str, Any]]:
     content_match = re.search(r'content:"(.*?)",arryear:', text, re.S)
     if not content_match:
@@ -2458,7 +2410,7 @@ def store_fund_holdings(code: str, holdings: list[dict[str, Any]]) -> bool:
             weight,
             str(item.get("market") or "unknown"),
             str(item.get("sinaSymbol") or ""),
-            str(item.get("currency") or "CNY"),
+            str(item.get("currency") or ""),
             fetched_at,
         ))
     if not points or len(points) > 1000 or sum(point[5] for point in points) > 1.05 or len({point[2] for point in points}) != len(points):
@@ -2649,11 +2601,38 @@ def read_fund_holdings_from_db(code: str) -> list[dict[str, Any]]:
     ]
 
 
-def fund_holdings_signature(rows: list[dict[str, Any]]) -> tuple[tuple[str, float], ...]:
+def fund_holdings_signature(rows: list[dict[str, Any]]) -> tuple[tuple[Any, ...], ...]:
     return tuple(
-        (str(item.get("stockCode") or item.get("symbol") or ""), round(float(item.get("weight") or 0), 8))
+        (str(item.get("stockCode") or item.get("symbol") or ""), round(float(item.get("weight") or 0), 8),
+         str(item.get("market") or ""), str(item.get("sinaSymbol") or ""), str(item.get("currency") or ""))
         for item in rows
     )
+
+
+def repair_stored_holding_identities() -> int:
+    """Worker-only, idempotent repair; do not overwrite explicit quote mappings."""
+    repaired = 0
+    periods: set[tuple[str, str]] = set()
+    with get_conn() as conn:
+        rows = conn.execute("SELECT code, report_date, rank, stock_code, stock_name, market, currency FROM fund_holdings WHERE sina_symbol = ''").fetchall()
+        for code, day, rank, ticker, name, market, currency in rows:
+            identity = classify_holding_symbol(ticker, "", name)
+            if identity != (market, "", currency):
+                conn.execute("UPDATE fund_holdings SET market=?, sina_symbol=?, currency=? WHERE code=? AND report_date=? AND rank=?", (*identity, code, day, rank))
+                repaired += 1
+                periods.add((code, day))
+        for code, day in periods:
+            holdings = [dict(zip(('stockCode', 'weight', 'market', 'sinaSymbol', 'currency'), row)) for row in conn.execute(
+                'SELECT stock_code,weight,market,sina_symbol,currency FROM fund_holdings WHERE code=? AND report_date=? ORDER BY rank', (code, day))]
+            revision = hashlib.sha256(json.dumps(fund_holdings_signature(holdings)).encode()).hexdigest()[:16]
+            conn.execute('UPDATE fund_disclosure_metadata SET revision=? WHERE code=? AND report_date=?', (revision, code, day))
+        if repaired:
+            conn.execute("DELETE FROM dashboard_snapshots WHERE name = ?", (FUND_ESTIMATE_SNAPSHOT_NAME,))
+            conn.execute("DELETE FROM response_cache WHERE cache_key LIKE 'api:fundholdings%' OR cache_key LIKE 'api:fundestimates%'")
+    if repaired:
+        response_cache_clear_prefix("api:fundholdings")
+        response_cache_clear_prefix("api:fundestimates")
+    return repaired
 
 
 def refresh_latest_fund_holdings(
@@ -2961,6 +2940,7 @@ def fund_estimate_input_signature(holding_report_date: str, cumulative: dict[str
     )
     payload = {
         "holdingReportDate": holding_report_date,
+        "pricePolicy": FUND_ESTIMATE_MODEL_VERSION,
         "model": str(cumulative.get("model") or ""),
         "benchmarkSource": str(cumulative.get("benchmarkSource") or ""),
         "benchmarkSymbol": str(cumulative.get("benchmarkSymbol") or ""),
@@ -3085,6 +3065,7 @@ def store_fund_estimate_snapshots(payload: dict[str, Any]) -> int:
                 int(projection.get("pricedHoldingCount") or 0),
                 str(projection.get("inputSignature") or ""),
                 json.dumps({
+                    "disclosedWeight": (result.get("holdingDisclosure") or {}).get("weight"),
                     "holdingContributions": projection.get("holdingContributions") or [],
                     "benchmarkChangePercent": float(projection.get("benchmarkChangePercent") or 0),
                     "benchmarkFxChangePercent": float(projection.get("benchmarkFxChangePercent") or 0),
@@ -3129,6 +3110,7 @@ def store_fund_estimate_snapshots(payload: dict[str, Any]) -> int:
               priced_holding_count = excluded.priced_holding_count,
               input_signature = excluded.input_signature,
               details_json = excluded.details_json
+            WHERE fund_estimate_snapshots.actual_nav IS NULL
             """,
             rows,
         )
@@ -3171,13 +3153,14 @@ def build_fund_estimates(
             expected = market_value_date_on_or_before(market, day) if market else None
             row = conn.execute(
                 """
-                SELECT date, close FROM stock_daily_history
-                WHERE sina_symbol = ? AND date <= ?
-                ORDER BY date DESC LIMIT 1
+                SELECT h.date, h.close, b.basis FROM stock_daily_history h
+                LEFT JOIN stock_price_basis b ON b.sina_symbol=h.sina_symbol AND b.date=h.date
+                WHERE h.sina_symbol = ? AND h.date <= ?
+                ORDER BY h.date DESC LIMIT 1
                 """,
                 (symbol, day),
             ).fetchone()
-            value = float(row[1]) if row and (not expected or str(row[0]) == expected) else None
+            value = float(row[1]) if row and history_basis(symbol, row[2]) == "raw" and (not expected or str(row[0]) == expected) else None
             stock_cache[key] = value
             return value
 
@@ -3186,14 +3169,26 @@ def build_fund_estimates(
             if key not in carried_stock_cache:
                 row = conn.execute(
                     """
-                    SELECT close FROM stock_daily_history
-                    WHERE sina_symbol = ? AND date <= ? AND date >= date(?, '-10 days')
-                    ORDER BY date DESC LIMIT 1
+                    SELECT h.close, b.basis FROM stock_daily_history h
+                    LEFT JOIN stock_price_basis b ON b.sina_symbol=h.sina_symbol AND b.date=h.date
+                    WHERE h.sina_symbol = ? AND h.date <= ? AND h.date >= date(?, '-10 days')
+                    ORDER BY h.date DESC LIMIT 1
                     """,
                     (symbol, day, day),
                 ).fetchone()
-                carried_stock_cache[key] = float(row[0]) if row else None
+                carried_stock_cache[key] = float(row[0]) if row and history_basis(symbol, row[1]) == "raw" else None
             return carried_stock_cache[key]
+
+        price_return_cache: dict[tuple[Any, ...], float | None] = {}
+
+        def checked_price_return(symbol: str, base: str, target: str, first: float, last: float) -> float | None:
+            market = market_key_for_symbol(symbol) or ""
+            base_day = market_value_date_on_or_before(market, base) or base
+            target_day = market_value_date_on_or_before(market, target) or target
+            key = (symbol, base_day, target_day, first, last)
+            if key not in price_return_cache:
+                price_return_cache[key] = holding_price_return(conn, symbol, base_day, target_day, first, last)
+            return price_return_cache[key]
 
         def historical_fx(currency: str, day: str) -> float | None:
             if currency == "CNY":
@@ -3393,15 +3388,18 @@ def build_fund_estimates(
                 price_lookup = preview_stock if is_preview else settled_stock
                 fx_lookup = preview_fx if is_preview else historical_fx
                 benchmark_lookup = preview_benchmark if is_preview else settled_benchmark
-                cumulative = estimate_cumulative_return(
+                previous_target = previous_cn_valuation_day(target)
+                cumulative, previous_result = estimate_aligned_returns(
                     supported,
                     base_date=base_date,
                     target_date=target,
+                    previous_date=previous_target if previous_target and previous_target > base_date else None,
                     price_lookup=price_lookup,
                     fx_lookup=fx_lookup,
                     benchmark=benchmark,
                     benchmark_lookup=benchmark_lookup,
                     equity_weight=equity_weight,
+                    price_return_lookup=checked_price_return,
                 )
                 if cumulative is None:
                     return None
@@ -3415,22 +3413,7 @@ def build_fund_estimates(
                     holding_report_date=holding_report_date,
                     input_signature=input_signature,
                 )
-                previous_target = previous_cn_valuation_day(target)
-                previous_return = 0.0
-                previous_result: dict[str, Any] | None = None
-                if previous_target and previous_target > base_date:
-                    previous_result = estimate_cumulative_return(
-                        supported,
-                        base_date=base_date,
-                        target_date=previous_target,
-                        price_lookup=price_lookup,
-                        fx_lookup=fx_lookup,
-                        benchmark=benchmark,
-                        benchmark_lookup=benchmark_lookup,
-                        equity_weight=equity_weight,
-                    )
-                    if previous_result is not None:
-                        previous_return = float(previous_result["return"])
+                previous_return = float(previous_result["return"]) if previous_result else 0.0
                 raw_cumulative_return = float(cumulative["return"])
                 previous_nav = base_nav * (1 + previous_return)
                 raw_nav = base_nav * (1 + raw_cumulative_return)
@@ -3460,11 +3443,8 @@ def build_fund_estimates(
                         previous_component.get("targetFxRate") if previous_component else component.get("baseFxRate")
                     )
                     target_fx = safe_float(component.get("targetFxRate"))
-                    price_change = (
-                        target_price / comparison_price - 1
-                        if target_price and comparison_price and comparison_price > 0
-                        else 0.0
-                    )
+                    price_change = ((1 + float(component["priceReturn"])) /
+                                    (1 + float(previous_component["priceReturn"]) if previous_component else 1) - 1)
                     fx_change = (
                         target_fx / comparison_fx - 1
                         if target_fx and comparison_fx and comparison_fx > 0
@@ -3623,33 +3603,59 @@ def build_fund_estimates(
 def refresh_fund_estimate_snapshots(dashboard_payload: dict[str, Any] | None = None) -> dict[str, Any]:
     payload = build_fund_estimates(dashboard_payload=dashboard_payload)
     stored = store_fund_estimate_snapshots(payload)
+    with get_conn() as conn:
+        for code, result in payload.items():
+            snapshot_id = hashlib.sha256(json.dumps(result, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:24]
+            for kind in ("pending", "preview"):
+                if isinstance(result.get(kind), dict):
+                    result[kind]["snapshotId"] = snapshot_id
+            prefix = f"fund-detail:{code}:"
+            conn.execute("""
+                INSERT INTO dashboard_snapshots VALUES (?, ?, ?)
+                ON CONFLICT(name) DO NOTHING
+            """, (prefix + snapshot_id, json.dumps(result, ensure_ascii=False, separators=(",", ":")), now_ms()))
+            # A small bounded history lets a visible card open its own snapshot.
+            conn.execute("""
+                DELETE FROM dashboard_snapshots WHERE name LIKE ? AND name NOT IN (
+                  SELECT name FROM dashboard_snapshots WHERE name LIKE ? ORDER BY generated_at DESC, rowid DESC LIMIT 3
+                )
+            """, (prefix + "%", prefix + "%"))
     store_dashboard_snapshot(payload, FUND_ESTIMATE_SNAPSHOT_NAME)
     response_cache_clear_prefix("api:fundestimates")
     return {"funds": len(payload), "stored": stored}
 
 
-def available_fund_estimates(codes: list[str]) -> dict[str, Any]:
+def available_fund_estimates(codes: list[str], *, officials: dict[str, Any] | None = None) -> dict[str, Any]:
     codes = [code for code in codes if universe_fund_estimate_enabled(code)]
     snapshot = read_dashboard_snapshot(FUND_ESTIMATE_SNAPSHOT_NAME) or {}
     results = {
         code: snapshot[code]
         for code in codes
-        if isinstance(snapshot.get(code), dict)
+        if isinstance(snapshot.get(code), dict) and estimate_matches_official(
+            snapshot[code], officials.get(code) if officials is not None else read_fund_overview_summary_from_db(code))
     }
     return results
 
 
+def estimate_matches_official(estimate: dict[str, Any], official: dict[str, Any] | None) -> bool:
+    nav = finite_number(estimate.get("officialNav"))
+    return bool(official and nav is not None and nav > 0
+                and estimate.get("officialNavDate") == official["navDate"]
+                and math.isclose(nav, float(official["nav"]), rel_tol=0, abs_tol=0.0000001))
+
+
 def fund_card_snapshot(codes: list[str]) -> dict[str, Any]:
-    estimates = available_fund_estimates(codes)
+    officials = {code: read_fund_overview_summary_from_db(code) for code in codes}
+    estimates = available_fund_estimates(codes, officials=officials)
     dashboard = read_dashboard_snapshot() or {}
     cards = {}
     card_symbols: set[str] = set()
     for code in codes:
-        official = read_fund_overview_summary_from_db(code)
+        official = officials[code]
         estimate = estimates.get(code)
         card_holdings = parse_default_fund_holdings_from_constants(code) or (estimate or {}).get('holdings', [])[:10]
         card_symbols.update(str(holding.get('sinaSymbol') or '') for holding in card_holdings)
-        if estimate and (not official or estimate.get("officialNavDate") != official["navDate"]):
+        if estimate and not estimate_matches_official(estimate, official):
             estimate = None
         if estimate:
             estimate = {key: value for key, value in estimate.items() if key not in {"holdings", "holdingQuotes", "holdingMarketStates"}}
@@ -3960,8 +3966,10 @@ def schedule_fund_nav_refresh(codes: list[str]) -> None:
 
     def refresh() -> None:
         try:
-            with app.app_context():
+            with app.app_context(), task_run("fund_nav") as task:
                 fetched = fetch_fund_nav_payload(normalized_codes, force_refresh=True)
+                if len(fetched) < len(normalized_codes):
+                    task["error"] = f"upstream unavailable: {len(normalized_codes) - len(fetched)}/{len(normalized_codes)}"
                 fallback = read_fund_nav_fallback_payload(normalized_codes)
                 payload = {
                     code: fetched.get(code) or fallback.get(code)
@@ -4328,9 +4336,11 @@ def parse_tencent_hk_equity_history(sina_symbol: str, text: str) -> list[dict[st
     symbol_data = data.get(sina_symbol) if isinstance(data, dict) else None
     if not isinstance(symbol_data, dict):
         return []
-    raw_rows = symbol_data.get("qfqday")
+    raw_rows = symbol_data.get("day")
+    basis = "raw"
     if not isinstance(raw_rows, list) or not raw_rows:
-        raw_rows = symbol_data.get("day")
+        raw_rows = symbol_data.get("qfqday")
+        basis = "qfq"
     if not isinstance(raw_rows, list):
         return []
     rows: list[dict[str, Any]] = []
@@ -4340,7 +4350,7 @@ def parse_tencent_hk_equity_history(sina_symbol: str, text: str) -> list[dict[st
         date = str(row[0] or "")
         close = safe_float(row[2])
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) and close and close > 0:
-            rows.append({"date": date, "close": close})
+            rows.append({"date": date, "close": close, "basis": basis, "source": "tencent"})
     return rows
 
 
@@ -4359,6 +4369,9 @@ def parse_stock_history_rows(sina_symbol: str, text: str) -> list[dict[str, Any]
 
 def store_stock_history(sina_symbol: str, text: str) -> int:
     rows = parse_stock_history_rows(sina_symbol, text)
+    default_source = "naver" if sina_symbol.startswith(("jp", "kr")) else "sina"
+    basis_by_date = {str(row.get("day") or row.get("d") or row.get("date") or ""):
+                     (str(row.get("basis") or "raw"), str(row.get("source") or default_source)) for row in rows}
     raw_points: list[tuple[str, float]] = []
     for row in rows:
         date = str(row.get("day") or row.get("d") or row.get("date") or "")
@@ -4366,7 +4379,7 @@ def store_stock_history(sina_symbol: str, text: str) -> int:
             close = float(row.get("close") or row.get("c") or 0)
         except (TypeError, ValueError):
             continue
-        if re.match(r"^\d{4}-\d{2}-\d{2}$", date) and close > 0:
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) and math.isfinite(close) and close > 0 and basis_by_date[date][0] == 'raw':
             raw_points.append((date, close))
 
     deduped = sorted(dict(raw_points).items())
@@ -4430,6 +4443,11 @@ def store_stock_history(sina_symbol: str, text: str) -> int:
             """,
             points,
         )
+        conn.executemany("""
+            INSERT INTO stock_price_basis VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(sina_symbol,date) DO UPDATE SET basis=excluded.basis,
+              source=excluded.source, fetched_at=excluded.fetched_at
+        """, [(sina_symbol, day, *basis_by_date[day], fetched_at) for day, _ in deduped])
     return len(deduped)
 
 
@@ -4469,14 +4487,14 @@ def fetch_and_store_stock_history(sina_symbol: str, *, refresh: bool = False) ->
 
     fallback_url = (
         "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
-        f"?param={quote(sina_symbol)},day,,,1023,qfq"
+        f"?param={quote(sina_symbol)},day,,,1023,"
     )
     try:
         fallback_status, _, fallback_body = fetch_upstream(
             fallback_url,
             referer="https://gu.qq.com/",
             content_type="application/json; charset=utf-8",
-            cache_key=f"stockhistory-fallback:tencent:{sina_symbol}",
+            cache_key=f"stockhistory-fallback:tencent-raw:{sina_symbol}",
             kind="stockhistory-fallback",
             ttl_seconds=300,
             force_refresh=refresh,
@@ -4516,7 +4534,10 @@ def refresh_fund_valuation_histories() -> dict[str, Any]:
     errors: list[str] = []
 
     def refresh_one(symbol: str) -> bool:
-        return fetch_and_store_stock_history(symbol, refresh=True)
+        stored = fetch_and_store_stock_history(symbol, refresh=True)
+        if stored and re.fullmatch(r"(?:sh|sz)\d{6}", symbol):
+            refresh_market_adjustment_factors(symbol)
+        return stored
 
     if normalized_symbols:
         with ThreadPoolExecutor(max_workers=min(8, len(normalized_symbols))) as executor:
@@ -5643,7 +5664,7 @@ def add_response_headers(response: Response) -> Response:
     if isinstance(started_at, float):
         elapsed_ms = (time.perf_counter() - started_at) * 1000
         response.headers["X-Elapsed-ms"] = f"{elapsed_ms:.1f}"
-        route = request.url_rule.rule if request.url_rule else request.path
+        route = request.url_rule.rule if request.url_rule else '<unmatched>'
         cache_status = response.headers.get("X-Cache", "")
         REQUEST_METRICS.record(route, response.status_code, elapsed_ms, cache_status)
         if elapsed_ms >= SLOW_REQUEST_LOG_MS:
@@ -5759,6 +5780,8 @@ def quote_diagnostics() -> Response:
     payload = quote_snapshot_health()
     payload["backgroundRefresh"] = background_refresh_state_snapshot()
     payload["requestMetrics"] = REQUEST_METRICS.snapshot()
+    payload["workerTasks"] = worker_task_snapshot()
+    payload["valuationQuality"] = read_dashboard_snapshot("valuation-quality")
     payload["fxHistory"] = fx_history_summary()
     payload["historyCoverage"] = historical_data_coverage()
     return json_response(payload)
@@ -6215,6 +6238,13 @@ def fund_valuation_basis() -> Response:
 def fund_estimates() -> Response:
     enforce_rate_limit("fundestimates")
     codes = require_fund_codes()
+    if snapshot_id := request.args.get("snapshot"):
+        if len(codes) != 1 or not re.fullmatch(r"[a-f0-9]{24}", snapshot_id):
+            return json_response({"error": "Invalid snapshot identifier"}, status=400)
+        snapshot = read_dashboard_snapshot(f"fund-detail:{codes[0]}:{snapshot_id}")
+        if not snapshot:
+            return json_response({"error": "Snapshot expired; refresh the fund card"}, status=409)
+        return json_response({codes[0]: snapshot})
     if request.args.get("view") == "cards":
         return cached_json_response(f"api:fundestimates:cards:{','.join(sorted(codes))}", 15, lambda: fund_card_snapshot(codes))
     cache_key = f"api:fundestimates:{','.join(sorted(codes))}"
