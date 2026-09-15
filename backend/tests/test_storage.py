@@ -27,6 +27,21 @@ from backend.storage import (
 
 
 class StorageMigrationTests(unittest.TestCase):
+    def test_schema_fourteen_adds_monthly_history_without_changing_daily_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'legacy.db'
+            with sqlite3.connect(path) as conn:
+                conn.executescript("""
+                    CREATE TABLE market_history(source TEXT,symbol TEXT,date TEXT,close REAL,fetched_at INTEGER);
+                    INSERT INTO market_history VALUES('sina-us','.INX','2025-12-31',6000,1);
+                    PRAGMA user_version=13;
+                """)
+            migrate_database(path)
+            migrate_database(path)
+            with sqlite3.connect(path) as conn:
+                self.assertEqual(conn.execute('SELECT close FROM market_history').fetchone()[0], 6000)
+                self.assertEqual(conn.execute('SELECT COUNT(*) FROM long_market_history').fetchone()[0], 0)
+
     def test_schema_twelve_preserves_missing_returns_without_fabricating_zero(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'legacy.db'
@@ -102,10 +117,12 @@ class StorageMigrationTests(unittest.TestCase):
             migrate_database(path)
             with sqlite3.connect(path) as conn:
                 conn.execute("INSERT INTO fund_nav_history VALUES ('A','2026-09-01',1.23,0,1)")
+                conn.execute("INSERT INTO long_market_history (asset_id,period,date,close,source,source_url,fetched_at) VALUES ('INX','2025-12','2025-12-31',100,'test','https://example.com',1)")
                 conn.execute('PRAGMA user_version=12')
             result = verify_backup_restore(path)
             self.assertEqual(result['schemaVersion'], SCHEMA_VERSION)
             self.assertEqual(result['preservedRows']['fund_nav_history'], 1)
+            self.assertEqual(result['preservedRows']['long_market_history'], 1)
             with sqlite3.connect(path) as conn:
                 self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 12)
                 self.assertEqual(conn.execute('SELECT nav FROM fund_nav_history').fetchone()[0], 1.23)

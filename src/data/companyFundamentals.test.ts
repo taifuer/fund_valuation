@@ -449,6 +449,7 @@ describe('company fundamentals offline dataset', () => {
       revenue: 63_325_000_000,
       operatingProfit: 15_368_000_000,
       researchAndDevelopment: 9_563_000_000,
+      employees: 82_400,
     });
     expect(cisco.quarterly[cisco.quarterly.length - 1]).toMatchObject({
       period: 'FY2026 Q4',
@@ -457,6 +458,24 @@ describe('company fundamentals offline dataset', () => {
       researchAndDevelopment: 2_431_000_000,
     });
     expect(cisco.latestReport?.publishedAt).toBe('2026-08-12');
+    expect(cisco.reportReferences?.find(reference => reference.period === 'FY2026')?.sourceUrl)
+      .toContain('000085887726000132/csco-20260725.htm');
+  });
+
+  it('includes September disclosures without filling undisclosed quarterly headcount', () => {
+    const expected = [
+      ['broadcom', 'FY2026 Q3', '2026-08-02', 29591, 15955, 2895, '2026-09-10'],
+      ['oracle', 'FY2027 Q1', '2026-08-31', 19345, 6728, 2401, '2026-09-11'],
+      ['adbe', 'FY2026 Q3', '2026-08-28', 6760, 2354, 1288, '2026-09-10'],
+    ] as const;
+    for (const [id, period, periodEnd, revenue, profit, research, publishedAt] of expected) {
+      const company = companyFundamentalsDataset.companies.find(item => item.id === id)!;
+      expect(company.quarterly[company.quarterly.length - 1]).toMatchObject({
+        period, periodEnd, revenue: revenue * 1_000_000, operatingProfit: profit * 1_000_000,
+        researchAndDevelopment: research * 1_000_000, employees: null,
+      });
+      expect(company.latestReport).toMatchObject({ period, publishedAt });
+    }
   });
 
   it('keeps the five added companies on verified report-specific profit scopes', () => {
@@ -483,7 +502,7 @@ describe('company fundamentals offline dataset', () => {
     expect(company('jnj').profitMetricLabel).toBe('税前利润');
     expect(company('jnj').metricMarkers?.some((marker) => marker.period === 'FY2025 Q1')).toBe(true);
     expect(company('txn').quarterly).toHaveLength(34);
-    expect(company('adbe').quarterly).toHaveLength(34);
+    expect(company('adbe').quarterly.length).toBeGreaterThanOrEqual(34);
   });
 
   it('derives half-year values only from complete quarter pairs', () => {

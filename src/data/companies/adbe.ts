@@ -11,12 +11,12 @@ export default defineCompany({
   "sourceName": "Adobe 投资者关系",
   "sourceUrl": "https://www.adobe.com/investor-relations.html",
   "latestReport": {
-    "period": "FY2026 Q2",
-    "publishedAt": "2026-06-15",
-    "sourceLabel": "Adobe FY2026 第二季度 Form 10-Q",
-    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634326000112/adbe-20260529.htm"
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-09-10",
+    "sourceLabel": "Adobe FY2026 Q3 · SEC 8-K 业绩公告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634326000147/adbeex991q326.htm"
   },
-  "methodologyNote": "财年为截至 11 月末附近周五的 52 或 53 周；营业收入、营业利润与研发费用采用 U.S. GAAP，第四季度由全年减去前三季度。",
+  "methodologyNote": "财年为截至 11 月末附近周五的 52 或 53 周；营业收入、营业利润与研发费用采用 U.S. GAAP，第四季度由全年减去前三季度。FY2026 Q3 采用公司业绩公告，后续以正式 10-Q 复核。",
   "employeeScope": "财年末全球员工",
   "metricMarkers": [
     {
@@ -72,7 +72,8 @@ export default defineCompany({
       "FY2025 Q3": 1088,
       "FY2025 Q4": 1098,
       "FY2026 Q1": 1110,
-      "FY2026 Q2": 1198
+      "FY2026 Q2": 1198,
+      "FY2026 Q3": 1288
     }
   },
   "annual": [
@@ -337,6 +338,12 @@ export default defineCompany({
       "2026-05-29",
       6618,
       2238
+    ],
+    [
+      "FY2026 Q3",
+      "2026-08-28",
+      6760,
+      2354
     ]
   ]
 });

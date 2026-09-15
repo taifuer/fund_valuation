@@ -10,6 +10,12 @@ export default defineCompany({
   "currency": "USD",
   "sourceName": "Broadcom Annual Reports",
   "sourceUrl": "https://investors.broadcom.com/financial-information/annual-reports",
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-09-10",
+    "sourceLabel": "Broadcom FY2026 Q3 · SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1730168/000173016826000080/avgo-20260802.htm"
+  },
   "methodologyNote": "FY2024 完成 VMware 并购，收入、研发费用与员工规模的前后可比性受到明显影响。",
   "employeeScope": "财年末全球员工（公司披露约数）",
   "employeeMarkers": [
@@ -65,7 +71,8 @@ export default defineCompany({
       "FY2025 Q3": 3050,
       "FY2025 Q4": 2981,
       "FY2026 Q1": 2965,
-      "FY2026 Q2": 2995
+      "FY2026 Q2": 2995,
+      "FY2026 Q3": 2895
     }
   },
   "annual": [
@@ -330,6 +337,12 @@ export default defineCompany({
       "2026-05-03",
       22187,
       10788
+    ],
+    [
+      "FY2026 Q3",
+      "2026-08-02",
+      29591,
+      15955
     ]
   ]
 });

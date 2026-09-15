@@ -176,7 +176,8 @@ def backup_database(source: Path, destination: Path) -> Path:
 def verify_backup_restore(source: Path) -> dict[str, object]:
     """Exercise restoration and migration in a disposable directory only."""
     verify_database(source)
-    tables = ('fund_nav_history', 'market_history', 'fund_holdings', 'stock_daily_history', 'fx_daily_history')
+    tables = ('fund_nav_history', 'market_history', 'fund_holdings', 'stock_daily_history', 'fx_daily_history',
+              'long_market_history', 'long_history_sync')
     with tempfile.TemporaryDirectory(prefix='fund-restore-check-') as directory:
         restored = Path(directory) / 'restored.db'
         with sqlite3.connect(f'{source.resolve().as_uri()}?mode=ro', uri=True) as original, sqlite3.connect(restored) as target:

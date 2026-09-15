@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchApiMeta, fetchDashboardSnapshot, fetchFundNavs, parseDashboardSnapshotPayload, parseSinaVar } from './api';
+import { fetchApiMeta, fetchDashboardSnapshot, fetchFundNavs, fetchLongHistory, parseDashboardSnapshotPayload, parseSinaVar } from './api';
 import { storeFundManagementToken } from './fundManagementAuth';
 
 function dashboardPayload(price: number) {
@@ -42,6 +42,28 @@ beforeEach(() => {
   window.sessionStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe('long history snapshot API', () => {
+  it('coalesces simultaneous reads and caches a successful series', async () => {
+    const payload = { schemaVersion: 1, asset: { id: 'HISTORY_CACHE_TEST' }, points: [] };
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    const first = fetchLongHistory('HISTORY_CACHE_TEST');
+    const second = fetchLongHistory('HISTORY_CACHE_TEST');
+    expect(await first).toEqual(payload);
+    expect(await second).toEqual(payload);
+    expect(await fetchLongHistory('HISTORY_CACHE_TEST')).toEqual(payload);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('does not cache a preparing response or a malformed series', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(new Response('{"status":"preparing"}', { status: 202 }))
+      .mockResolvedValueOnce(new Response('{"schemaVersion":1,"points":[]}', { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    expect(await fetchLongHistory('HISTORY_PREPARING_TEST')).toBeNull();
+    await expect(fetchLongHistory('HISTORY_PREPARING_TEST')).rejects.toThrow('格式异常');
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('dashboard API contract', () => {

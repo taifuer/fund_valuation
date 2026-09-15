@@ -1,4 +1,4 @@
-export type PageKey = 'overview' | 'funds' | 'companies' | 'ranking' | 'risk' | 'about' | 'diagnostics';
+export type PageKey = 'overview' | 'funds' | 'companies' | 'ranking' | 'risk' | 'history' | 'about' | 'diagnostics';
 
 export const PAGE_PATHS: Record<PageKey, string> = {
   overview: '/',
@@ -6,6 +6,7 @@ export const PAGE_PATHS: Record<PageKey, string> = {
   companies: '/companies',
   ranking: '/returns',
   risk: '/risk',
+  history: '/history',
   about: '/about',
   diagnostics: '/diagnostics',
 };
@@ -15,6 +16,7 @@ export function pageFromPathname(pathname: string): PageKey {
   if (pathname === '/companies' || pathname === '/company') return 'companies';
   if (pathname === '/returns' || pathname === '/ranking') return 'ranking';
   if (pathname === '/risk') return 'risk';
+  if (pathname === '/history') return 'history';
   if (pathname === '/about') return 'about';
   if (pathname === '/diagnostics') return 'diagnostics';
   return 'overview';

@@ -61,9 +61,17 @@ export async function fetchSecSubmissions(cik: number): Promise<SecSubmissionRes
   );
 }
 
-export function secArchiveUrl(cik: number, filing: SecPeriodicFiling): string {
+export function secArchiveUrl(cik: number, filing: Pick<SecPeriodicFiling, 'accessionNumber' | 'primaryDocument'>): string {
   const accession = filing.accessionNumber.replaceAll('-', '');
   return `https://www.sec.gov/Archives/edgar/data/${cik}/${accession}/${filing.primaryDocument}`;
+}
+
+export async function fetchSecText(url: string): Promise<string> {
+  const response = await fetch(url, { headers: SEC_HEADERS, signal: AbortSignal.timeout(20_000) });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${url}`);
+  const body = await response.text();
+  if (body.length > 2_000_000) throw new Error(`SEC announcement exceeds size limit: ${url}`);
+  return body;
 }
 
 export function secDomesticCompanies(

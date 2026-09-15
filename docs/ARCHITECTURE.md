@@ -36,7 +36,7 @@ Flask Web 请求只读取 SQLite 或持久化快照，不在请求过程中同�
 - `src/api.ts`、`src/http.ts`：API 契约、请求截止时间和响应解析
 - `src/marketHours.ts`：按北京时间统一的市场时段与状态逻辑
 
-收益、风险、公司、关于和基金详情子模块按需加载，减少首次访问的 JavaScript 体积。页面路由保留筛选参数，刷新或分享链接后可恢复当前视图。
+收益、风险、长期历史、公司、关于和基金详情子模块按需加载，减少首次访问的 JavaScript 体积。页面路由保留筛选参数，刷新或分享链接后可恢复当前视图。`/history` 位于收益二级导航，只读取年度目录与选中标的的月度序列，不启动基金估值和大盘实时行情请求。
 
 基金页首屏使用 `/api/fundestimates?view=cards`，一次读取官方净值、服务端估值、汇率和市场状态，不包含逐项持仓行情。展开持仓后才读取该基金的完整估值快照，资料与走势继续按标签懒加载。快照缺失时不触发请求内计算，等待 worker 发布。正常重复快照直接返回，不进行额外 15 秒等待或强制重试。
 
@@ -55,6 +55,7 @@ Flask Web 请求只读取 SQLite 或持久化快照，不在请求过程中同�
 - `backend/performance.py`：历史收益、分红拆分调整与风险指标
 - `backend/fund_disclosures.py`：基金净值趋势、累计净值和资产配置的纯数据解析
 - `backend/backfill.py`：基金净值、市场日线、汇率和持仓历史回填
+- `backend/long_history.py`：独立月末历史补全、年末基准校验、同区间涨跌及复合年化快照
 - `backend/db_admin.py`：状态检查、备份、恢复和在线优化
 - `backend/contracts.py`：API Schema 版本与结构校验
 
@@ -67,6 +68,7 @@ Flask Web 请求只读取 SQLite 或持久化快照，不在请求过程中同�
 - `/api/overview`、`/api/dashboard`：概览快照
 - `/api/fundnav`、`/api/fundestimates`、`/api/fundreturns`：基金净值与估值
 - `/api/markethistory`、`/api/marketreturns`：市场历史与区间表现
+- `/api/longhistory`：长期历史目录及单个标的月度序列、年度收益，只读持久化快照
 - `/api/fundhistory`、`/api/fundholdings`：基金历史与持仓
 - `/api/status`、`/api/meta`：公开状态和 API 契约信息
 - `/api/health`、`/api/ready`：进程存活与数据库就绪检查

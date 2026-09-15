@@ -2,22 +2,29 @@ import { companyFundamentalsDataset } from '../src/data/companyFundamentals';
 import {
   assessCompanyReportFreshness,
   latestCompanyPeriodEnd,
-  latestSecPeriodicFiling,
+  listSecReviewFilings,
+  isSecPeriodicReport,
+  secPeriodicReviewReason,
+  secAnnouncementCandidates,
+  companySecCik,
 } from '../src/data/companyReportMaintenance';
 import {
   fetchSecSubmissions,
   loadSecCikByTicker,
   mapWithConcurrency,
   secArchiveUrl,
-  secDomesticCompanies,
+  fetchSecText,
 } from './lib/sec';
 import { probeCompanyReleaseSource } from './lib/company-releases';
+import { probeSecAnnouncement } from './lib/sec-announcements';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 const args = new Set(process.argv.slice(2));
 const asOfArg = [...args].find((arg) => arg.startsWith('--as-of='));
 const asOf = asOfArg?.slice('--as-of='.length) ?? new Date().toISOString().slice(0, 10);
+if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf) || Number.isNaN(Date.parse(asOf))
+  || new Date(asOf).toISOString().slice(0, 10) !== asOf) throw new Error('Invalid --as-of date');
 const offline = args.has('--offline');
 const showAll = args.has('--all');
 const strict = args.has('--strict');
@@ -49,35 +56,59 @@ if (localCandidates.length > 0) {
 
 if (!offline) {
   const failures: string[] = [];
-  const companies = secDomesticCompanies(selected);
   let cikByTicker = new Map<string, number>();
-  if (companies.length) {
-    try { cikByTicker = await loadSecCikByTicker(); }
-    catch (error) { failures.push(`SEC ticker lookup: ${String(error)}`); }
-  }
+  try { cikByTicker = await loadSecCikByTicker(); }
+  catch (error) { failures.push(`SEC ticker lookup: ${String(error)}`); }
+  const companies = selected.filter(company => company.region === 'usa' || companySecCik(company, cikByTicker) != null);
+  const candidates: Array<Record<string, string>> = [];
+  const reviewSince = new Date(`${asOf}T00:00:00Z`);
+  reviewSince.setUTCDate(reviewSince.getUTCDate() - 45);
 
   const filings = await mapWithConcurrency(companies, 1, async (company) => {
-    const cik = cikByTicker.get(company.ticker.toUpperCase());
+    const cik = companySecCik(company, cikByTicker);
     if (cik == null) {
       failures.push(`${company.name}: ticker ${company.ticker} not found`);
       return undefined;
     }
     try {
       const submission = await fetchSecSubmissions(cik);
-      const filing = latestSecPeriodicFiling(submission.filings.recent);
-      if (!filing) {
-        failures.push(`${company.name}: no recent 10-Q/10-K`);
-        return undefined;
+      const available = listSecReviewFilings(submission.filings.recent, asOf);
+      const periodic = available.filter(filing => isSecPeriodicReport(filing.form));
+      const filing = [...periodic].sort((left, right) => right.reportDate.localeCompare(left.reportDate)
+        || right.filingDate.localeCompare(left.filingDate))[0];
+      const annual = periodic.find(item => /^(?:10-K|20-F|40-F)$/.test(item.form));
+      const review = [...new Map([filing, annual, ...periodic.filter(item => item.form.endsWith('/A')
+        && item.filingDate >= reviewSince.toISOString().slice(0, 10))]
+        .filter(item => item != null).map(item => [item.accessionNumber, item])).values()];
+      const companyCandidates: Array<Record<string, string>> = [];
+      let announcementCheckFailed = false;
+      for (const item of review) {
+        const reason = secPeriodicReviewReason(company, item);
+        if (reason) companyCandidates.push({ company: company.name, kind: reason, form: item.form,
+          reportThrough: item.reportDate, filedAt: item.filingDate, source: secArchiveUrl(cik, item) });
       }
+      for (const announcement of secAnnouncementCandidates(company, available, asOf)) {
+        try {
+          const evidence = await probeSecAnnouncement(secArchiveUrl(cik, announcement), fetchSecText);
+          if (evidence) companyCandidates.push({ company: company.name, kind: '业绩公告待核查',
+            form: announcement.form, filedAt: announcement.filingDate, ...evidence });
+        } catch (error) {
+          announcementCheckFailed = true;
+          failures.push(`${company.name} ${announcement.form}: ${String(error)}`);
+        }
+      }
+      candidates.push(...companyCandidates);
       return {
         company: company.name,
         ticker: company.ticker,
         datasetThrough: latestCompanyPeriodEnd(company),
-        secReportThrough: filing.reportDate,
-        filedAt: filing.filingDate,
-        form: filing.form,
-        status: filing.reportDate > latestCompanyPeriodEnd(company) ? '有新财报' : '已同步',
-        source: secArchiveUrl(cik, filing),
+        secReportThrough: filing?.reportDate ?? '',
+        filedAt: filing?.filingDate ?? '',
+        form: filing?.form ?? '',
+        status: announcementCheckFailed ? '部分披露核查失败' : companyCandidates.length
+          ? '有待核查披露' : filing ? '未发现更新披露' : '无定期申报，参考官方来源',
+        candidateCount: companyCandidates.length,
+        source: filing ? secArchiveUrl(cik, filing) : company.sourceUrl,
       };
     } catch (error) {
       failures.push(`${company.name}: ${error instanceof Error ? error.message : String(error)}`);
@@ -86,11 +117,12 @@ if (!offline) {
   });
 
   const completed = filings.filter((filing) => filing != null);
-  const updates = completed.filter((filing) => filing.status === '有新财报');
-  report.sec = { completed, failures };
+  const updates = completed.filter((filing) => filing.candidateCount > 0);
+  report.sec = { completed, candidates, failures };
   console.log('\nSEC filing comparison:');
   if (updates.length > 0 || showAll) console.table(showAll ? completed : updates);
-  console.log(`${completed.length}/${companies.length} checked; ${updates.length} update(s) found.`);
+  console.log(`${completed.length}/${companies.length} checked; ${updates.length} company/companies with review candidates.`);
+  if (candidates.length) console.table(candidates);
   if (failures.length > 0) {
     console.warn(`SEC checks with errors: ${failures.join('; ')}`);
     process.exitCode = 1;
@@ -104,7 +136,7 @@ if (!offline) {
     probeCompanyReleaseSource(company, assessCompanyReportFreshness(company, asOf))
   ));
   const actionable = probes.filter((probe) => probe.status !== '来源可用');
-  const candidates = probes.filter((probe) => probe.status === '命中报告候选');
+  const nonUsCandidates = probes.filter((probe) => probe.status === '命中报告候选');
   const sourceFailures = probes.filter((probe) => probe.status === '来源异常');
   const restrictedSources = probes.filter((probe) => probe.status === '访问受限');
   report.nonUs = probes;
@@ -113,7 +145,7 @@ if (!offline) {
   if (showAll || actionable.length > 0) console.table(showAll ? probes : actionable);
   console.log(
     `${probes.length}/${nonUsCompanies.length} checked; `
-    + `${candidates.length} candidate(s), ${restrictedSources.length} access-restricted, `
+    + `${nonUsCandidates.length} candidate(s), ${restrictedSources.length} access-restricted, `
     + `${sourceFailures.length} source error(s).`,
   );
   if (sourceFailures.length > 0) {
@@ -130,8 +162,8 @@ if (!offline) {
         .join(', ')}`,
     );
   }
-  if (strict && (candidates.length > 0 || sourceFailures.length > 0)) {
-    process.exitCode = candidates.length > 0 ? 2 : 1;
+  if (strict && (nonUsCandidates.length > 0 || sourceFailures.length > 0)) {
+    process.exitCode = sourceFailures.length > 0 ? 1 : process.exitCode || 2;
   }
 }
 report.calendarCandidates = localCandidates;

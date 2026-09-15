@@ -16,7 +16,13 @@ export default defineCompany({
     sourceLabel: 'Cisco FY2026 第四季度及全年业绩',
     sourceUrl: 'https://www.sec.gov/Archives/edgar/data/858877/000085887726000106/exhibit991pressrelease-q4f.htm',
   },
-  methodologyNote: '财年截至 7 月末附近的周六；第四季度由全年减去前三季度，FY2026 采用公司 8-K 原始财报表。',
+  reportReferences: [{
+    period: 'FY2026',
+    publishedAt: '2026-09-02',
+    sourceLabel: 'Cisco FY2026 · SEC 10-K',
+    sourceUrl: 'https://www.sec.gov/Archives/edgar/data/858877/000085887726000132/csco-20260725.htm',
+  }],
+  methodologyNote: '财年截至 7 月末附近的周六；第四季度由全年减去前三季度。FY2026 员工约数采用正式 10-K 披露，季度不推算员工人数。',
   employeeScope: '财年末全球员工（官方约数）',
   employeeMarkers: [
     {
@@ -59,7 +65,7 @@ export default defineCompany({
     ['FY2023', '2023-07-29', 56998, 15031, 84900],
     ['FY2024', '2024-07-27', 53803, 12181, 90400],
     ['FY2025', '2025-07-26', 56654, 11760, 86200],
-    ['FY2026', '2026-07-25', 63325, 15368],
+    ['FY2026', '2026-07-25', 63325, 15368, 82400],
   ],
   quarterly: [
     ['FY2018 Q1', '2017-10-28', 12136, 2756],

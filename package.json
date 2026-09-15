@@ -8,6 +8,7 @@
     "backend": ".venv/bin/python -m backend.server",
     "backend:worker": ".venv/bin/python -m backend.worker",
     "backend:backfill": ".venv/bin/python -m backend.backfill",
+    "backend:history": ".venv/bin/python -m backend.long_history",
     "backend:db": ".venv/bin/python -m backend.db_admin",
     "data:companies:audit": "vite-node --script scripts/audit-company-data.ts",
     "data:companies:check": "vite-node --script scripts/check-company-releases.ts",

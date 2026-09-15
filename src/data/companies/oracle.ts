@@ -10,6 +10,12 @@ export default defineCompany({
   "currency": "USD",
   "sourceName": "Oracle Investor Relations",
   "sourceUrl": "https://investor.oracle.com/financials/",
+  "latestReport": {
+    "period": "FY2027 Q1",
+    "publishedAt": "2026-09-11",
+    "sourceLabel": "Oracle FY2027 Q1 · SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1341439/000119312526389274/orcl-20260831.htm"
+  },
   "methodologyNote": "FY2023 完成 Cerner 并购，收入、研发费用与员工规模的前后可比性受到影响。",
   "employeeScope": "财年末全职员工（公司披露约数）",
   "employeeMarkers": [
@@ -68,7 +74,8 @@ export default defineCompany({
       "FY2026 Q1": 2491,
       "FY2026 Q2": 2561,
       "FY2026 Q3": 2607,
-      "FY2026 Q4": 2613
+      "FY2026 Q4": 2613,
+      "FY2027 Q1": 2401
     }
   },
   "annual": [
@@ -352,6 +359,12 @@ export default defineCompany({
       "2026-05-31",
       19183,
       6134
+    ],
+    [
+      "FY2027 Q1",
+      "2026-08-31",
+      19345,
+      6728
     ]
   ]
 });

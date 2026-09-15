@@ -90,8 +90,8 @@ export default function Header({
             </button>
             <button
               type="button"
-              aria-current={activePage === 'ranking' || activePage === 'risk' ? 'page' : undefined}
-              className={`${styles.navButton} ${activePage === 'ranking' || activePage === 'risk' ? styles.navButtonActive : ''}`}
+              aria-current={['ranking', 'risk', 'history'].includes(activePage) ? 'page' : undefined}
+              className={`${styles.navButton} ${['ranking', 'risk', 'history'].includes(activePage) ? styles.navButtonActive : ''}`}
               onClick={() => onPageChange('ranking')}
             >
               收益

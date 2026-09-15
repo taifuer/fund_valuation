@@ -1,10 +1,12 @@
 import type { Fund } from '../types';
+import { lazy, Suspense } from 'react';
 import type { MarketStateData, QuoteData } from '../types';
 import RankingPage from './RankingPage';
 import RiskPage from './RiskPage';
 import styles from './PerformancePage.module.css';
 
-type PerformanceMode = 'ranking' | 'risk';
+type PerformanceMode = 'ranking' | 'risk' | 'history';
+const LongHistoryPage = lazy(() => import('./LongHistoryPage'));
 
 interface Props {
   mode: PerformanceMode;
@@ -45,9 +47,21 @@ export default function PerformancePage({
           >
             风险
           </button>
+          <button
+            type="button"
+            aria-current={mode === 'history' ? 'page' : undefined}
+            className={mode === 'history' ? styles.viewButtonActive : ''}
+            onClick={() => onModeChange('history')}
+          >
+            历史
+          </button>
         </nav>
       </div>
-      {mode === 'ranking' ? (
+      {mode === 'history' ? (
+        <Suspense fallback={null}>
+          <LongHistoryPage />
+        </Suspense>
+      ) : mode === 'ranking' ? (
         <RankingPage
           quotes={quotes}
           funds={funds}

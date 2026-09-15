@@ -773,6 +773,7 @@ def fetch_upstream(
     kind: str,
     ttl_seconds: int,
     force_refresh: bool = False,
+    use_requests: bool = False,
 ) -> tuple[int, str, bytes]:
     if not force_refresh:
         cached = cache_get(cache_key, ttl_seconds)
@@ -791,16 +792,23 @@ def fetch_upstream(
         headers = {**DEFAULT_HEADERS, "Referer": referer}
         req = Request(url, headers=headers)
         try:
-            with urlopen(req, timeout=12) as response:
-                body = response.read()
-                status = int(response.status)
-                upstream_content_type = response.headers.get("Content-Type") or content_type
+            if use_requests:
+                with requests.get(url, headers=headers, timeout=(5, 12)) as response:
+                    response.raise_for_status()
+                    body = response.content
+                    status = response.status_code
+                    upstream_content_type = response.headers.get("Content-Type") or content_type
+            else:
+                with urlopen(req, timeout=12) as response:
+                    body = response.read()
+                    status = int(response.status)
+                    upstream_content_type = response.headers.get("Content-Type") or content_type
             resolved_content_type = content_type or upstream_content_type
             cache_put(cache_key, url, status, resolved_content_type, body)
             write_raw(kind, cache_key, body)
             record_upstream_health(cache_key=cache_key, kind=kind, url=url, source="network", status=status)
             return status, resolved_content_type, body
-        except (URLError, OSError, socket.timeout, http.client.IncompleteRead, http.client.HTTPException) as exc:
+        except (URLError, OSError, socket.timeout, http.client.IncompleteRead, http.client.HTTPException, requests.RequestException) as exc:
             # Broaden beyond URLError so mid-body read timeouts / truncations
             # also fall back to stale cache instead of escaping as a 502.
             stale = cache_any(cache_key)
@@ -6580,6 +6588,24 @@ def refresh_twse_history(months: int = 1, *, force_refresh: bool = False) -> int
         if months > 1:
             time.sleep(0.1)
     return stored
+
+
+@app.get("/api/longhistory")
+def long_history_snapshot() -> Response:
+    from .long_history import SNAPSHOT_PREFIX, assets
+    symbol = request.args.get("symbol", "catalog")
+    if symbol != "catalog" and symbol not in {item["id"] for item in assets()}:
+        return json_response({"error": "Unsupported historical asset"}, status=400)
+    with get_conn() as conn:
+        row = conn.execute("SELECT payload FROM dashboard_snapshots WHERE name=?", (SNAPSHOT_PREFIX + symbol,)).fetchone()
+    if not row:
+        response = json_response({"schemaVersion": 1, "status": "preparing"}, status=202)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    response = app.response_class(row[0], mimetype="application/json")
+    response.headers["Cache-Control"] = "public, max-age=300"
+    response.add_etag()
+    return response.make_conditional(request)
 
 
 @app.get("/api/markethistory")

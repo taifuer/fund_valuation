@@ -40,4 +40,12 @@ describe('company report sources', () => {
       });
     });
   });
+
+  it('uses the complete annual report for Cisco headcount and the earnings release for its derived Q4', () => {
+    const cisco = company('cisco');
+    expect(resolveCompanyReportReference(cisco, cisco.annual[cisco.annual.length - 1]))
+      .toMatchObject({ period: 'FY2026', publishedAt: '2026-09-02', exact: true });
+    expect(resolveCompanyReportReference(cisco, cisco.quarterly[cisco.quarterly.length - 1]))
+      .toMatchObject({ period: 'FY2026 Q4', publishedAt: '2026-08-12', exact: true });
+  });
 });

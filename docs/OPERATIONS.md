@@ -40,6 +40,17 @@ npm run backend:backfill -- --skip-fx
 
 页面请求不会补抓完整历史。新增基金的初次资料可按需获取，之后由 worker 纳入净值、持仓和行情维护。
 
+长期走势另存完整月份的月末收盘，不替代现有日线，当月不纳入。首次可串行补齐台湾历史月份，并核验更早的FRED/Yahoo档案，随后由 worker 小批维护；无需新增服务：
+
+```bash
+npm run backend:history -- --twse-months=360
+npm run backend:history -- --extend
+npm run backend:history -- --audit-only
+npm run backend:history -- --publish-only
+```
+
+预览或测试应设置 `FUND_VALUATION_DATA_DIR` 到隔离目录。`--audit-only` 检查覆盖与缺月，`--publish-only` 只重建年度快照，两者不访问上游；覆盖范围、线上网络核验和来源许可限制见 [长期历史](./LONG_TERM_HISTORY.md)。
+
 ## Docker Compose
 
 ```bash

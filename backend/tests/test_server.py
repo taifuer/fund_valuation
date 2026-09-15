@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 
 _TEMP_DATA = tempfile.TemporaryDirectory()
@@ -144,6 +144,31 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(refreshed[2], b"new")
         self.assertEqual(cached_after_refresh[2], b"new")
         self.assertEqual(len(calls), 2)
+
+    def test_optional_requests_transport_preserves_cache_raw_and_stale_fallback(self) -> None:
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.status_code = 200
+        response.content = b'observation_date,NASDAQCOM\n1971-03-01,105.97\n'
+        response.headers = {'Content-Type': 'text/csv'}
+        kwargs = dict(referer='https://fred.stlouisfed.org/', content_type='text/csv',
+                      cache_key='longhistory:transport', kind='longhistory', ttl_seconds=60, use_requests=True)
+        with patch.object(server.requests, 'get', return_value=response) as request, \
+                patch.object(server, 'urlopen', side_effect=AssertionError('wrong transport')), \
+                patch.object(server, 'write_raw') as write_raw:
+            first = server.fetch_upstream('https://example.test/data', **kwargs)
+            cached = server.fetch_upstream('https://example.test/data', **kwargs)
+        self.assertEqual(first, cached)
+        self.assertEqual(first[2], response.content)
+        request.assert_called_once()
+        response.raise_for_status.assert_called_once()
+        write_raw.assert_called_once_with('longhistory', 'longhistory:transport', response.content)
+        with patch.object(server.requests, 'get', side_effect=server.requests.Timeout('body timeout')):
+            stale = server.fetch_upstream('https://example.test/data', **kwargs, force_refresh=True)
+        self.assertEqual(stale, first)
+        with patch.object(server.requests, 'get', side_effect=server.requests.HTTPError('503')):
+            with self.assertRaises(server.requests.HTTPError):
+                server.fetch_upstream('https://example.test/data', **{**kwargs, 'cache_key': 'empty'})
 
     def test_cache_put_compresses_large_body_and_cache_get_decodes_it(self) -> None:
         body = b'{"history":[123.45,678.90]}' * 2000

@@ -1,4 +1,5 @@
 import { request } from './http';
+import type { LongHistoryCatalog, LongHistorySeries } from './longHistory';
 import type {
   QuoteData,
   Fund,
@@ -26,6 +27,30 @@ const API_BASE = ((import.meta as ImportMeta & { env?: { VITE_API_BASE_URL?: str
 
 function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
+}
+
+const longHistoryCache = new Map<string, { expiresAt: number; payload: LongHistoryCatalog | LongHistorySeries }>();
+const longHistoryPending = new Map<string, Promise<LongHistoryCatalog | LongHistorySeries | null>>();
+
+export async function fetchLongHistory(symbol?: string): Promise<LongHistoryCatalog | LongHistorySeries | null> {
+  const key = symbol ?? 'catalog';
+  const cached = longHistoryCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.payload;
+  const existing = longHistoryPending.get(key);
+  if (existing) return existing;
+  const pending = (async () => {
+    const response = await request(apiUrl(`/api/longhistory${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''}`), {}, 12_000);
+    if (response.status === 202) { await response.json(); return null; }
+    if (!response.ok) throw new Error('历史数据加载失败');
+    const payload = await response.json();
+    if (payload?.schemaVersion !== 1 || (symbol ? !Array.isArray(payload.points) || payload.asset?.id !== symbol : !Array.isArray(payload.assets))) {
+      throw new Error('历史数据格式异常');
+    }
+    longHistoryCache.set(key, { expiresAt: Date.now() + 300_000, payload });
+    return payload;
+  })();
+  longHistoryPending.set(key, pending);
+  try { return await pending; } finally { longHistoryPending.delete(key); }
 }
 
 // Guard against malformed upstream responses (e.g. HTML error pages, error
