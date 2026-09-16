@@ -17,10 +17,12 @@ from .config import load_universe
 from .storage import get_conn
 
 SNAPSHOT_PREFIX = "long-history:"
+OFFLINE_METALS = {'GC': 'GC=F', 'SI': 'SI=F'}
 SOURCE_NAMES = {
     "tencent": "腾讯财经", "nikkei": "日经指数官方", "naver": "Naver Finance",
     "twse": "台湾证交所", "coinmetrics": "Coin Metrics", "sina": "新浪财经",
     "fred": "FRED", "yahoo": "Yahoo Finance",
+    "eastmoney": "东方财富", "eia": "美国能源信息署 EIA",
 }
 
 
@@ -33,7 +35,7 @@ def assets() -> list[dict[str, Any]]:
             continue
         source = item["history"]["source"]
         group = ("assets" if item in universe["marketAssets"] else
-                 "china" if source == "sina-cn" else "usa" if source == "sina-us" else "asia")
+                 "china" if source == "sina-cn" else "usa" if source in {"sina-us", "yahoo-index"} else "asia")
         result[key] = {"id": key, "name": item["name"], "group": group,
                        "quoteSymbol": item["sinaSymbol"], "history": item["history"],
                        "basis": "futures" if group == "assets" and key != "BTC" else "price",
@@ -157,6 +159,12 @@ def save_points(asset_id: str, rows: list[dict[str, Any]], fetched_at: int) -> i
     with get_conn() as conn:
         existing = {str(row[0]): (str(row[1]), float(row[2]), str(row[3]), bool(row[4])) for row in conn.execute(
             "SELECT period,date,close,source,month_complete FROM long_market_history WHERE asset_id=?", (asset_id,))}
+        # Allow verified replacements of the specifically quarantined SSE archive.
+        if asset_id == 'SH000001':
+            for point in rows:
+                old = existing.get(point['period'])
+                if old and old[2] == 'tencent' and point['period'] < '1993-01' and point['source'] == 'eastmoney':
+                    existing.pop(point['period'])
         # Reject a mismatched provider before writing any part of its series.
         for point in rows:
             old = existing.get(point["period"])
@@ -191,12 +199,13 @@ def read_points(asset_id: str) -> list[dict[str, Any]]:
 def stored_daily_points(asset: dict[str, Any], now: datetime) -> list[dict[str, Any]]:
     from .server import read_market_history_from_db, market_history_url
     # Existing NK daily history is a futures proxy, not Nikkei cash history.
-    if asset["id"] == "N225":
+    # Offline metals use one reviewed archive, never the live Sina contract series.
+    if asset["id"] == "N225" or asset['id'] in OFFLINE_METALS:
         return []
     history = asset["history"]
     url, _ = market_history_url(history["source"], history["symbol"])
     source = {"tencent-hk": "tencent", "twse-official": "twse", "naver-korea": "naver",
-              "coinmetrics-crypto": "coinmetrics"}.get(history["source"], "sina")
+              "coinmetrics-crypto": "coinmetrics", "yahoo-index": "yahoo"}.get(history["source"], "sina")
     rows = [point for row in read_market_history_from_db(history["source"], history["symbol"])
             if str(row["date"]) <= now.date().isoformat()
             if (point := valid_point(str(row["date"]), row["close"], source=source, url=url))]
@@ -228,12 +237,17 @@ def annual_returns(points: list[dict[str, Any]], year: int, *, unfinished_year: 
         baseline = months.get(f"{value - 1}-12")
         in_year = [row for key, row in months.items() if key.startswith(f"{value}-")]
         end = max(in_year, key=lambda row: row["period"]) if in_year else None
+        partial = baseline is None and value == first_year
+        if partial and in_year:
+            baseline = min(in_year, key=lambda row: row['period'])
         reason = ""
         if value == unfinished_year:
             reason = "该市场年度尚未结束"
         elif not baseline:
-            reason = "缺少上年末基准" if value != first_year else "首年非完整年度"
-        elif not baseline.get('monthComplete') and baseline["date"] != baseline["period"] and baseline["date"] < expected_year_end(value - 1, asset_id):
+            reason = "缺少上年末基准"
+        elif partial and end and baseline['period'] == end['period']:
+            reason = "仅有一个月末记录"
+        elif not partial and not baseline.get('monthComplete') and baseline["date"] != baseline["period"] and baseline["date"] < expected_year_end(value - 1, asset_id):
             reason = "上年末数据不完整"
         elif end is None or (value < year and (end["period"] != f"{value}-12"
                 or (not end.get('monthComplete') and end["date"] != end["period"] and end["date"] < expected_year_end(value, asset_id)))):
@@ -247,7 +261,7 @@ def annual_returns(points: list[dict[str, Any]], year: int, *, unfinished_year: 
         result.append({"year": value, "return": change, "startDate": baseline["date"] if baseline else None,
                        "startClose": baseline["close"] if baseline else None,
                        "endDate": end["date"] if end else None, "endClose": end["close"] if end else None,
-                       "reason": reason, "yearToDate": value == year,
+                       "reason": reason, "yearToDate": value == year, "partialYear": partial,
                        "sourceUrl": end["sourceUrl"] if end else None})
     return result
 
@@ -259,12 +273,16 @@ def month_number(period: str) -> int:
 
 def period_performance(points: list[dict[str, Any]], start: str | None, end: str | None) -> dict[str, Any]:
     result = {'startPeriod': start, 'endPeriod': end, 'months': 0, 'change': None, 'cagr': None,
-              'reason': '', 'cagrReason': ''}
+              'startClose': None, 'endClose': None, 'reason': '', 'cagrReason': ''}
     if not start or not end or start >= end:
         return {**result, 'reason': '缺少可比较的完整区间'}
     months = month_number(end) - month_number(start)
     result['months'] = months
     available = {row['period']: row for row in points if start <= row['period'] <= end}
+    for field, period in [('startClose', start), ('endClose', end)]:
+        value = available.get(period, {}).get('close')
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+            result[field] = value
     if start not in available or end not in available:
         return {**result, 'reason': '缺少区间起止月数据'}
     if any(not math.isfinite(row['close']) or row['close'] <= 0 for row in available.values()):
@@ -289,7 +307,7 @@ def period_performance(points: list[dict[str, Any]], start: str | None, end: str
 
 def range_performances(points: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     result = {}
-    for span in ('5', '10', '20', 'all'):
+    for span in ('5', '10', '20', '30', 'all'):
         last = points[-1]['period'] if points else None
         cutoff = f'{int(last[:4]) - int(span)}{last[4:]}' if last and span != 'all' else ''
         selected = [row for row in points if row['period'] >= cutoff]
@@ -307,16 +325,18 @@ def comparison_windows(catalog: list[dict[str, Any]], series: dict[str, list[dic
         end = f'{last_year}-12'
         # Count whole calendar years. The displayed January start is measured
         # against the preceding December, never against January's closing price.
-        decembers = [{point['period'] for point in series[asset['id']]
-                      if point['period'].endswith('-12') and point['period'] < end}
-                     for asset in selected if series[asset['id']]]
-        common = sorted(set.intersection(*decembers)) if decembers else []
         ranges = {}
-        for span in ('5', '10', '20', 'all'):
-            baseline = (common[0] if common else None) if span == 'all' else f'{last_year - int(span)}-12'
-            start = f'{int(baseline[:4]) + 1}-01' if baseline else None
+        for span in ('5', '10', '20', '30'):
+            baseline = f'{last_year - int(span)}-12'
+            start = f'{int(baseline[:4]) + 1}-01'
             rows = [{'id': asset['id'], **period_performance(series[asset['id']], baseline, end)} for asset in selected]
-            ranges[span] = {'startPeriod': start, 'endPeriod': end, 'rows': rows}
+            ranges[span] = {'startPeriod': start, 'endPeriod': end, 'rows': rows, 'independentPeriods': False}
+        rows = []
+        for asset in selected:
+            points = series[asset['id']]
+            rows.append({'id': asset['id'], **period_performance(points,
+                points[0]['period'] if points else None, points[-1]['period'] if points else None)})
+        ranges['all'] = {'startPeriod': None, 'endPeriod': None, 'rows': rows, 'independentPeriods': True}
         groups[group] = ranges
     return groups
 
@@ -335,7 +355,9 @@ def publish(now: datetime | None = None) -> dict[str, Any]:
         if asset["id"] == "INX" and points and points[0]["period"] < "1957-03":
             note += "1957 年正式发布前为回溯历史口径。"
         if asset['id'] == 'SH000001':
-            note += '1993 年前的来源记录异常，暂不纳入。'
+            note += '早期腾讯异常记录未采用，以核验后的历史为准。'
+        if asset['id'] in OFFLINE_METALS and points and all(p['source'] == 'yahoo' for p in points):
+            note += '历史采用 Yahoo 美元期货日线的月末收盘，与首页行情口径可能不同。'
         description = {key: asset[key] for key in ("id", "name", "group", "basis", "unit")}
         timezone = "America/New_York" if asset["group"] == "usa" or asset["basis"] == "futures" else "UTC" if asset["id"] == "BTC" else "Asia/Shanghai"
         local_year = now.astimezone(ZoneInfo(timezone)).year
@@ -379,6 +401,8 @@ def fetch_rows(asset: dict[str, Any], now: datetime, *, twse_months: int = 1) ->
 
     history = asset["history"]
     key = asset["id"]
+    if key in OFFLINE_METALS:
+        return completed_months(read_points(key), asset, now)
     cutoff = completed_cutoff(asset, now)
     timezone = "America/New_York" if asset["group"] == "usa" else "Asia/Shanghai"
     if history["source"] in {"sina-cn", "sina-us", "tencent-hk"}:
@@ -446,7 +470,8 @@ def refresh(*, limit: int = 2, twse_months: int = 2, now: datetime | None = None
     publish(now)
     with get_conn() as conn:
         checked = {row[0]: int(row[1]) for row in conn.execute("SELECT asset_id,checked_at FROM long_history_sync")}
-    pending = sorted(all_assets, key=lambda asset: checked.get(asset["id"], 0))
+    pending = sorted((asset for asset in all_assets if asset['id'] not in OFFLINE_METALS),
+                     key=lambda asset: checked.get(asset["id"], 0))
     pending = [asset for asset in pending if force or timestamp - checked.get(asset["id"], 0) >= 24 * 3600 * 1000][:limit]
     for asset in pending:
         error = ""
@@ -471,9 +496,13 @@ def refresh(*, limit: int = 2, twse_months: int = 2, now: datetime | None = None
 def main() -> None:
     from .server import ensure_storage
     parser = argparse.ArgumentParser(description="Backfill monthly closes and publish annual-return snapshots")
-    parser.add_argument("--publish-only", action="store_true")
-    parser.add_argument("--extend", action="store_true", help="Verify and import older FRED/Yahoo monthly archives serially")
-    parser.add_argument("--audit-only", action="store_true", help="Report stored monthly coverage without network requests")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--publish-only", action="store_true")
+    action.add_argument("--extend", action="store_true", help="Verify and import older FRED/Yahoo/Eastmoney monthly archives serially")
+    action.add_argument("--metals", action="store_true", help="Verify and replace complete gold/silver archives from Yahoo daily closes, offline only")
+    action.add_argument("--us-indices", action="store_true", help="Import full Russell 2000 / SOX / S&P 100 cash-index daily archives serially")
+    action.add_argument("--oil", action="store_true", help="Verify EIA's 1983-2024 front-month archive before extending oil history")
+    action.add_argument("--audit-only", action="store_true", help="Report stored monthly coverage without network requests")
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--twse-months", type=int, default=12)
     parser.add_argument("--force", action="store_true", help="Recheck even when the latest check was recent")
@@ -491,7 +520,16 @@ def main() -> None:
                 'missingMonths': missing_months(points, completed_cutoff(asset, now))})
         print(json.dumps(result, ensure_ascii=False))
         return
-    if args.extend:
+    if args.oil:
+        from .oil_archives import sync_oil
+        result = sync_oil()
+    elif args.us_indices:
+        from .index_archives import sync_indices
+        result = sync_indices()
+    elif args.metals:
+        from .metal_archives import sync_metals
+        result = sync_metals()
+    elif args.extend:
         from .long_history_sources import extend_archives
         result = extend_archives()
     else:
@@ -500,6 +538,12 @@ def main() -> None:
         print(json.dumps({"assets": len(result["assets"])}, ensure_ascii=False))
     else:
         print(json.dumps(result, ensure_ascii=False))
+    if args.metals and any(item.get('error') for item in result['metals']):
+        raise SystemExit(1)
+    if args.us_indices and any(item.get('error') for item in result['indices']):
+        raise SystemExit(1)
+    if args.oil and result['oil'].get('error'):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

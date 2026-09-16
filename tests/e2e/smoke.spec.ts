@@ -123,11 +123,29 @@ test('company disclosure shows revenue in the initial mobile viewport', async ({
       scrollLeft: scroller?.scrollLeft ?? -1,
       scrollerRight: scrollerRect?.right ?? 0,
       revenueRight: revenueRect?.right ?? Number.POSITIVE_INFINITY,
+      overflowingPeriods: [...element.querySelectorAll('tbody td:first-child')].filter(cell => cell.scrollWidth > cell.clientWidth + 1).length,
     };
   });
 
   expect(geometry.scrollLeft).toBe(0);
   expect(geometry.revenueRight).toBeLessThanOrEqual(geometry.scrollerRight + 1);
+  expect(geometry.overflowingPeriods).toBe(0);
+});
+
+test('overview market groups have a consistent visible separation', async ({ page }) => {
+  await page.goto('/');
+  const titles = ['A股', '美股', '亚太', '资产', 'ETF'];
+  let previousBottom = 0;
+  for (const title of titles) {
+    const toggle = page.getByRole('button', { name: new RegExp(`^[+-]\\s*${title}\\s*·`) });
+    await expect(toggle).toBeVisible();
+    const geometry = await toggle.evaluate(button => ({
+      top: button.getBoundingClientRect().top,
+      bottom: button.parentElement!.getBoundingClientRect().bottom,
+    }));
+    if (previousBottom) expect(geometry.top - previousBottom).toBeGreaterThanOrEqual(20);
+    previousBottom = geometry.bottom;
+  }
 });
 
 test('company choices wrap on narrow screens without horizontal scrolling', async ({ page }) => {
@@ -433,6 +451,9 @@ test('diagnostics route stays hidden from primary navigation and requires a toke
 });
 
 test('fund manager opens as a dialog and closes with Escape', async ({ page }) => {
+  await page.route('**/api/meta', route => route.fulfill({ json: {
+    apiSchemaVersion: 1, dashboardSchemaVersion: 1, fundManagementMode: 'open',
+  } }));
   await page.goto('/funds');
   await page.getByRole('button', { name: '管理基金', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '管理基金' })).toBeVisible();

@@ -244,6 +244,27 @@
   ],
   "rankingIndices": [
     {
+      "symbol": "RUT",
+      "name": "罗素2000",
+      "sinaSymbol": "gb_rut",
+      "quoteMode": "close",
+      "history": { "source": "yahoo-index", "symbol": "RUT" }
+    },
+    {
+      "symbol": "SOX",
+      "name": "费城半导体",
+      "sinaSymbol": "gb_sox",
+      "quoteMode": "close",
+      "history": { "source": "yahoo-index", "symbol": "SOX" }
+    },
+    {
+      "symbol": "OEX",
+      "name": "标普100",
+      "sinaSymbol": "gb_oex",
+      "quoteMode": "close",
+      "history": { "source": "yahoo-index", "symbol": "OEX" }
+    },
+    {
       "symbol": "SH000001",
       "name": "上证指数",
       "sinaSymbol": "sh000001",

@@ -12,24 +12,25 @@ const asset = {
     reason: '', yearToDate: false, sourceUrl: null }],
 };
 const performance = { id: 'INX', startPeriod: '2019-01', endPeriod: '2026-08', months: 91,
-  change: 182, cagr: (2.82 ** (12 / 91) - 1) * 100, reason: '', cagrReason: '' };
+  startClose: 100, endClose: 282, change: 182, cagr: (2.82 ** (12 / 91) - 1) * 100, reason: '', cagrReason: '' };
 const fiveYear = { ...performance, startPeriod: '2021-08', months: 60,
-  change: (282 / 162 - 1) * 100, cagr: ((282 / 162) ** (1 / 5) - 1) * 100 };
+  startClose: 162, change: (282 / 162 - 1) * 100, cagr: ((282 / 162) ** (1 / 5) - 1) * 100 };
 const calendarFive = { ...performance, startPeriod: '2020-12', endPeriod: '2025-12', months: 60,
-  change: (266 / 146 - 1) * 100, cagr: ((266 / 146) ** (1 / 5) - 1) * 100 };
+  startClose: 146, endClose: 266, change: (266 / 146 - 1) * 100, cagr: ((266 / 146) ** (1 / 5) - 1) * 100 };
 const common = { ...calendarFive, startPeriod: '2019-12', months: 72,
-  change: (266 / 122 - 1) * 100, cagr: ((266 / 122) ** (1 / 6) - 1) * 100 };
-const missing = { ...calendarFive, change: null, cagr: null, reason: '缺少区间起止月数据' };
+  startClose: 122, change: (266 / 122 - 1) * 100, cagr: ((266 / 122) ** (1 / 6) - 1) * 100 };
+const missing = { ...calendarFive, startClose: null, change: null, cagr: null, reason: '缺少区间起止月数据' };
 const ranges = {
   '5': { startPeriod: '2021-01', endPeriod: '2025-12', rows: [calendarFive] },
   '10': { startPeriod: '2016-01', endPeriod: '2025-12', rows: [missing] },
   '20': { startPeriod: '2006-01', endPeriod: '2025-12', rows: [missing] },
-  all: { startPeriod: '2020-01', endPeriod: '2025-12', rows: [common] },
+  '30': { startPeriod: '1996-01', endPeriod: '2025-12', rows: [missing] },
+  all: { startPeriod: null, endPeriod: null, independentPeriods: true, rows: [common] },
 };
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/longhistory*', route => route.fulfill({ json: new URL(route.request().url()).searchParams.has('symbol')
-    ? { schemaVersion: 1, generatedAt: 1, asset: { ...asset, performance: { '5': fiveYear, '10': performance, '20': performance, all: performance } }, points: monthly }
+    ? { schemaVersion: 1, generatedAt: 1, asset: { ...asset, performance: { '5': fiveYear, '10': performance, '20': performance, '30': performance, all: performance } }, points: monthly }
     : { schemaVersion: 1, generatedAt: 1, year: 2026, assets: [asset], comparisons: {
       all: ranges, china: ranges, usa: ranges, asia: ranges, assets: ranges,
     } } }));
@@ -106,6 +107,97 @@ test('opening history does not load live quotes or fund estimates', async ({ pag
   expect(requests.filter(url => url.includes('/api/dashboard')).every(url => new URL(url).searchParams.get('symbols') === '')).toBe(true);
 });
 
+test('company and history charts share their visual foundation and accessible point selection', async ({ page }, testInfo) => {
+  if (testInfo.project.name === 'mobile-chromium') await page.setViewportSize({ width: 320, height: 844 });
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(String(error)));
+  await page.goto('/history?range=5');
+  const history = page.getByRole('img', { name: '标普500长期走势' });
+  await expect(history).toBeVisible();
+  const historyStyle = await history.evaluate(svg => ({
+    background: getComputedStyle(svg).backgroundColor,
+    color: getComputedStyle(svg.querySelector('path')!).stroke,
+    lineWidth: getComputedStyle(svg.querySelector('path')!).strokeWidth,
+    labelSize: getComputedStyle(svg.querySelector('text')!).fontSize,
+    labelColor: getComputedStyle(svg.querySelector('text')!).fill,
+    height: svg.getBoundingClientRect().height,
+  }));
+  await page.goto('/companies?company=tencent');
+  const chart = page.getByRole('img', { name: '腾讯营业收入趋势' });
+  await expect(chart).toBeVisible();
+  expect(await chart.evaluate(svg => ({
+    background: getComputedStyle(svg).backgroundColor,
+    color: getComputedStyle(svg.querySelector('path')!).stroke,
+    lineWidth: getComputedStyle(svg.querySelector('path')!).strokeWidth,
+    labelSize: getComputedStyle(svg.querySelector('text')!).fontSize,
+    labelColor: getComputedStyle(svg.querySelector('text')!).fill,
+    height: svg.getBoundingClientRect().height,
+  }))).toEqual(historyStyle);
+  expect(historyStyle.background).toBe('rgb(255, 255, 255)');
+  await expect(chart).toHaveCSS('touch-action', 'pan-y');
+  await expect(chart.locator('[tabindex]')).toHaveCount(0);
+  await chart.scrollIntoViewIfNeeded();
+  await chart.click({ position: { x: 75, y: 60 } });
+  await expect(chart).toHaveCSS('outline-style', 'none');
+  await chart.focus();
+  await page.keyboard.press('Home');
+  const reading = () => chart.evaluate(svg => svg.parentElement!.previousElementSibling!.textContent);
+  const firstReading = await reading();
+  const crosshair = chart.getByTestId('company-crosshair');
+  await expect(crosshair.locator('line')).toHaveCount(2);
+  const target = await chart.evaluate(svg => {
+    const element = svg as SVGSVGElement;
+    const guide = svg.querySelector('[data-testid="company-crosshair"] line')!;
+    const point = element.createSVGPoint();
+    point.x = Number(guide.getAttribute('x1')) + 1;
+    point.y = 60;
+    const screen = point.matrixTransform(element.getScreenCTM()!);
+    return { x: screen.x, y: screen.y };
+  });
+  await page.keyboard.press('End');
+  expect(await reading()).not.toBe(firstReading);
+  if (testInfo.project.name === 'mobile-chromium') await page.touchscreen.tap(target.x, target.y);
+  else await page.mouse.click(target.x, target.y);
+  expect(await reading()).toBe(firstReading);
+  await chart.focus();
+  await page.keyboard.press('ArrowRight');
+  expect(await reading()).not.toBe(firstReading);
+  await page.keyboard.press('Tab');
+  await expect(chart).not.toBeFocused();
+  await expect(page.getByRole('button', { name: '季度', exact: true })).toHaveCSS('background-color', 'rgb(15, 23, 42)');
+  for (const [first, last] of [['数值', '同比'], ['季度', '年度']]) {
+    const left = await page.getByRole('button', { name: first, exact: true }).boundingBox();
+    const right = await page.getByRole('button', { name: last, exact: true }).boundingBox();
+    expect(Math.abs(left!.y - right!.y)).toBeLessThanOrEqual(1);
+  }
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath('company-shared-chart.png'), fullPage: true });
+});
+
+test('large lifetime returns do not overlap the annualized column on a narrow viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.route('**/api/longhistory*', route => route.fulfill({ json: {
+    schemaVersion: 1, year: 2026, assets: [{ ...asset, id: 'BTC', name: '比特币', group: 'assets', unit: 'USD' }], comparisons: { all: {
+      all: { startPeriod: null, endPeriod: null, independentPeriods: true,
+        rows: [{ ...performance, id: 'BTC', change: 116267514.73, cagr: 138.30, startClose: .0625, endClose: 1000000000.12 }] },
+    } },
+  } }));
+  await page.goto('/history?view=change&range=all');
+  const table = page.getByRole('table', { name: '区间涨幅' });
+  await expect(table).toContainText('+116267514.73%');
+  const overflow = await table.evaluate(table => [...table.querySelectorAll('td,th')]
+    .filter(cell => cell.scrollWidth > cell.clientWidth + 1).map(cell => cell.textContent));
+  expect(overflow).toEqual([]);
+  const values = table.locator('tbody tr td:nth-child(5)');
+  await expect(values).toHaveText('$0.0625 → 1,000,000,000.12');
+  await expect(values).toHaveAttribute('title', '基准：2019-01；期末：2026-08；单位：美元 USD');
+  expect(await values.locator('span span').evaluateAll(nodes => nodes.every(node => node.scrollWidth <= node.clientWidth + 1))).toBe(true);
+  await table.getByRole('button', { name: '年化涨幅' }).click();
+  await expect(table.getByRole('columnheader', { name: '年化涨幅' })).toHaveAttribute('aria-sort', 'descending');
+});
+
 test('comparison opens from the catalog, fits ranked columns and keeps the mobile toolbar in two rows', async ({ page }, testInfo) => {
   if (testInfo.project.name === 'mobile-chromium') await page.setViewportSize({ width: 320, height: 844 });
   const historyRequests: string[] = [];
@@ -113,13 +205,27 @@ test('comparison opens from the catalog, fits ranked columns and keeps the mobil
   await page.goto('/history?view=change');
   const table = page.getByRole('table', { name: '区间涨幅' });
   await expect(table).toContainText(`+${common.change.toFixed(2)}%`);
-  await expect(table.getByRole('columnheader')).toHaveText(['排名', '名称', '涨幅↓', '年化涨幅']);
+  await expect(table.getByRole('columnheader')).toHaveText(['排名', '名称', '涨幅↓', '年化涨幅', '起止值', '区间']);
+  await expect(table.locator('tbody tr td:nth-child(5)')).toHaveText('122 → 266 点');
+  await expect(table.locator('tbody tr td:nth-child(5)')).toHaveAttribute('title', '基准：2019-12；期末：2025-12；单位：点');
+  const valueLayout = await table.locator('tbody tr td:nth-child(5)').evaluate(cell => {
+    const pair = cell.firstElementChild!;
+    const [start, arrow, end] = [...pair.children].map(item => item.getBoundingClientRect());
+    return {
+      gaps: [arrow.left - start.right, end.left - arrow.right],
+      width: pair.getBoundingClientRect().width,
+      right: cell.getBoundingClientRect().right - parseFloat(getComputedStyle(cell).paddingRight) - end.right,
+    };
+  });
+  for (const gap of valueLayout.gaps) expect(gap).toBeCloseTo(4, 0);
+  expect(valueLayout.width).toBeLessThan(90);
+  expect(Math.abs(valueLayout.right)).toBeLessThanOrEqual(1);
   await expect(table.locator('tbody tr').first().locator('td').first()).toHaveText('#1');
   await expect(page.getByRole('combobox', { name: '历史涨幅年度' })).toHaveCount(0);
   if (testInfo.project.name === 'mobile-chromium') {
     await expect(page.getByRole('combobox', { name: '历史时间区间' })).toHaveValue('all');
   } else {
-    await expect(page.getByRole('button', { name: '共同区间' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('group', { name: '走势范围' }).getByRole('button', { name: '全部', exact: true })).toHaveAttribute('aria-pressed', 'true');
   }
   expect(historyRequests.some(url => new URL(url).searchParams.has('symbol'))).toBe(false);
   const geometry = await page.getByRole('region', { name: '长期历史' }).evaluate(region => {
@@ -129,13 +235,12 @@ test('comparison opens from the catalog, fits ranked columns and keeps the mobil
     const table = region.querySelector('table')!;
     const cells = [...table.querySelectorAll('thead th')].map(cell => cell.getBoundingClientRect());
     const viewport = table.parentElement!.getBoundingClientRect();
-    const period = region.querySelector('[aria-label="涨幅统计区间"] span')!.getBoundingClientRect();
     return { rangeRight: range.right, rangeTop: range.top, modesTop: modes.top, modesLeft: modes.left,
       groupsLeft: groups.left, groupsRight: groups.right, groupsBottom: groups.bottom,
       contentLeft: region.getBoundingClientRect().left + parseFloat(getComputedStyle(region).paddingLeft),
       contentRight: region.getBoundingClientRect().right - parseFloat(getComputedStyle(region).paddingRight),
-      lastColumnRight: cells.at(-1)!.right, tableRight: viewport.right,
-      periodCenter: period.left + period.width / 2, tableCenter: viewport.left + viewport.width / 2,
+      lastColumnRight: cells.at(-1)!.right, tableRight: table.getBoundingClientRect().right,
+      thirdColumnRight: cells[2].right, viewportRight: viewport.right,
       overflowingCells: [...table.querySelectorAll('th,td')].filter(cell => cell.scrollWidth > cell.clientWidth + 1).map(cell => cell.textContent),
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
   });
@@ -144,8 +249,18 @@ test('comparison opens from the catalog, fits ranked columns and keeps the mobil
   expect(geometry.lastColumnRight).toBeLessThanOrEqual(geometry.tableRight + 1);
   expect(geometry.overflow).toBeLessThanOrEqual(1);
   expect(geometry.overflowingCells).toEqual([]);
-  expect(Math.abs(geometry.periodCenter - geometry.tableCenter)).toBeLessThanOrEqual(1);
+  await expect(page.getByLabel('涨幅统计区间')).toHaveCount(0);
+  await expect(table.locator('tbody tr').first().locator('td').last()).toHaveText('2019-12 至 2025-12');
   if (testInfo.project.name === 'mobile-chromium') {
+    expect(geometry.thirdColumnRight).toBeLessThanOrEqual(geometry.viewportRight + 1);
+    const scroller = page.getByRole('region', { name: '涨幅表格', exact: true });
+    const rowHeight = await table.locator('tbody tr').first().evaluate(row => row.getBoundingClientRect().height);
+    expect(rowHeight).toBeLessThanOrEqual(50);
+    await scroller.evaluate(element => { element.scrollLeft = element.scrollWidth; });
+    expect(await scroller.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
+    const finalCell = await table.getByRole('columnheader', { name: '区间', exact: true }).boundingBox();
+    expect(finalCell!.x + finalCell!.width).toBeLessThanOrEqual(geometry.viewportRight + 1);
+    await scroller.evaluate(element => { element.scrollLeft = 0; });
     expect(Math.abs(geometry.groupsLeft - geometry.contentLeft)).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.groupsRight - geometry.contentRight)).toBeLessThanOrEqual(1);
     expect(Math.abs(geometry.modesLeft - geometry.contentLeft)).toBeLessThanOrEqual(1);
@@ -183,7 +298,8 @@ test('five-year selection survives reload and switches between rolling and full-
   const table = page.getByRole('table', { name: '区间涨幅' });
   await expect(table).toContainText(`+${calendarFive.change.toFixed(2)}%`);
   await expect(table).toContainText(`+${calendarFive.cagr.toFixed(2)}%`);
-  await expect(page.getByLabel('涨幅统计区间')).toHaveText('2021-01 至 2025-12');
+  await expect(table.locator('tbody tr td:nth-child(5)')).toHaveText('146 → 266 点');
+  await expect(table.locator('tbody tr').first().locator('td').last()).toHaveText('2021-01 至 2025-12');
   expect(historyRequests).toHaveLength(2);
   await page.reload();
   await expect(page).toHaveURL(/range=5/);
@@ -198,8 +314,8 @@ test('five-year selection survives reload and switches between rolling and full-
 
 test('ten and twenty year comparisons retain full calendar-year boundaries even with missing archives', async ({ page }, testInfo) => {
   await page.goto('/history?view=change&range=10');
-  await expect(page.getByLabel('涨幅统计区间')).toHaveText('2016-01 至 2025-12');
   const table = page.getByRole('table', { name: '区间涨幅' });
+  await expect(table.locator('tbody tr').first().locator('td').last()).toHaveText('2016-01 至 2025-12');
   await expect(table).toContainText('缺少区间起止月数据');
   await expect(table.getByText('#1', { exact: true })).toHaveCount(0);
   if (testInfo.project.name === 'mobile-chromium') {
@@ -207,6 +323,6 @@ test('ten and twenty year comparisons retain full calendar-year boundaries even 
   } else {
     await page.getByRole('button', { name: '近20年', exact: true }).click();
   }
-  await expect(page.getByLabel('涨幅统计区间')).toHaveText('2006-01 至 2025-12');
+  await expect(table.locator('tbody tr').first().locator('td').last()).toHaveText('2006-01 至 2025-12');
   await expect(page).toHaveURL(/range=20/);
 });

@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { longHistoryChart, nearestHistoryPoint, type LongHistoryPoint } from './longHistory';
+import { formatHistoryNumber, longHistoryChart, nearestHistoryPoint, type LongHistoryPoint } from './longHistory';
 
 const point = (period: string, close: number): LongHistoryPoint => ({ period, date: period, close, source: 'test', sourceUrl: '' });
 
 describe('long-term history chart', () => {
+  it('prints full axis numbers and reserves space for wide positive and negative labels', () => {
+    expect(formatHistoryNumber(123456.7, true)).toBe('123,457');
+    expect(formatHistoryNumber(0.0523, true)).toBe('0.0523');
+    for (const values of [[10, 1234567], [-1234567, 100]]) {
+      const chart = longHistoryChart(values.map((value, i) => point(`2025-0${i + 1}`, value)), 288, false);
+      expect(chart.left).toBeGreaterThan(62);
+      expect(chart.right - chart.left).toBeGreaterThan(150);
+      expect(chart.ticks.every(tick => !/[kmb]/i.test(formatHistoryNumber(tick.value, true)))).toBe(true);
+    }
+  });
   it('uses elapsed months rather than evenly spacing missing observations', () => {
     const chart = longHistoryChart([point('2024-01', 100), point('2024-02', 110), point('2024-12', 120)], 640, false);
     expect(chart.positions[1].x - chart.positions[0].x).toBeCloseTo((chart.right - chart.left) / 11);

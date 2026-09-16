@@ -110,6 +110,7 @@ CN_ETF_HISTORY_SYMBOL_RE = re.compile(r"^(?:sh5\d{5}|sz159\d{3})$")
 MARKET_HISTORY_CORPORATE_ACTION_LOW_RATIO = 0.65
 MARKET_HISTORY_CORPORATE_ACTION_HIGH_RATIO = 1 / MARKET_HISTORY_CORPORATE_ACTION_LOW_RATIO
 MARKET_HISTORY_SOURCES = {
+    "yahoo-index",
     "sina-cn",
     "sina-us",
     "sina-futures",
@@ -2216,7 +2217,7 @@ def fund_history_is_stale(latest_date: str | None, now: datetime | None = None) 
 def market_history_quote_symbol(source: str, symbol: str) -> str | None:
     if source == "sina-cn":
         return symbol
-    if source == "sina-us":
+    if source in {"sina-us", "yahoo-index"}:
         return f"gb_{symbol.lstrip('.').lower()}"
     if source == "tencent-hk":
         return symbol
@@ -4188,7 +4189,13 @@ def parse_binance_bitcoin_history(text: str, *, current_ms: int | None = None) -
 
 def store_market_history(source: str, symbol: str, text: str) -> int:
     rows: list[dict[str, Any]] = []
-    if source == "sina-cn":
+    if source == "yahoo-index":
+        from .index_archives import parse_index_history
+        cutoff = latest_completed_trading_day(f"gb_{symbol.lower()}")
+        if not cutoff:
+            raise ValueError("Missing completed US trading day")
+        rows = parse_index_history(text, symbol, cutoff)
+    elif source == "sina-cn":
         parsed = json.loads(text)
         rows = parsed if isinstance(parsed, list) else []
     elif source == "sina-us":
@@ -4241,6 +4248,11 @@ def store_market_history(source: str, symbol: str, text: str) -> int:
     if not points:
         return 0
     with get_conn() as conn:
+        if source == "yahoo-index":
+            existing = dict(conn.execute("SELECT date,close FROM market_history WHERE source=? AND symbol=?", (source, symbol)))
+            for _, _, day, close, _ in points:
+                if day in existing and (existing[day] <= 0 or abs(close / existing[day] - 1) > .001):
+                    raise ValueError(f"Index closing-price revision requires review: {symbol} {day}")
         conn.executemany(
             """
             INSERT INTO market_history(source, symbol, date, close, fetched_at)
@@ -6360,6 +6372,10 @@ def fund_purchase() -> Response:
 
 
 def market_history_url(source: str, symbol: str) -> tuple[str, str]:
+    if source == "yahoo-index":
+        from .index_archives import index_history_url
+        latest, _ = latest_market_history_meta(source, symbol)
+        return index_history_url(symbol, latest), "https://finance.yahoo.com/"
     if source == "sina-cn":
         return (
             f"https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketData.getKLineData?symbol={quote(symbol)}&scale=240&ma=no&datalen=1023",
@@ -6649,7 +6665,7 @@ def market_history() -> Response:
     else:
         if stored_count == 0 and cached_rows:
             return json_response(read_market_history_from_db(source, symbol, adjust_corporate_actions=True) or cached_rows)
-        if source in {"naver-korea", "coinmetrics-crypto"}:
+        if source in {"naver-korea", "coinmetrics-crypto", "yahoo-index"}:
             return json_response(read_market_history_from_db(source, symbol))
         if cn_etf_history_needs_adjustment(source, symbol):
             return json_response(read_market_history_from_db(source, symbol, adjust_corporate_actions=True))

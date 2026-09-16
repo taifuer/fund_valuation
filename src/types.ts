@@ -269,7 +269,7 @@ export interface SystemStatus {
 }
 
 export interface MarketHistoryConfig {
-  source: 'sina-cn' | 'sina-us' | 'sina-futures' | 'tencent-hk' | 'twse-official' | 'naver-korea' | 'coinmetrics-crypto';
+  source: 'sina-cn' | 'sina-us' | 'sina-futures' | 'tencent-hk' | 'twse-official' | 'naver-korea' | 'coinmetrics-crypto' | 'yahoo-index';
   symbol: string;
 }
 
@@ -288,6 +288,7 @@ export interface IndexConfig {
   symbol: string;
   name: string;
   sinaSymbol: string;
+  quoteMode?: 'close';
   futures?: {
     sinaSymbol: string;
     label: string;

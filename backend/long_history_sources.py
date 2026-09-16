@@ -15,6 +15,32 @@ from .long_history import (
 
 FRED_SERIES = {'IXIC': 'NASDAQCOM', 'NDX': 'NASDAQ100', 'N225': 'NIKKEI225'}
 YAHOO_SERIES = {'NDX': '^NDX', 'DJI': '^DJI', 'HSI': '^HSI'}
+EASTMONEY_SERIES = {'SH000001': '1.000001', 'SZ399001': '0.399001'}
+
+
+def parse_eastmoney(text: str, secid: str, url: str) -> list[dict]:
+    payload = json.loads(text)
+    data = payload.get('data')
+    market, code = secid.split('.')
+    if payload.get('rc') != 0 or not isinstance(data, dict) or data.get('code') != code or str(data.get('market')) != market:
+        raise ValueError('Unexpected Eastmoney index')
+    if not isinstance(data.get('klines'), list):
+        raise ValueError('Missing Eastmoney monthly series')
+    rows = []
+    for line in data['klines']:
+        fields = line.split(',') if isinstance(line, str) else []
+        if len(fields) < 3:
+            raise ValueError('Invalid Eastmoney monthly columns')
+        point = valid_point(fields[0], fields[2], source='eastmoney', url=url)
+        if point and point['close'] > 0:
+            point['monthComplete'] = True
+            rows.append(point)
+    # SSE Factbook 2006, page 3. Do not resurrect the rejected early Tencent scale.
+    anchors = {'1990-12': 127.61, '1991-12': 292.75, '1992-12': 780.39} if secid == '1.000001' else {}
+    for point in rows:
+        if point['period'] in anchors and abs(point['close'] - anchors[point['period']]) > .02:
+            raise ValueError('Early SSE close conflicts with the official yearbook')
+    return rows
 
 
 def parse_fred(text: str, series: str, url: str, *, monthly: bool = True) -> list[dict]:
@@ -32,27 +58,30 @@ def parse_fred(text: str, series: str, url: str, *, monthly: bool = True) -> lis
     return result
 
 
-def parse_yahoo(text: str, symbol: str, url: str) -> list[dict]:
+def parse_yahoo(text: str, symbol: str, url: str, *, interval: str = '1mo') -> list[dict]:
     chart = json.loads(text).get('chart', {})
     result = chart.get('result')
     if chart.get('error') or not isinstance(result, list) or len(result) != 1:
-        raise ValueError('Missing Yahoo monthly series')
+        raise ValueError('Missing Yahoo historical series')
     data = result[0]
     meta = data.get('meta', {})
-    if meta.get('symbol') != symbol or meta.get('dataGranularity') != '1mo':
+    if interval not in {'1mo', '1d'} or meta.get('symbol') != symbol or meta.get('dataGranularity') != interval:
         raise ValueError('Unexpected Yahoo asset or frequency')
+    if symbol.endswith('=F') and (meta.get('currency') != 'USD' or meta.get('instrumentType') != 'FUTURE'):
+        raise ValueError('Expected USD futures prices')
     timezone = ZoneInfo(meta['exchangeTimezoneName'])
     stamps = data.get('timestamp') or []
     quotes = data.get('indicators', {}).get('quote', [])
     closes = quotes[0].get('close', []) if quotes else []
     if len(stamps) != len(closes):
-        raise ValueError('Mismatched Yahoo monthly columns')
+        raise ValueError('Mismatched Yahoo historical columns')
     rows = []
     for timestamp, close in zip(stamps, closes):
         day = datetime.fromtimestamp(timestamp, timezone).strftime('%Y-%m-%d')
         point = valid_point(day, close, source='yahoo', url=url)
         if point and point['close'] > 0:
-            point.update(date=point['period'], monthComplete=True)
+            if interval == '1mo':
+                point.update(date=point['period'], monthComplete=True)
             rows.append(point)
     return rows
 
@@ -72,12 +101,18 @@ def verified_extension(existing: list[dict], candidates: list[dict]) -> list[dic
 
 
 def extend_archives(now: datetime | None = None) -> dict:
-    from .server import decode_body, fetch_upstream
+    from .server import decode_body, fetch_eastmoney_json, fetch_upstream
     now = now or datetime.now(ZoneInfo('Asia/Shanghai'))
     universe = {asset['id']: asset for asset in assets()}
     results = []
 
     def download(url: str, key: str, referer: str) -> str:
+        if referer == 'https://quote.eastmoney.com/':
+            payload = fetch_eastmoney_json(url, cache_key=f'longhistory-archive:{key}',
+                kind='longhistory', ttl_seconds=30 * 24 * 3600)
+            if payload is None:
+                raise ValueError('Eastmoney archive unavailable; existing history retained')
+            return json.dumps(payload)
         status, _, body = fetch_upstream(url, referer=referer, content_type='text/plain',
             cache_key=f'longhistory-archive:{key}', kind='longhistory', ttl_seconds=30 * 24 * 3600,
             use_requests=referer == 'https://fred.stlouisfed.org/')
@@ -85,7 +120,7 @@ def extend_archives(now: datetime | None = None) -> dict:
             raise ValueError(f'HTTP {status}')
         return decode_body(body)
 
-    for provider, mapping in [('fred', FRED_SERIES), ('yahoo', YAHOO_SERIES)]:
+    for provider, mapping in [('fred', FRED_SERIES), ('yahoo', YAHOO_SERIES), ('eastmoney', EASTMONEY_SERIES)]:
         for asset_id, symbol in mapping.items():
             try:
                 asset = universe[asset_id]
@@ -107,11 +142,16 @@ def extend_archives(now: datetime | None = None) -> dict:
                             rows.extend(point for point in daily if start.strftime('%Y-%m-%d') <= point['date'] <= end.strftime('%Y-%m-%d'))
                         except Exception as exc:
                             results.append({'asset': asset_id, 'source': provider, 'warning': f'First month: {str(exc)[:160]}'})
-                else:
+                elif provider == 'yahoo':
                     end = int((datetime.fromisoformat(cutoff).replace(tzinfo=ZoneInfo('America/New_York')) + timedelta(days=1)).timestamp())
                     url = f'https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol)}?' + urlencode({
                         'interval': '1mo', 'period1': -2208988800, 'period2': end})
                     rows = parse_yahoo(download(url, f'{symbol}:{cutoff[:7]}', 'https://finance.yahoo.com/'), symbol, url)
+                else:
+                    url = 'https://push2his.eastmoney.com/api/qt/stock/kline/get?' + urlencode({
+                        'secid': symbol, 'klt': 103, 'fqt': 0, 'beg': 0, 'end': 20500101, 'lmt': 10000,
+                        'fields1': 'f1,f2,f3,f4,f5,f6', 'fields2': 'f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61'})
+                    rows = parse_eastmoney(download(url, f'{symbol}:{cutoff[:7]}', 'https://quote.eastmoney.com/'), symbol, url)
                 rows = completed_months(rows, asset, now)
                 additions = verified_extension(completed_months(read_points(asset_id), asset, now), rows)
                 save_points(asset_id, additions, int(now.timestamp() * 1000))

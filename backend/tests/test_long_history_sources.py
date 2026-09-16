@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime
 from unittest.mock import patch
 
-from backend.long_history_sources import extend_archives, parse_fred, parse_yahoo, verified_extension
+from backend.long_history_sources import extend_archives, parse_eastmoney, parse_fred, parse_yahoo, verified_extension
 
 
 def point(period, close=100):
@@ -11,6 +11,49 @@ def point(period, close=100):
 
 
 class MonthlyArchiveTests(unittest.TestCase):
+    def test_eastmoney_extension_uses_shared_fetcher_and_keeps_the_current_month_out(self):
+        old = [point(f'2025-{month:02d}') for month in range(1, 13)]
+        payload = {'rc': 0, 'data': {'code': '000001', 'market': 1, 'klines': [
+            '1991-12-31,100,292.75', *[f"{row['period']}-28,100,100" for row in old], '2026-09-16,100,120']}}
+        with patch('backend.long_history_sources.FRED_SERIES', {}), \
+                patch('backend.long_history_sources.YAHOO_SERIES', {}), \
+                patch('backend.long_history_sources.EASTMONEY_SERIES', {'SH000001': '1.000001'}), \
+                patch('backend.long_history_sources.read_points', return_value=old), \
+                patch('backend.long_history_sources.save_points') as save, \
+                patch('backend.long_history_sources.publish'), \
+                patch('backend.long_history_sources.time.sleep'), \
+                patch('backend.server.fetch_eastmoney_json', return_value=payload) as fetch:
+            result = extend_archives(datetime.fromisoformat('2026-09-16T20:00:00+08:00'))
+        self.assertEqual(result['archives'][0]['added'], 1)
+        self.assertEqual(save.call_args.args[1][0]['period'], '1991-12')
+        self.assertEqual(fetch.call_args.kwargs['ttl_seconds'], 30 * 24 * 3600)
+
+    def test_eastmoney_failure_preserves_the_existing_archive(self):
+        with patch('backend.long_history_sources.FRED_SERIES', {}), \
+                patch('backend.long_history_sources.YAHOO_SERIES', {}), \
+                patch('backend.long_history_sources.EASTMONEY_SERIES', {'SH000001': '1.000001'}), \
+                patch('backend.long_history_sources.save_points') as save, \
+                patch('backend.long_history_sources.time.sleep'), \
+                patch('backend.server.fetch_eastmoney_json', return_value=None):
+            result = extend_archives(datetime.fromisoformat('2026-09-16T20:00:00+08:00'))
+        save.assert_not_called()
+        self.assertIn('existing history retained', result['archives'][0]['error'])
+
+    def test_eastmoney_checks_index_identity_and_official_early_sse_closes(self):
+        payload = {'rc': 0, 'data': {'code': '000001', 'market': 1, 'klines': ['1991-12-31,120,292.75,300,100']}}
+        rows = parse_eastmoney(json.dumps(payload), '1.000001', 'url')
+        self.assertEqual(rows[0]['close'], 292.75)
+        self.assertTrue(rows[0]['monthComplete'])
+        self.assertEqual(rows[0]['source'], 'eastmoney')
+        with self.assertRaises(ValueError):
+            parse_eastmoney(json.dumps(payload), '0.399001', 'url')
+        payload['data']['klines'][0] = '1991-12-31,120,134.30,300,100'
+        with self.assertRaisesRegex(ValueError, 'yearbook'):
+            parse_eastmoney(json.dumps(payload), '1.000001', 'url')
+        for text in ['<html>denied</html>', '{"rc":0,"data":null}', '{"rc":1,"data":{}}']:
+            with self.assertRaises(ValueError):
+                parse_eastmoney(text, '1.000001', 'url')
+
     def test_fred_monthly_labels_are_month_precision_not_first_day_trades(self):
         text = 'observation_date,NASDAQCOM\n1971-03-01,105.970\n1971-04-01,.\n1971-05-01,NaN\n'
         rows = parse_fred(text, 'NASDAQCOM', 'https://fred.stlouisfed.org/')
@@ -51,6 +94,7 @@ class MonthlyArchiveTests(unittest.TestCase):
             f"{row['period']}-01,100\n" for row in old) + '2026-09-01,200\n'
         with patch('backend.long_history_sources.FRED_SERIES', {'IXIC': 'NASDAQCOM'}), \
                 patch('backend.long_history_sources.YAHOO_SERIES', {}), \
+                patch('backend.long_history_sources.EASTMONEY_SERIES', {}), \
                 patch('backend.long_history_sources.read_points', return_value=old), \
                 patch('backend.long_history_sources.save_points') as save, \
                 patch('backend.long_history_sources.publish'), \

@@ -6,22 +6,23 @@ import HistoryComparisonTable from './HistoryComparisonTable';
 import type { HistoryComparison, LongHistoryAsset, LongHistoryCatalog, LongHistorySeries } from '../longHistory';
 
 vi.mock('../api', () => ({ fetchLongHistory: vi.fn() }));
-const performance = { startPeriod: '2024-12', endPeriod: '2025-12', months: 12, change: 20, cagr: 20, reason: '', cagrReason: '' };
+const performance = { startPeriod: '2024-12', endPeriod: '2025-12', startClose: 100, endClose: 120, months: 12, change: 20, cagr: 20, reason: '', cagrReason: '' };
 const asset = (id: string, name: string): LongHistoryAsset => ({
   id, name, group: 'usa', basis: 'price', unit: '点', firstDate: '2024-12-31', lastDate: '2025-12-31',
   count: 2, note: '价格涨跌，不含股息再投资。', refreshFailed: false, sources: ['腾讯财经'],
-  performance: { '5': performance, '10': performance, '20': performance, all: performance },
+  performance: { '5': performance, '10': performance, '20': performance, '30': performance, all: performance },
   annual: [{ year: 2025, return: 20, startDate: '2024-12-31', startClose: 100, endDate: '2025-12-31', endClose: 120,
     reason: '', yearToDate: false, sourceUrl: 'https://example.com/' }],
 });
 const sp = asset('INX', '标普500');
 const ndx = asset('NDX', '纳指100');
 const comparison: HistoryComparison = { startPeriod: '2021-01', endPeriod: '2025-12',
-  rows: [{ id: 'INX', ...performance, startPeriod: '2020-12', months: 60, change: 60, cagr: 9.86 },
-    { id: 'NDX', ...performance, change: null, cagr: null, reason: '缺少区间起止月数据' }] };
+  rows: [{ id: 'INX', ...performance, startPeriod: '2020-12', endClose: 160, months: 60, change: 60, cagr: 9.86 },
+    { id: 'NDX', ...performance, startClose: null, change: null, cagr: null, reason: '缺少区间起止月数据' }] };
 const tenYear: HistoryComparison = { ...comparison, startPeriod: '2016-01',
-  rows: [{ ...comparison.rows[0], startPeriod: '2015-12', months: 120, change: 300 }, comparison.rows[1]] };
-const ranges = { '5': comparison, '10': tenYear, '20': { ...tenYear, startPeriod: '2006-01' }, all: comparison };
+  rows: [{ ...comparison.rows[0], startPeriod: '2015-12', startClose: 40, months: 120, change: 300 }, comparison.rows[1]] };
+const ranges = { '5': comparison, '10': tenYear, '20': { ...tenYear, startPeriod: '2006-01' },
+  '30': { ...tenYear, startPeriod: '1996-01' }, all: { ...comparison, independentPeriods: true } };
 const catalog: LongHistoryCatalog = { schemaVersion: 1, generatedAt: 1, year: 2026, assets: [sp, ndx],
   comparisons: { all: ranges, china: ranges, usa: ranges, asia: ranges, assets: ranges } };
 const series = (item: LongHistoryAsset): LongHistorySeries => ({ schemaVersion: 1, generatedAt: 1, asset: item,
@@ -75,6 +76,17 @@ describe('long-term history page', () => {
     expect(screen.getByRole('table')).not.toHaveTextContent('0.00%');
   });
 
+  it('shows a calculable first partial year with the actual first-month baseline', async () => {
+    const partial = { ...sp, annual: [{ ...sp.annual[0], partialYear: true, startDate: '2025-07-31' }] };
+    vi.mocked(fetchLongHistory).mockImplementation(async id => id ? series(partial) : catalog);
+    render(<LongHistoryPage />);
+    const table = await screen.findByRole('table');
+    expect(table).toHaveTextContent('+20.00%');
+    expect(table).toHaveTextContent('首段');
+    expect(table).toHaveTextContent('2025-07 起');
+    expect(within(table).getByRole('columnheader', { name: '基准收盘' })).toBeInTheDocument();
+  });
+
   it('removes redundant headings, current-year badges, raw source links and loading copy', async () => {
     const current = { ...sp, annual: [{ ...sp.annual[0], year: 2026, yearToDate: true }] };
     vi.mocked(fetchLongHistory).mockImplementation(async id => id ? series(current) : catalog);
@@ -107,8 +119,10 @@ describe('long-term history page', () => {
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: '历史涨幅年度' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('历史时间区间')).toHaveValue('10');
-    expect(screen.getByLabelText('涨幅统计区间')).toHaveTextContent('2016-01 至 2025-12');
-    expect(within(table).getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['排名', '名称', '涨幅↓', '年化涨幅']);
+    expect(table.querySelector('tbody tr td:last-child')).toHaveTextContent('2016-01 至 2025-12');
+    expect(within(table).getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['排名', '名称', '涨幅↓', '年化涨幅', '起止值', '区间']);
+    expect(table.querySelector('tbody th')).toHaveTextContent('标普500');
+    expect(table.querySelector('tbody th')).not.toHaveTextContent('2016');
     fireEvent.click(within(table).getByRole('button', { name: '标普500' }));
     await screen.findByRole('img', { name: '标普500长期走势' });
     expect(window.location.search).toContain('view=price');
@@ -147,7 +161,7 @@ describe('long-term history page', () => {
     expect(screen.getByText('区间涨幅').parentElement).toHaveTextContent('+100.00%');
     fireEvent.click(screen.getByRole('tab', { name: '涨幅' }));
     expect(screen.getByRole('table', { name: '区间涨幅' })).toHaveTextContent('+60.00%');
-    expect(screen.getByLabelText('涨幅统计区间')).toHaveTextContent('2021-01 至 2025-12');
+    expect(screen.getByRole('table').querySelector('tbody tr td:last-child')).toHaveTextContent('2021-01 至 2025-12');
     fireEvent.click(screen.getByRole('tab', { name: '走势' }));
     expect(screen.getByLabelText('历史时间区间')).toHaveValue('5');
     expect(screen.getByText('区间涨幅').parentElement).toHaveTextContent('+100.00%');
@@ -157,7 +171,7 @@ describe('long-term history page', () => {
     fireEvent.click(screen.getByRole('tab', { name: '涨幅' }));
     expect(screen.getByLabelText('历史时间区间')).toHaveValue('10');
     expect(screen.getByRole('table', { name: '区间涨幅' })).toHaveTextContent('+300.00%');
-    expect(screen.getByLabelText('涨幅统计区间')).toHaveTextContent('2016-01 至 2025-12');
+    expect(screen.getByRole('table').querySelector('tbody tr td:last-child')).toHaveTextContent('2016-01 至 2025-12');
     expect(fetchLongHistory).toHaveBeenCalledTimes(2);
   });
 
@@ -186,19 +200,105 @@ describe('long-term history page', () => {
     expect(screen.getByRole('columnheader', { name: '年化涨幅' })).toHaveAttribute('aria-sort', 'descending');
   });
 
-  it('preserves the common complete-year range and leaves missing data unranked', async () => {
+  it('shows the actual calculation endpoints in a neutral column without fetching individual series', async () => {
+    window.history.replaceState({}, '', '/history?view=change&range=5');
+    render(<LongHistoryPage />);
+    const table = await screen.findByRole('table', { name: '区间涨幅' });
+    const values = table.querySelector('tbody tr td:nth-child(5)')!;
+    expect(values).toHaveTextContent('100 → 160 点');
+    expect(values).toHaveAttribute('title', '基准：2020-12；期末：2025-12；单位：点');
+    expect(values.className).not.toMatch(/_up_|_down_/);
+    expect(table.querySelector('tbody tr td:last-child')).toHaveTextContent('2021-01 至 2025-12');
+    fireEvent.click(screen.getByRole('button', { name: '近10年' }));
+    expect(table.querySelector('tbody tr td:nth-child(5)')).toHaveTextContent('40 → 160');
+    expect(table.querySelector('tbody tr:nth-child(2) td:nth-child(5)')).toHaveTextContent('-- → 120');
+    expect(fetchLongHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps zero and negative prices but does not invent prices for legacy or invalid summaries', () => {
+    const rows = [
+      { id: 'ZERO', ...performance, startClose: 0, endClose: -37.63, change: null, cagr: null },
+      { id: 'LEGACY', ...performance, startClose: undefined, endClose: undefined },
+      { id: 'INVALID', ...performance, startClose: Infinity, endClose: NaN },
+      { id: 'SMALL', ...performance, startClose: 0.0625, endClose: 123456.78 },
+    ];
+    render(<HistoryComparisonTable comparison={{ ...comparison, rows }} assets={rows.map(row => asset(row.id, row.id))} onSelect={vi.fn()} />);
+    const valueFor = (name: string) => screen.getByRole('button', { name }).closest('tr')!.querySelector('td:nth-child(5)');
+    expect(valueFor('ZERO')).toHaveTextContent('0 → -37.63');
+    expect(valueFor('LEGACY')).toHaveTextContent('-- → --');
+    expect(valueFor('INVALID')).toHaveTextContent('-- → --');
+    expect(valueFor('SMALL')).toHaveTextContent('0.0625 → 123,456.78');
+  });
+
+  it('shows one dollar symbol with the same endpoint tooltip format as index points', () => {
+    const cases = [
+      ['GC', '黄金', 'USD', '$100 → 120'],
+      ['SI', '白银', 'USD', '$100 → 120'],
+      ['CL', '原油', 'USD', '$100 → 120'],
+      ['BTC', '比特币', 'USD', '$100 → 120'],
+      ['INX', '标普500', '点', '100 → 120 点'],
+      ['HSI', '恒生指数', '点', '100 → 120 点'],
+      ['OTHER', '其他币种', 'CNY', '100 → 120 CNY'],
+      ['UNKNOWN', '未知单位', '', '100 → 120'],
+    ];
+    const assets = cases.map(([id, name, unit]) => ({ ...asset(id, name), unit }));
+    const rows = assets.map(item => ({ ...performance, id: item.id }));
+    render(<HistoryComparisonTable comparison={{ ...comparison, rows }} assets={assets} onSelect={vi.fn()} />);
+    for (const [, name, unit, expected] of cases) {
+      const cell = screen.getByRole('button', { name }).closest('tr')!.querySelector('td:nth-child(5)')!;
+      expect(cell.textContent).toBe(expected);
+      expect(cell).toHaveAttribute('title', `基准：2024-12；期末：2025-12${unit ? `；单位：${unit === 'USD' ? '美元 USD' : unit}` : ''}`);
+      if (unit === 'USD') {
+        expect(cell.textContent!.match(/\$/g)).toHaveLength(1);
+      } else {
+        expect(cell).not.toHaveTextContent('$');
+      }
+    }
+    expect(fetchLongHistory).not.toHaveBeenCalled();
+  });
+
+  it('shows lifetime ranges per row and leaves missing data unranked', async () => {
     window.history.replaceState({}, '', '/history?view=change');
     render(<LongHistoryPage />);
     const table = await screen.findByRole('table', { name: '区间涨幅' });
     expect(screen.getByLabelText('历史时间区间')).toHaveValue('all');
-    expect(screen.getByRole('button', { name: '共同区间' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByLabelText('涨幅统计区间')).toHaveTextContent('2021-01 至 2025-12');
+    expect(within(screen.getByRole('group', { name: '走势范围' })).getByRole('button', { name: '全部' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByText('共同区间')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('涨幅统计区间')).not.toBeInTheDocument();
+    expect(table.querySelector('tbody tr td:last-child')).toHaveTextContent('2020-12 至 2025-12');
+    expect(table.querySelector('tbody th')).not.toHaveTextContent('2020-12');
+    expect(table).toHaveTextContent('2020-12');
+    expect(table).toHaveTextContent('至 2025-12');
+    expect(screen.getByText(/起点和跨度不同/)).toBeInTheDocument();
     expect(table).toHaveTextContent('+60.00%');
     expect(within(table).queryByText('#2')).not.toBeInTheDocument();
     fireEvent.click(within(screen.getByRole('group', { name: '历史资产类别' })).getByRole('button', { name: 'A股' }));
     expect(table.querySelectorAll('tbody tr')).toHaveLength(0);
     expect(screen.getByLabelText('历史时间区间')).toHaveValue('all');
     expect(fetchLongHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('selects thirty years using either control without fetching each asset', async () => {
+    window.history.replaceState({}, '', '/history?view=change');
+    render(<LongHistoryPage />);
+    await screen.findByRole('table');
+    fireEvent.change(screen.getByLabelText('历史时间区间'), { target: { value: '30' } });
+    expect(screen.getByRole('button', { name: '近30年' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('table').querySelector('tbody tr td:last-child')).toHaveTextContent('1996-01 至 2025-12');
+    expect(window.location.search).toContain('range=30');
+    expect(fetchLongHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('revalidates an older catalog instead of presenting a missing range as empty history', async () => {
+    window.history.replaceState({}, '', '/history?view=change&range=30');
+    vi.mocked(fetchLongHistory).mockResolvedValueOnce({ ...catalog, comparisons: undefined }).mockResolvedValue(catalog);
+    render(<LongHistoryPage />);
+    await screen.findByText('区间结果待更新');
+    expect(screen.queryByText('暂无同区间数据')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    await screen.findByRole('table');
+    expect(fetchLongHistory).toHaveBeenLastCalledWith(undefined, true);
+    expect(screen.getByRole('table').querySelector('tbody tr td:last-child')).toHaveTextContent('1996-01 至 2025-12');
   });
 
   it('ignores obsolete single-year links and restores multi-year ranges on navigation', async () => {
@@ -211,7 +311,7 @@ describe('long-term history page', () => {
     window.history.replaceState({}, '', '/history?view=change&range=20');
     fireEvent.popState(window);
     expect(screen.getByLabelText('历史时间区间')).toHaveValue('20');
-    expect(screen.getByLabelText('涨幅统计区间')).toHaveTextContent('2006-01 至 2025-12');
+    expect(screen.getByRole('table').querySelector('tbody tr td:last-child')).toHaveTextContent('2006-01 至 2025-12');
     expect(fetchLongHistory).toHaveBeenCalledTimes(1);
   });
 });

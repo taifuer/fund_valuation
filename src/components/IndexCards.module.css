@@ -1,4 +1,7 @@
 .container {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
   max-width: 1040px;
   margin: 0 auto;
   padding: 0 16px;
@@ -15,12 +18,8 @@
   font-size: 13px;
   font-weight: 600;
   gap: 5px;
-  margin: 14px 0 6px;
+  margin: 0 0 8px;
   padding: 0 4px;
-}
-
-.sectionToggle:first-child {
-  margin-top: 0;
 }
 
 .sectionToggle:hover {

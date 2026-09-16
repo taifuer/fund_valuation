@@ -1,4 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { axisLabelWidth, chartPointerX, fitAxisTicks, nearestChartPoint, valueAxis } from '../chartLayout';
+import { nextChartIndex } from '../chartKeyboard';
+import { companyPlotSeries } from '../companyChart';
+import { useChartWidth } from '../hooks/useChartWidth';
 import { companyFundamentalsDataset, companySeries } from '../data/companyFundamentals';
 import { resolveCompanyReportReference } from '../data/companyReportSources';
 import { choiceFromSearch, replaceSearchParams } from '../routing';
@@ -252,56 +256,47 @@ function DetailMetric({ change, value }: DetailMetricProps) {
 interface TrendChartProps {
   company: CompanyFundamentals;
   points: CompanyFundamentalPoint[];
+  frequency: CompanyFrequency;
   metric: MetricKey;
   mode: TrendMode;
 }
 
-function TrendChart({ company, points, metric, mode }: TrendChartProps) {
-  const chartFrameRef = useRef<HTMLDivElement>(null);
-  const [chartWidth, setChartWidth] = useState(760);
-  const [selectedIndex, setSelectedIndex] = useState(Math.max(points.length - 1, 0));
-  const values = points
-    .map((point) => trendValue(points, point, metric, mode))
+function TrendChart({ company, points, frequency, metric, mode }: TrendChartProps) {
+  const { width, ref } = useChartWidth();
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const pointValues = useMemo(() => points.map(point => trendValue(points, point, metric, mode)), [points, metric, mode]);
+  const values = pointValues
     .filter((value): value is number => value != null);
-  const validPointIndices = points
-    .map((point, index) => trendValue(points, point, metric, mode) == null ? -1 : index)
+  const validPointIndices = pointValues
+    .map((value, index) => value == null ? -1 : index)
     .filter((index) => index >= 0);
   const firstPlotIndex = validPointIndices[0] ?? 0;
   const lastPlotIndex = validPointIndices[validPointIndices.length - 1] ?? firstPlotIndex;
-  const width = chartWidth;
-  const height = 286;
+  const height = 296;
   const compact = width < 520;
-  const plot = { left: compact ? 56 : 68, right: compact ? 10 : 20, top: 32, bottom: 44 };
+  const axis = valueAxis(values, false, mode === 'yoy');
+  const plot = { left: axisLabelWidth(axis.ticks.map(value => trendDisplay(value, metric, company, mode))), right: 18, top: 28, bottom: 42 };
   const innerWidth = width - plot.left - plot.right;
   const innerHeight = height - plot.top - plot.bottom;
-  const observedMin = values.length > 0 ? Math.min(...values) : 0;
-  const observedMax = values.length > 0 ? Math.max(...values) : 1;
-  const rawMin = mode === 'yoy' ? Math.min(observedMin, 0) : observedMin;
-  const rawMax = mode === 'yoy' ? Math.max(observedMax, 0) : observedMax;
-  const rawSpan = rawMax - rawMin || Math.abs(rawMax) || 1;
-  const minValue = rawMin - rawSpan * 0.12;
-  const maxValue = rawMax + rawSpan * 0.12;
-  const span = maxValue - minValue || 1;
-  const x = (index: number) => (
-    plot.left + (innerWidth * (index - firstPlotIndex)) / Math.max(lastPlotIndex - firstPlotIndex, 1)
-  );
-  const y = (value: number) => plot.top + ((maxValue - value) / span) * innerHeight;
-  const coordinates = points.map((point, index) => {
-    const value = trendValue(points, point, metric, mode);
-    return value == null ? null : { x: x(index), y: y(value), value, point, index };
-  }).filter((point): point is NonNullable<typeof point> => point != null);
+  const series = companyPlotSeries(points, pointValues, frequency, plot.left, width - plot.right);
+  const x = (index: number) => series.x(points[index].periodEnd);
+  const y = (value: number) => plot.top + axis.ratio(value) * innerHeight;
+  const coordinates = series.coordinates.map(point => ({ ...point, y: y(point.value) }));
   const maximumLabels = Math.max(2, Math.floor(innerWidth / (compact ? 72 : 84)));
   const labelCount = Math.min(maximumLabels, coordinates.length);
   const labelIndices = new Set(Array.from({ length: labelCount }, (_, index) => (
     coordinates[Math.round((index * (coordinates.length - 1)) / Math.max(labelCount - 1, 1))]?.index
   )).filter((index): index is number => index != null));
-  const path = coordinates.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
-  const ticks = Array.from({ length: 5 }, (_, index) => {
-    const value = maxValue - (span * index) / 4;
-    return { value, y: plot.top + (innerHeight * index) / 4 };
-  });
-  const activeIndex = Math.min(selectedIndex, Math.max(points.length - 1, 0));
-  const activePoint = points[activeIndex];
+  const labels = fitAxisTicks(coordinates.filter(point => labelIndices.has(point.index)).map(point => ({
+    x: point.x, label: point.point.period.replace(/^FY/, ''),
+    anchor: point.index === firstPlotIndex ? 'start' as const : point.index === lastPlotIndex ? 'end' as const : 'middle' as const,
+  })));
+  const path = coordinates.map(point => `${point.breakBefore ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+  const ticks = axis.ticks.map(value => ({ value, y: y(value) }));
+  const active = coordinates[Math.min(selectedIndex ?? coordinates.length - 1, coordinates.length - 1)];
+  const activeIndex = active?.index;
+  const activePoint = active?.point;
+  const showPoints = coordinates.length <= Math.max(2, Math.floor(innerWidth / 18));
   const activeValue = activePoint ? trendValue(points, activePoint, metric, mode) : null;
   const activeChange = activePoint ? metricChange(points, activePoint, metric) : { value: null, label: '--' };
   const activeResearchIntensity = activePoint ? researchIntensity(activePoint) : null;
@@ -323,26 +318,16 @@ function TrendChart({ company, points, metric, mode }: TrendChartProps) {
     return index >= firstPlotIndex && index <= lastPlotIndex ? [{ ...marker, index, x: x(index) }] : [];
   });
 
-  useLayoutEffect(() => {
-    const frame = chartFrameRef.current;
-    if (!frame) return undefined;
-    const updateWidth = () => {
-      const nextWidth = Math.max(280, Math.round(frame.getBoundingClientRect().width));
-      setChartWidth((current) => current === nextWidth ? current : nextWidth);
-    };
-    updateWidth();
-    if (typeof ResizeObserver === 'undefined') return undefined;
-    const observer = new ResizeObserver(updateWidth);
-    observer.observe(frame);
-    return () => observer.disconnect();
-  }, []);
-
   useEffect(() => {
-    setSelectedIndex(Math.max(points.length - 1, 0));
-  }, [metric, mode, points.length, company.id]);
+    setSelectedIndex(null);
+  }, [metric, mode, frequency, points.length, company.id]);
 
-  if (points.length === 0 || values.length === 0) {
+  if (!activePoint) {
     return <div className={styles.emptyState}>当前口径暂无数据</div>;
+  }
+
+  function pointer(event: PointerEvent<SVGSVGElement>) {
+    setSelectedIndex(nearestChartPoint(chartPointerX(event.currentTarget, event.clientX, event.clientY, width), coordinates));
   }
 
   return (
@@ -364,13 +349,21 @@ function TrendChart({ company, points, metric, mode }: TrendChartProps) {
           </small>
         )}
       </div>
-      <div className={styles.chartFrame} ref={chartFrameRef}>
+      <div className={styles.chartFrame}>
         <svg
+          ref={ref}
           className={styles.chart}
           height={height}
           viewBox={`0 0 ${width} ${height}`}
           width={width}
           role="img"
+          tabIndex={0}
+          onPointerMove={pointer}
+          onPointerDown={pointer}
+          onKeyDown={event => {
+            const next = nextChartIndex(event.key, selectedIndex, coordinates.length);
+            if (next != null) { event.preventDefault(); setSelectedIndex(next); }
+          }}
           aria-label={`${company.name}${metricLabel(company, metric)}${mode === 'yoy' ? '同比' : ''}趋势`}
         >
           {ticks.map((tick) => (
@@ -381,7 +374,7 @@ function TrendChart({ company, points, metric, mode }: TrendChartProps) {
               </text>
             </g>
           ))}
-          {mode === 'yoy' && minValue <= 0 && maxValue >= 0 && (
+          {mode === 'yoy' && (
             <line
               className={styles.zeroLine}
               x1={plot.left}
@@ -413,40 +406,24 @@ function TrendChart({ company, points, metric, mode }: TrendChartProps) {
             );
           })}
           <path className={styles.trendLine} d={path} />
-          {coordinates.map((coordinate) => (
+          {active && selectedIndex != null && <g data-testid="company-crosshair">
+            <line className={styles.crosshair} x1={active.x} x2={active.x} y1={plot.top} y2={height - plot.bottom} />
+            <line className={styles.crosshair} x1={plot.left} x2={width - plot.right} y1={active.y} y2={active.y} />
+          </g>}
+          {coordinates.filter((coordinate, i) => showPoints || coordinate.index === activeIndex || coordinate.breakBefore || coordinates[i + 1]?.breakBefore).map((coordinate) => (
             <g
               key={`${coordinate.point.period}-${coordinate.point.periodEnd}`}
-              className={styles.chartPointGroup}
-              role="button"
-              tabIndex={0}
-              aria-label={`${coordinate.point.period} ${mode === 'yoy'
-                ? metricChange(points, coordinate.point, metric).label
-                : trendDisplay(coordinate.value, metric, company, mode)}`}
-              onFocus={() => setSelectedIndex(coordinate.index)}
-              onPointerEnter={() => setSelectedIndex(coordinate.index)}
-              onPointerDown={() => setSelectedIndex(coordinate.index)}
             >
-              <circle className={styles.pointTarget} cx={coordinate.x} cy={coordinate.y} r="14" />
               <circle
-                className={`${styles.chartPoint} ${coordinate.index === activeIndex ? styles.chartPointActive : ''}`}
+                className={`${styles.chartPoint} ${coordinate.index === activeIndex && selectedIndex != null ? styles.chartPointActive : ''}`}
                 cx={coordinate.x}
                 cy={coordinate.y}
-                r={coordinate.index === activeIndex ? 5 : 3.5}
+                r={coordinate.index === activeIndex ? 4 : 3}
               />
-              {labelIndices.has(coordinate.index) && (
-                <text
-                  className={styles.periodLabel}
-                  x={coordinate.x}
-                  y={height - 19}
-                  textAnchor={coordinate.index === firstPlotIndex
-                    ? 'start'
-                    : coordinate.index === lastPlotIndex ? 'end' : 'middle'}
-                >
-                  {coordinate.point.period.replace(/^FY/, '')}
-                </text>
-              )}
             </g>
           ))}
+          {labels.map(label => <text key={`${label.x}-${label.label}`} className={styles.periodLabel}
+            x={label.x} y={height - 17} textAnchor={label.anchor}>{label.label}</text>)}
         </svg>
       </div>
       {(mode === 'yoy' || metric === 'employees' || metric === 'researchAndDevelopment'
@@ -815,6 +792,7 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
           <TrendChart
             company={selectedCompany}
             points={trendPoints}
+            frequency={effectiveFrequency}
             metric={effectiveMetric}
             mode={trendMode}
           />

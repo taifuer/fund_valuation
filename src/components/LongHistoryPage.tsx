@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchLongHistory } from '../api';
 import { choiceFromSearch, replaceSearchParams } from '../routing';
-import { fitAxisTicks } from '../chartLayout';
+import { chartPointerX, fitAxisTicks } from '../chartLayout';
 import { nextChartIndex } from '../chartKeyboard';
 import { useChartWidth } from '../hooks/useChartWidth';
 import { formatReturn } from '../historyMetrics';
-import { longHistoryChart, nearestHistoryPoint } from '../longHistory';
+import { formatHistoryNumber as number, longHistoryChart, nearestHistoryPoint } from '../longHistory';
 import type { LongHistoryCatalog, LongHistorySeries } from '../longHistory';
 import HistoryComparisonTable from './HistoryComparisonTable';
 import styles from './LongHistoryPage.module.css';
 
 const GROUPS = [['all', '全部'], ['china', 'A股'], ['usa', '美股'], ['asia', '亚太'], ['assets', '资产']] as const;
-const RANGES = [['5', '近5年'], ['10', '近10年'], ['20', '近20年'], ['all', '全部']] as const;
+const RANGES = [['5', '近5年'], ['10', '近10年'], ['20', '近20年'], ['30', '近30年'], ['all', '全部']] as const;
 
 function readChoices() {
   const search = window.location.search;
@@ -23,11 +23,6 @@ function readChoices() {
     view: choiceFromSearch(search, 'view', ['price', 'change'] as const, 'price'),
   };
 }
-
-const number = (value: number | null, compact = false) => value == null ? '--' : value.toLocaleString('en-US', {
-  maximumFractionDigits: Math.abs(value) < 1 ? 4 : compact ? 0 : 2,
-  ...(compact && Math.abs(value) >= 10000 ? { notation: 'compact' as const, maximumFractionDigits: 1 } : {}),
-});
 
 export default function LongHistoryPage() {
   const [choices, setChoices] = useState(readChoices);
@@ -53,7 +48,7 @@ export default function LongHistoryPage() {
       if (document.hidden) { timer = setTimeout(load, 15_000); return; }
       setLoading(true);
       try {
-        const data = await fetchLongHistory();
+        const data = await fetchLongHistory(undefined, attempt > 0);
         if (cancelled) return;
         if (!data) {
           setError('暂无已归档的历史数据');
@@ -89,7 +84,7 @@ export default function LongHistoryPage() {
     async function load() {
       if (document.hidden) { timer = setTimeout(load, 15_000); return; }
       try {
-        const payload = await fetchLongHistory(assetId);
+        const payload = await fetchLongHistory(assetId, attempt > 0);
         if (cancelled) return;
         if (payload) { setSeries(payload as LongHistorySeries); setError(''); }
         else { setError('该标的暂无已归档历史'); timer = setTimeout(load, 15_000); }
@@ -140,25 +135,15 @@ export default function LongHistoryPage() {
   }, [points, chart]);
   const annual = asset?.annual ?? [];
   const performance = asset?.performance?.[choices.range];
-  const comparison = catalog?.comparisons?.[choices.group]?.[choices.range];
+  const candidate = catalog?.comparisons?.[choices.group]?.[choices.range];
+  const comparison = choices.range === 'all' && !candidate?.independentPeriods ? undefined : candidate;
   const busy = choices.view === 'change' ? !catalog && loading : loading;
   const startPeriod = points[0]?.period ?? performance?.startPeriod;
   const endPeriod = points[points.length - 1]?.period ?? performance?.endPeriod;
   const returnClass = (value: number | null | undefined) => value == null ? styles.missing : value >= 0 ? styles.up : styles.down;
 
   function pointer(event: React.PointerEvent<SVGSVGElement>) {
-    const svg = event.currentTarget;
-    const matrix = svg.getScreenCTM();
-    let x: number;
-    if (matrix) {
-      const p = svg.createSVGPoint();
-      p.x = event.clientX;
-      p.y = event.clientY;
-      x = p.matrixTransform(matrix.inverse()).x;
-    } else {
-      const rect = svg.getBoundingClientRect();
-      x = (event.clientX - rect.left) * width / rect.width;
-    }
+    const x = chartPointerX(event.currentTarget, event.clientX, event.clientY, width);
     setSelectedIndex(nearestHistoryPoint(x, chart.positions));
   }
 
@@ -191,14 +176,16 @@ export default function LongHistoryPage() {
         <div className={`${styles.segmented} ${styles.ranges}`}>
           {RANGES.map(([value, label]) => <button key={value} type="button" aria-pressed={choices.range === value}
             className={`${styles.segmentButton} ${choices.range === value ? styles.segmentButtonActive : ''}`}
-            onClick={() => choose({ range: value })}>{value === 'all' && choices.view === 'change' ? '共同区间' : label}</button>)}
+            onClick={() => choose({ range: value })}>{label}</button>)}
         </div>
+        <div className={styles.mobileRange}>
         <select className={styles.rangeSelect} aria-label="历史时间区间" value={choices.range}
           onChange={event => choose({ range: event.target.value as typeof choices.range })}>
           {RANGES.map(([value, label]) => <option key={value} value={value}>
-            {value === 'all' && choices.view === 'change' ? '共同区间' : label}
+            {label}
           </option>)}
         </select>
+        </div>
       </div>
       </div>
       <div id="history-panel" role="tabpanel" aria-labelledby={`history-view-${choices.view}`}>
@@ -208,7 +195,10 @@ export default function LongHistoryPage() {
       </div>}
       {error && <div role="status" className={styles.message}>{error}<button type="button" onClick={() => setAttempt(value => value + 1)}>重试</button></div>}
       {busy && !error && !currentSeries && <div className={styles.placeholder} aria-hidden="true" />}
-      {choices.view === 'change' && catalog && <HistoryComparisonTable comparison={comparison} assets={filtered}
+      {choices.view === 'change' && catalog && !comparison && !error && <div role="status" className={styles.message}>
+        区间结果待更新<button type="button" onClick={() => setAttempt(value => value + 1)}>重试</button>
+      </div>}
+      {choices.view === 'change' && catalog && comparison && <HistoryComparisonTable comparison={comparison} assets={filtered}
         onSelect={id => choose({ asset: id, view: 'price' })} />}
       {choices.view === 'price' && asset && currentSeries && <>
         <div className={styles.assetHeader}>
@@ -239,7 +229,7 @@ export default function LongHistoryPage() {
           }}>
           {chart.ticks.map((tick, i) => <g key={i}>
             <line x1={chart.left} x2={chart.right} y1={tick.y} y2={tick.y} className={styles.gridline} />
-            <text x={chart.left - 10} y={tick.y + 4} textAnchor="end">{number(tick.value, true)}</text>
+            <text className={styles.axisLabel} x={chart.left - 10} y={tick.y + 4} textAnchor="end">{number(tick.value, true)}</text>
           </g>)}
           <path d={chart.path} className={styles.line} />
           {position && <g>
@@ -247,21 +237,22 @@ export default function LongHistoryPage() {
               <line x1={position.x} x2={position.x} y1={chart.top} y2={chart.bottom} className={styles.crosshair} />
               <line x1={chart.left} x2={chart.right} y1={position.y} y2={position.y} className={styles.crosshair} />
             </g>}
-            <circle cx={position.x} cy={position.y} r={4} className={styles.dot} />
+            <circle cx={position.x} cy={position.y} r={4} className={`${styles.dot} ${selectedIndex != null ? styles.dotActive : ''}`} />
           </g>}
-          {yearTicks.map(tick => <text key={`${tick.label}-${tick.x}`} x={tick.x} y={279} textAnchor={tick.anchor}>{tick.label}</text>)}
-          {!points.length && !loading && <text x={width / 2} y={145} textAnchor="middle">暂无可用历史数据</text>}
+          {yearTicks.map(tick => <text className={styles.axisLabel} key={`${tick.label}-${tick.x}`} x={tick.x} y={279} textAnchor={tick.anchor}>{tick.label}</text>)}
+          {!points.length && !loading && <text className={styles.axisLabel} x={width / 2} y={145} textAnchor="middle">暂无可用历史数据</text>}
         </svg>
         <div className={styles.tableHeading}><h3>年度收益</h3></div>
         <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="年度收益表格">
           <table className={styles.table} aria-label={`${asset.name}年度收益`}>
             <colgroup><col className={styles.yearCol} /><col /><col /><col /><col /></colgroup>
-            <thead><tr><th scope="col">年度</th><th scope="col">涨幅</th><th scope="col">期末收盘</th><th scope="col">上年末收盘</th><th scope="col">截至</th></tr></thead>
+            <thead><tr><th scope="col">年度</th><th scope="col">涨幅</th><th scope="col">期末收盘</th><th scope="col">基准收盘</th><th scope="col">截至</th></tr></thead>
             <tbody>{(allYears ? annual : annual.slice(0, 10)).map(row => <tr key={row.year}>
-              <th scope="row">{row.year}</th>
+              <th scope="row">{row.year}{row.partialYear && <small>首段</small>}</th>
               <td className={row.return == null ? styles.missing : row.return >= 0 ? styles.up : styles.down}>
                 {row.return == null ? '--' : formatReturn(row.return)}
                 {row.reason && <small>{row.reason}</small>}
+                {row.partialYear && <small>{row.startDate?.slice(0, 7)} 起</small>}
               </td>
               <td>{number(row.endClose)}</td><td title={row.startDate ?? undefined}>{number(row.startClose)}</td>
               <td className={styles.date} title={row.endDate ?? undefined}>{row.endDate?.slice(0, 7) ?? '--'}</td>
@@ -271,7 +262,7 @@ export default function LongHistoryPage() {
         {annual.length > 10 && <div className={styles.more}><button type="button" aria-expanded={allYears} onClick={() => setAllYears(!allYears)}>
           {allYears ? '收起历史年度' : `显示全部 ${annual.length} 个年度`}
         </button></div>}
-        <p className={styles.note}>* {asset.note}按完整月份统计，当前月份不纳入；年化为所选区间的复合年化涨幅，不含汇率和持有成本。缺少年末基准时不计算全年收益。
+        <p className={styles.note}>* {asset.note}按完整月份统计，当前月份不纳入；年化为所选区间的复合年化涨幅，不含汇率和持有成本。首段按最早可用月末至当年末计算，不代表完整年度或上市首日以来收益；其余年度以上年末为基准。
           {asset.missingMonths?.length ? ` 缺少 ${asset.missingMonths.length} 个月的有效月末记录。` : ''}{asset.refreshFailed ? ' 最新来源检查失败，保留已验证历史。' : ''}</p>
         <p className={styles.sourceNote}>数据来源：{asset.sources.join('、') || '待补全'}。</p>
       </>}

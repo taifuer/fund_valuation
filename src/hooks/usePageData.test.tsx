@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OverviewSnapshot } from '../api';
 import type { Fund } from '../types';
-import { useOverviewData } from './usePageData';
+import { useOverviewData, useRankingMarketData } from './usePageData';
 
 const apiMocks = vi.hoisted(() => ({
   fetchAllQuotes: vi.fn(),
@@ -97,5 +97,16 @@ describe('useOverviewData', () => {
       await pendingRefresh;
     });
     await waitFor(() => expect(result.current.quotes.get('sh000001')?.price).toBe(3210));
+  });
+
+  it('does not request live quotes for close-only index archives', async () => {
+    apiMocks.fetchDashboardSnapshot.mockResolvedValue({
+      quotes: overviewSnapshot(3200, 1).quotes, marketStates: new Map(),
+    });
+    renderHook(() => useRankingMarketData(true));
+    await waitFor(() => expect(apiMocks.fetchDashboardSnapshot).toHaveBeenCalled());
+    const symbols = apiMocks.fetchDashboardSnapshot.mock.calls[0][0] as string[];
+    for (const symbol of ['gb_rut', 'gb_sox', 'gb_oex']) expect(symbols).not.toContain(symbol);
+    expect(symbols).toContain('gb_ndx');
   });
 });

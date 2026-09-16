@@ -263,7 +263,7 @@ export function useRankingMarketData(enabled: boolean) {
 
   const symbols = useMemo(() => (
     [...new Set([
-      ...RANKING_INDICES.map((item) => item.sinaSymbol),
+      ...RANKING_INDICES.filter((item) => item.quoteMode !== 'close').map((item) => item.sinaSymbol),
       ...INDICES.flatMap((item) => item.futures?.sinaSymbol ?? []),
       ...MARKET_ASSETS.map((item) => item.sinaSymbol),
       ...RANKING_ETFS.map((item) => item.sinaSymbol),

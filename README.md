@@ -67,6 +67,7 @@ npm run dev
 - [数据与估算](./docs/DATA.md)：数据来源、估算公式、公司数据口径与已知局限
 - [公司数据维护](./docs/COMPANY_DATA.md)：离线财报数据、候选生成、审阅流程与财报日历来源
 - [长期历史](./docs/LONG_TERM_HISTORY.md)：指数与资产覆盖范围、年度收益口径及补全方式
+- [图表规范](./docs/CHARTS.md)：基础样式、坐标口径与桌面、触屏交互
 - [部署运维](./docs/OPERATIONS.md)：本地开发、Docker、回填、备份、数据库维护与测试
 - [项目复盘](./docs/PROJECT_RETROSPECTIVE.md)：从 QDII 估值工具演进为全球资产看板的决策与经验
 

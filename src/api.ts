@@ -32,14 +32,14 @@ function apiUrl(path: string): string {
 const longHistoryCache = new Map<string, { expiresAt: number; payload: LongHistoryCatalog | LongHistorySeries }>();
 const longHistoryPending = new Map<string, Promise<LongHistoryCatalog | LongHistorySeries | null>>();
 
-export async function fetchLongHistory(symbol?: string): Promise<LongHistoryCatalog | LongHistorySeries | null> {
+export async function fetchLongHistory(symbol?: string, refresh = false): Promise<LongHistoryCatalog | LongHistorySeries | null> {
   const key = symbol ?? 'catalog';
   const cached = longHistoryCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.payload;
+  if (!refresh && cached && cached.expiresAt > Date.now()) return cached.payload;
   const existing = longHistoryPending.get(key);
   if (existing) return existing;
   const pending = (async () => {
-    const response = await request(apiUrl(`/api/longhistory${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''}`), {}, 12_000);
+    const response = await request(apiUrl(`/api/longhistory${symbol ? `?symbol=${encodeURIComponent(symbol)}` : ''}`), refresh ? { cache: 'no-cache' } : {}, 12_000);
     if (response.status === 202) { await response.json(); return null; }
     if (!response.ok) throw new Error('历史数据加载失败');
     const payload = await response.json();

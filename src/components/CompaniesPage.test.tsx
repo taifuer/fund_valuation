@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import CompaniesPage from './CompaniesPage';
+import { axisLabelWidth } from '../chartLayout';
 
 describe('CompaniesPage', () => {
   beforeEach(() => {
@@ -314,11 +315,31 @@ describe('CompaniesPage', () => {
     const plottedPoints = Array.from(chart.querySelectorAll('circle'))
       .filter((circle) => circle.getAttribute('r') !== '14');
     const chartWidth = Number(chart.getAttribute('width'));
-    const expectedLeft = chartWidth < 520 ? 56 : 68;
-    const expectedRight = chartWidth - (chartWidth < 520 ? 10 : 20);
+    const expectedLeft = axisLabelWidth(Array.from(chart.querySelectorAll('text')).filter(text => text.getAttribute('text-anchor') === 'end' && Number(text.getAttribute('y')) < 254).map(text => text.textContent ?? ''));
+    const expectedRight = chartWidth - 18;
 
     expect(plottedPoints.length).toBeGreaterThan(2);
     expect(plottedPoints[0]).toHaveAttribute('cx', String(expectedLeft));
     expect(plottedPoints[plottedPoints.length - 1]).toHaveAttribute('cx', String(expectedRight));
+  });
+
+  it('uses a single keyboard focus stop and keeps the reading and crosshair synchronized', () => {
+    window.history.replaceState({}, '', '/companies?company=tencent');
+    render(<CompaniesPage />);
+    const chart = screen.getByRole('img', { name: '腾讯营业收入趋势' });
+    expect(chart).toHaveAttribute('tabindex', '0');
+    expect(chart.querySelectorAll('[tabindex]')).toHaveLength(0);
+    const reading = chart.parentElement!.previousElementSibling!;
+    const latest = reading.textContent;
+    fireEvent.keyDown(chart, { key: 'Home' });
+    expect(reading.textContent).not.toBe(latest);
+    expect(screen.getByTestId('company-crosshair').querySelectorAll('line')).toHaveLength(2);
+    const firstX = Number(screen.getByTestId('company-crosshair').querySelector('line')!.getAttribute('x1'));
+    fireEvent.keyDown(chart, { key: 'ArrowRight' });
+    expect(Number(screen.getByTestId('company-crosshair').querySelector('line')!.getAttribute('x1'))).toBeGreaterThan(firstX);
+    fireEvent.keyDown(chart, { key: 'End' });
+    expect(reading.textContent).toBe(latest);
+    fireEvent.click(screen.getByRole('button', { name: '同比' }));
+    expect(screen.queryByTestId('company-crosshair')).not.toBeInTheDocument();
   });
 });

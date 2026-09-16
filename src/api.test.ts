@@ -45,6 +45,17 @@ beforeEach(() => {
 });
 
 describe('long history snapshot API', () => {
+  it('revalidates cached history for an explicit retry', async () => {
+    const payload = { schemaVersion: 1, asset: { id: 'HISTORY_REFRESH_TEST' }, points: [] };
+    const newer = { ...payload, generatedAt: 2 };
+    const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(payload)))
+      .mockResolvedValueOnce(new Response(JSON.stringify(newer)));
+    vi.stubGlobal('fetch', fetch);
+    await fetchLongHistory('HISTORY_REFRESH_TEST');
+    expect(await fetchLongHistory('HISTORY_REFRESH_TEST', true)).toEqual(newer);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[1][1]).toMatchObject({ cache: 'no-cache' });
+  });
   it('coalesces simultaneous reads and caches a successful series', async () => {
     const payload = { schemaVersion: 1, asset: { id: 'HISTORY_CACHE_TEST' }, points: [] };
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }));

@@ -73,11 +73,8 @@
 }
 
 .chart {
-  display: block;
-  width: 100%;
+  composes: chart from './ChartBase.module.css';
   height: 206px;
-  cursor: crosshair;
-  touch-action: none;
 }
 
 .chart:focus-visible {
@@ -86,20 +83,15 @@
 }
 
 .gridLine {
-  stroke: #e2e8f0;
-  stroke-width: 1;
+  composes: gridLine from './ChartBase.module.css';
 }
 
 .yLabel {
-  fill: #64748b;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
+  composes: axisLabel from './ChartBase.module.css';
 }
 
 .xLabel {
-  fill: #64748b;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
+  composes: axisLabel from './ChartBase.module.css';
 }
 
 .axisTick {
@@ -108,11 +100,7 @@
 }
 
 .line {
-  fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2.5;
-  pointer-events: none;
+  composes: line from './ChartBase.module.css';
 }
 
 .lineUp {
@@ -124,30 +112,20 @@
 }
 
 .crosshair {
-  pointer-events: none;
-  stroke: #64748b;
-  stroke-dasharray: 3 3;
-  stroke-width: 1;
-  opacity: 0.55;
+  composes: crosshair from './ChartBase.module.css';
 }
 
 .focusPoint {
-  fill: #fff;
-  pointer-events: none;
-  stroke: #0f172a;
-  stroke-width: 2;
+  composes: point from './ChartBase.module.css';
+  stroke: var(--ink);
 }
 
 .tooltipBox {
-  fill: rgba(15, 23, 42, 0.92);
-  pointer-events: none;
+  composes: tooltipBox from './ChartBase.module.css';
 }
 
 .tooltipText {
-  fill: #e2e8f0;
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
+  composes: tooltipText from './ChartBase.module.css';
 }
 
 .tooltipUp {

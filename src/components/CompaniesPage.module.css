@@ -30,29 +30,16 @@
 }
 
 .segmented {
-  background: #f4f6f8;
-  border: 1px solid #e1e6ec;
-  border-radius: 7px;
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
+  composes: segmented from './AnalysisBase.module.css';
 }
 
 .segmentButton {
-  background: transparent;
-  border: 0;
-  border-radius: 5px;
-  color: #697586;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 27px;
+  composes: segmentButton from './AnalysisBase.module.css';
   min-width: 54px;
-  padding: 0 9px;
   white-space: nowrap;
 }
 
-.segmentButton:hover:not(:disabled) {
+.segmentButton:hover:not(:disabled):not(.segmentButtonActive) {
   color: #1c2738;
 }
 
@@ -62,9 +49,7 @@
 }
 
 .segmentButtonActive {
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(28, 39, 56, 0.1);
-  color: #172033;
+  composes: segmentButtonActive from './AnalysisBase.module.css';
 }
 
 .trendContent {
@@ -494,11 +479,7 @@
 }
 
 .chartReading {
-  align-items: baseline;
-  display: flex;
-  gap: 10px;
-  min-height: 32px;
-  padding: 0 4px;
+  composes: reading from './ChartBase.module.css';
 }
 
 .chartReading > div {
@@ -509,19 +490,19 @@
 
 .chartReading span,
 .chartReading small {
-  color: #7e8896;
-  font-size: 10px;
+  color: var(--ink-muted);
+  font-size: var(--font-small);
   font-variant-numeric: tabular-nums;
 }
 
 .chartReading strong {
-  color: #111827;
-  font-size: 17px;
+  color: var(--ink);
+  font-size: 18px;
   font-variant-numeric: tabular-nums;
 }
 
 .chartReading em {
-  font-size: 11px;
+  font-size: var(--font-small);
   font-style: normal;
   font-weight: 700;
 }
@@ -538,14 +519,11 @@
 }
 
 .chart {
-  display: block;
-  height: auto;
-  width: 100%;
+  composes: chart from './ChartBase.module.css';
 }
 
 .gridLine {
-  stroke: #e9edf2;
-  stroke-width: 1;
+  composes: gridLine from './ChartBase.module.css';
 }
 
 .zeroLine {
@@ -554,12 +532,8 @@
   stroke-width: 1;
 }
 
-.axisLabel,
-.periodLabel {
-  fill: #929ba8;
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
+.axisLabel { composes: axisLabel from './ChartBase.module.css'; }
+.periodLabel { composes: axisLabel from './ChartBase.module.css'; }
 
 .methodologyLine {
   stroke: #98a3ad;
@@ -568,8 +542,8 @@
 }
 
 .methodologyLabel {
-  fill: #687581;
-  font-size: 10px;
+  fill: var(--ink-muted);
+  font-size: 11px;
   font-weight: 700;
   paint-order: stroke;
   stroke: #fff;
@@ -578,39 +552,20 @@
 }
 
 .trendLine {
-  fill: none;
-  stroke: #167d8d;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2.5;
+  composes: line from './ChartBase.module.css';
 }
 
-.chartPointGroup {
-  cursor: pointer;
-  outline: none;
-}
-
-.pointTarget {
-  fill: transparent;
-}
+.crosshair { composes: crosshair from './ChartBase.module.css'; }
 
 .chartPoint {
-  fill: #fff;
-  stroke: #167d8d;
-  stroke-width: 2;
-  transition: r 100ms ease, fill 100ms ease;
+  composes: point from './ChartBase.module.css';
 }
 
-.chartPointActive,
-.chartPointGroup:focus .chartPoint {
-  fill: #167d8d;
-  stroke: #fff;
-  stroke-width: 2.5;
-}
+.chartPointActive { composes: activePoint from './ChartBase.module.css'; }
 
 .chartNotes {
-  color: #7f8a98;
-  font-size: 10px;
+  color: var(--ink-muted);
+  font-size: var(--font-small);
   line-height: 1.65;
   margin: 7px 2px 0;
   text-align: left;
@@ -714,9 +669,11 @@
 
 .periodCell {
   align-items: center;
-  display: inline-flex;
-  gap: 5px;
-  white-space: nowrap;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 5px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .periodCell > strong {
@@ -728,10 +685,12 @@
   border: 1px solid #cbdfe2;
   border-radius: 4px;
   color: #28717b;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 15px;
-  padding: 0 4px;
+  padding: 2px 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
   text-decoration: none;
 }
 
@@ -927,6 +886,9 @@
     justify-content: space-between;
   }
 
+  .viewControls .segmented { flex-wrap: nowrap; }
+  .viewControls .segmentButton { min-width: 40px; padding-inline: 6px; }
+
   .trendContent {
     padding: 13px 11px;
   }
@@ -944,6 +906,8 @@
   .detailTable th:first-child {
     width: 86px;
   }
+
+  .periodCell > strong { flex-basis: 100%; }
 
   .detailTable th:nth-child(2) {
     width: 72px;

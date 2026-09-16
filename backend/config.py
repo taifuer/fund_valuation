@@ -15,6 +15,7 @@ FUND_CODE_RE = re.compile(r"^\d{6}$")
 SINA_SYMBOL_RE = re.compile(r"^[A-Za-z0-9_]{1,40}$")
 HISTORY_SYMBOL_RE = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
 HISTORY_SOURCES = {
+    "yahoo-index",
     "sina-cn",
     "sina-us",
     "sina-futures",
@@ -162,6 +163,8 @@ def configured_sina_symbols() -> list[str]:
     for key in ("indices", "marketAssets", "etfAssets", "rankingIndices", "rankingSectorEtfs", "rankingIndexEtfs"):
         for item in payload[key]:
             if not isinstance(item, dict):
+                continue
+            if item.get("quoteMode") == "close":
                 continue
             candidates = [item.get("sinaSymbol")]
             futures = item.get("futures")

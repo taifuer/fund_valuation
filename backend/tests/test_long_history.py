@@ -27,6 +27,7 @@ class AnnualCalculationTests(unittest.TestCase):
         self.assertAlmostEqual(result['change'], 21)
         self.assertAlmostEqual(result['cagr'], 10)
         self.assertEqual(result['months'], 24)
+        self.assertEqual((result['startClose'], result['endClose']), (100, 121))
         loss = period_performance([point('2023-08', 100), point('2025-08', 81)], '2023-08', '2025-08')
         self.assertAlmostEqual(loss['cagr'], -10)
 
@@ -66,17 +67,21 @@ class AnnualCalculationTests(unittest.TestCase):
         self.assertEqual((result['startPeriod'], result['endPeriod']), ('2021-01', '2025-12'))
         self.assertEqual(result['rows'][0]['startPeriod'], '2020-12')
         self.assertEqual(result['rows'][0]['months'], 60)
+        self.assertEqual((result['rows'][0]['startClose'], result['rows'][0]['endClose']), (100, 160))
         self.assertAlmostEqual(result['rows'][0]['change'], 60)
         self.assertAlmostEqual(result['rows'][0]['cagr'], (1.6 ** (1 / 5) - 1) * 100)
         self.assertIsNone(result['rows'][1]['change'])
+        self.assertEqual((result['rows'][1]['startClose'], result['rows'][1]['endClose']), (None, 120))
         self.assertIsNone(result['rows'][2]['change'])
         self.assertEqual((ranges['10']['startPeriod'], ranges['10']['endPeriod']), ('2016-01', '2025-12'))
         self.assertAlmostEqual(ranges['10']['rows'][0]['change'], 220)
         self.assertEqual(ranges['10']['rows'][0]['months'], 120)
         self.assertEqual(ranges['20']['startPeriod'], '2006-01')
         self.assertIsNone(ranges['20']['rows'][0]['change'])
-        self.assertEqual((ranges['all']['startPeriod'], ranges['all']['endPeriod']), ('2023-01', '2025-12'))
-        self.assertEqual(ranges['all']['rows'][0]['months'], 36)
+        self.assertEqual(ranges['30']['startPeriod'], '1996-01')
+        self.assertTrue(ranges['all']['independentPeriods'])
+        self.assertEqual(ranges['all']['rows'][0]['months'], 128)
+        self.assertAlmostEqual(ranges['all']['rows'][0]['change'], 300)
         self.assertAlmostEqual(ranges['all']['rows'][1]['change'], 20)
 
     def test_five_year_chart_range_still_uses_sixty_elapsed_months(self):
@@ -114,18 +119,73 @@ class AnnualCalculationTests(unittest.TestCase):
                 catalog[0]['completedThrough'] = '2025-11'
                 self.assertEqual(comparison_windows(catalog, {'A': rows}, 2026)['all']['5']['endPeriod'], '2024-12')
 
-    def test_common_range_starts_after_the_first_shared_december_not_the_first_shared_month(self):
+    def test_all_uses_individual_first_and_last_months_without_shortening_other_histories(self):
         series = {'A': [point('2015-12'), point('2020-07'), point('2020-12'), point('2025-12', 150)],
                   'B': [point('2020-07'), point('2020-12'), point('2025-12', 90)]}
         catalog = [{'id': 'A', 'group': 'usa', 'completedThrough': '2026-08'},
                    {'id': 'B', 'group': 'asia', 'completedThrough': '2026-08'}]
         result = comparison_windows(catalog, series, 2026)
-        self.assertEqual(result['all']['all']['startPeriod'], '2021-01')
-        self.assertEqual(result['usa']['all']['startPeriod'], '2016-01')
+        self.assertIsNone(result['all']['all']['startPeriod'])
+        self.assertEqual(result['all']['all']['rows'][0]['startPeriod'], '2015-12')
+        self.assertEqual(result['all']['all']['rows'][1]['startPeriod'], '2020-07')
+        self.assertEqual((result['all']['all']['rows'][0]['startClose'], result['all']['all']['rows'][0]['endClose']), (100, 150))
+        self.assertEqual((result['all']['all']['rows'][1]['startClose'], result['all']['all']['rows'][1]['endClose']), (100, 90))
         series['B'] = [point('2025-12')]
         result = comparison_windows(catalog, series, 2026)['all']['all']
         self.assertIsNone(result['startPeriod'])
-        self.assertTrue(all(row['change'] is None for row in result['rows']))
+        self.assertEqual(result['rows'][0]['change'], 50)
+        self.assertIsNone(result['rows'][1]['change'])
+
+    def test_period_values_preserve_available_endpoints_without_inference(self):
+        missing_start = period_performance([point('2021-01', 999), point('2025-12', 123.456789)], '2020-12', '2025-12')
+        self.assertIsNone(missing_start['startClose'])
+        self.assertEqual(missing_start['endClose'], 123.456789)
+        self.assertIsNone(missing_start['change'])
+        missing_end = period_performance([point('2020-12', 100), point('2025-11', 120)], '2020-12', '2025-12')
+        self.assertEqual(missing_end['startClose'], 100)
+        self.assertIsNone(missing_end['endClose'])
+        for value in [0, -37.63]:
+            result = period_performance([point('2020-12', value), point('2025-12', 100)], '2020-12', '2025-12')
+            self.assertEqual(result['startClose'], value)
+            self.assertEqual(result['endClose'], 100)
+            self.assertIsNone(result['change'])
+        invalid = period_performance([point('2020-12', float('inf')), point('2025-12', float('nan'))], '2020-12', '2025-12')
+        self.assertIsNone(invalid['startClose'])
+        self.assertIsNone(invalid['endClose'])
+        json.dumps(invalid, allow_nan=False)
+
+    def test_thirty_year_comparison_uses_360_months_and_not_a_shortened_lifetime(self):
+        series = {'A': [point('1995-12'), point('2025-12', 200)],
+                  'B': [point('2000-01'), point('2025-12', 200)]}
+        catalog = [{'id': key, 'group': 'usa', 'completedThrough': '2026-08'} for key in series]
+        result = comparison_windows(catalog, series, 2026)['usa']['30']
+        self.assertEqual((result['startPeriod'], result['endPeriod']), ('1996-01', '2025-12'))
+        self.assertEqual(result['rows'][0]['months'], 360)
+        self.assertAlmostEqual(result['rows'][0]['cagr'], (2 ** (1 / 30) - 1) * 100)
+        self.assertIsNone(result['rows'][1]['change'])
+        self.assertEqual(range_performances(series['A'])['30']['months'], 360)
+
+    def test_first_partial_year_uses_first_record_without_pretending_it_is_previous_december(self):
+        rows = [point('2010-07-31', 10), point('2010-12-31', 15), point('2011-12-30', 18)]
+        result = annual_returns(rows, 2011)
+        self.assertAlmostEqual(result[-1]['return'], 50)
+        self.assertEqual(result[-1]['startDate'], '2010-07-31')
+        self.assertTrue(result[-1]['partialYear'])
+        self.assertFalse(result[0]['partialYear'])
+        self.assertAlmostEqual(result[0]['return'], 20)
+
+    def test_first_year_needs_two_valid_boundaries_and_still_checks_complete_year_end(self):
+        for rows in [[point('2010-12-31')], [point('2010-07-31', 0), point('2010-12-31')],
+                     [point('2010-07-31'), point('2010-11-30')],
+                     [point('2010-07-31'), point('2010-12-02')]]:
+            result = annual_returns(rows, 2011)[-1]
+            self.assertTrue(result['partialYear'])
+            self.assertIsNone(result['return'])
+            self.assertTrue(result['reason'])
+        current = annual_returns([point('2026-07-31'), point('2026-08-31', 90)], 2026)[0]
+        self.assertTrue(current['yearToDate'])
+        self.assertTrue(current['partialYear'])
+        self.assertAlmostEqual(current['return'], -10)
 
     def test_monthly_view_stops_at_august_even_when_september_has_live_and_daily_prices(self):
         asset = next(item for item in assets() if item['id'] == 'INX')
@@ -261,6 +321,17 @@ class LongHistoryStorageTests(unittest.TestCase):
         save_points('INX', [point('2025-12-01', 5000)], 3)
         self.assertEqual(read_points('INX')[-1]['close'], 6000)
 
+    def test_verified_source_replaces_only_quarantined_early_sse_rows(self):
+        save_points('SH000001', [point('1991-12-31', 134.30)], 1)
+        replacement = dict(point('1991-12-31', 292.75, 'eastmoney'), monthComplete=True)
+        save_points('SH000001', [replacement], 2)
+        self.assertEqual(read_points('SH000001')[0]['close'], 292.75)
+        with self.assertRaisesRegex(ValueError, 'Conflicting'):
+            save_points('SH000001', [point('1991-12-31', 134.30)], 3)
+        save_points('SH000001', [point('1993-12-31', 833.8)], 4)
+        with self.assertRaisesRegex(ValueError, 'Conflicting'):
+            save_points('SH000001', [point('1993-12-31', 100, 'eastmoney')], 5)
+
     def test_verified_month_completion_survives_daily_snapshot_republication(self):
         verified = dict(point('2018-12-28', 100), monthComplete=True)
         save_points('SH000001', [verified], 1)
@@ -359,6 +430,8 @@ class LongHistoryStorageTests(unittest.TestCase):
         row = next(row for row in comparison['rows'] if row['id'] == 'INX')
         self.assertAlmostEqual(row['change'], (120 / 50 - 1) * 100)
         self.assertEqual(row['months'], 60)
+        self.assertEqual((row['startClose'], row['endClose']), (50, 120))
+        self.assertEqual((item['performance']['5']['startClose'], item['performance']['5']['endClose']), (100, 160))
         self.assertAlmostEqual(row['cagr'], ((120 / 50) ** (1 / 5) - 1) * 100)
         self.assertNotIn('annualComparisons', payload)
         with storage.get_conn() as conn:

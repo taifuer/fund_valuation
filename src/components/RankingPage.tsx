@@ -113,7 +113,7 @@ function makeMarketItems(
   marketStates: Map<string, MarketStateData>,
 ): RankingItem[] {
   return configs.map((item) => {
-    const quote = quotes.get(item.sinaSymbol);
+    const quote = item.quoteMode === 'close' ? undefined : quotes.get(item.sinaSymbol);
     const state = marketStates.get(item.sinaSymbol)?.state ?? getMarketState(item.sinaSymbol);
     const summary = item.history ? marketReturns.get(marketReturnKey(item)) : undefined;
     const latestReturn = summary?.latest;
@@ -140,7 +140,7 @@ function makeMarketItems(
       endDate: range === 'today'
         ? (useLatestCloseReturn ? latestReturn.endDate : quoteDate ?? latestReturn?.endDate)
         : rangeReturn?.endDate,
-      sourceLabel: range === 'today' && useLatestCloseReturn
+      sourceLabel: range === 'today' && (useLatestCloseReturn || item.quoteMode === 'close')
         ? '最新收盘'
         : range === 'today'
           ? latestSourceLabel(state)
