@@ -5,8 +5,10 @@
 .rangeControl { display: flex; justify-content: flex-end; margin-left: auto; min-width: 290px; }
 .mobileRange { display: none; position: relative; }
 .mobileRange::after { content: ''; position: absolute; right: 14px; top: 15px; width: 6px; height: 6px; border: solid var(--ink-muted); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); pointer-events: none; }
-.rangeSelect { appearance: none; width: 124px; height: 40px; border: 1px solid var(--line); border-radius: 6px; padding: 0 32px 0 12px; background: var(--surface); color: var(--ink); font: inherit; font-size: 16px; text-align: left; cursor: pointer; }
-.rangeSelect:hover { border-color: var(--ink-muted); }
+.rangeSelect { appearance: none; width: 124px; height: 40px; border: 1px solid var(--line); border-radius: 6px; padding: 0 32px 0 12px; background: var(--surface); color: var(--ink); font: inherit; font-size: 16px; text-align: left; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
+@media (hover: hover) and (pointer: fine) {
+  .rangeSelect:not([data-pointer-focus]):hover { border-color: var(--ink-muted); }
+}
 .segmented { composes: segmented from './AnalysisBase.module.css'; }
 .segmentButton { composes: segmentButton from './AnalysisBase.module.css'; }
 .segmentButtonActive { composes: segmentButtonActive from './AnalysisBase.module.css'; }
@@ -30,25 +32,32 @@
 .crosshair { composes: crosshair from './ChartBase.module.css'; }
 .dot { composes: point from './ChartBase.module.css'; }
 .dotActive { composes: activePoint from './ChartBase.module.css'; }
-.note { color: var(--ink-muted); font-size: var(--font-small); line-height: 1.7; margin: 10px 0 16px; }
+.noteMark { color: var(--ink-muted); font-size: 10px; font-weight: 400; line-height: 0; vertical-align: super; margin-left: 2px; }
+.notes { color: var(--ink-muted); font-size: var(--font-small); line-height: 1.7; margin: 10px 0 16px; }
+.notes p { margin: 0; }
+.notes p + p { margin-top: 4px; }
 .sourceNote { color: var(--ink-muted); font-size: var(--font-small); line-height: 1.7; margin: -8px 0 0; }
 .placeholder { min-height: 360px; border-top: 1px solid var(--line); margin-top: 18px; }
 .tableHeading { justify-content: space-between; margin: 22px 0 12px; }
 .tableScroll { composes: tableWrap from './AnalysisBase.module.css'; outline: none; scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
-.table { composes: table from './AnalysisBase.module.css'; min-width: 580px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.table { composes: table from './AnalysisBase.module.css'; min-width: 710px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .table th, .table td { text-align: right; white-space: nowrap; }
 .table tr > :first-child { text-align: left; position: sticky; left: 0; z-index: 1; background: var(--surface); }
 .table thead tr > :first-child { background: var(--surface-muted); }
 .yearCol { width: 84px; }
+.annualDrawdownCol { width: 142px; }
+.drawdown { color: var(--ink-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.table td.drawdown small { white-space: normal; }
 .table tbody th { font-weight: 600; }
 .table small { display: block; font-size: var(--font-caption); color: var(--ink-muted); font-weight: 400; line-height: 1.6; }
-.comparisonTable { composes: table from './AnalysisBase.module.css'; min-width: calc(680px + var(--comparison-values-width)); font-size: 13px; font-variant-numeric: tabular-nums; }
+.comparisonTable { composes: table from './AnalysisBase.module.css'; min-width: calc(812px + var(--comparison-values-width)); font-size: 13px; font-variant-numeric: tabular-nums; }
 .comparisonTable th, .comparisonTable td { text-align: right; }
 .comparisonTable tr > :nth-child(-n+2) { text-align: left; }
 .comparisonRankCol { width: 64px; }
 .comparisonNameCol { width: 140px; }
 .comparisonChangeCol { width: 148px; }
 .comparisonCagrCol { width: 128px; }
+.comparisonDrawdownCol { width: 132px; }
 .comparisonValuesCol { width: var(--comparison-values-width); }
 .comparisonTable .comparisonValues { color: var(--ink-muted); font-size: var(--font-small); font-weight: 400; }
 .valuesPair { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
@@ -66,7 +75,7 @@
 .more { display: flex; justify-content: center; padding: 14px 0 4px; }
 .more button, .message button { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink-muted); font-size: var(--font-small); padding: 7px 13px; cursor: pointer; min-height: 34px; }
 .message { min-height: 48px; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 13px; color: var(--ink-muted); }
-.page button:focus-visible, .rangeSelect:focus-visible, .chart:focus-visible, .tableScroll:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 2px; }
+.page button:focus-visible, .rangeSelect:not([data-pointer-focus]):focus-visible, .chart:focus-visible, .tableScroll:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 2px; }
 @media (max-width: 720px) {
   .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; }
   .groups { grid-column: 1 / -1; width: 100%; flex-wrap: nowrap; }
@@ -81,13 +90,14 @@
   .summary dl { gap: 8px 14px; }
   .assets { gap: 4px; }
   .assets button { padding: 4px 8px; }
-  .table { min-width: 550px; font-size: var(--font-small); }
-  .comparisonTable { min-width: calc(552px + var(--comparison-values-width)); font-size: var(--font-small); }
+  .table { min-width: 680px; font-size: var(--font-small); }
+  .comparisonTable { min-width: calc(682px + var(--comparison-values-width)); font-size: var(--font-small); }
   .comparisonTable th, .comparisonTable td { padding: 9px 6px; }
   .comparisonRankCol { width: 42px; }
   .comparisonNameCol { width: 92px; }
   .comparisonChangeCol { width: 118px; }
   .comparisonCagrCol { width: 110px; }
+  .comparisonDrawdownCol { width: 130px; }
   .comparisonPeriodCol { width: 190px; }
   .comparisonTable .sortButton span { width: 8px; }
 }

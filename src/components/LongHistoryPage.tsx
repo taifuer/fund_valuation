@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { fetchLongHistory } from '../api';
 import { choiceFromSearch, replaceSearchParams } from '../routing';
 import { chartPointerX, fitAxisTicks } from '../chartLayout';
 import { nextChartIndex } from '../chartKeyboard';
 import { useChartWidth } from '../hooks/useChartWidth';
 import { formatReturn } from '../historyMetrics';
-import { formatHistoryNumber as number, longHistoryChart, nearestHistoryPoint } from '../longHistory';
+import { formatHistoryNumber as number, formatMonthlyDrawdown, monthlyDrawdownTitle, MONTHLY_DRAWDOWN_NOTE, longHistoryChart, nearestHistoryPoint } from '../longHistory';
 import type { LongHistoryCatalog, LongHistorySeries } from '../longHistory';
 import HistoryComparisonTable from './HistoryComparisonTable';
 import styles from './LongHistoryPage.module.css';
@@ -25,6 +25,7 @@ function readChoices() {
 }
 
 export default function LongHistoryPage() {
+  const noteId = useId();
   const [choices, setChoices] = useState(readChoices);
   const [catalog, setCatalog] = useState<LongHistoryCatalog | null>(null);
   const [series, setSeries] = useState<LongHistorySeries | null>(null);
@@ -180,6 +181,9 @@ export default function LongHistoryPage() {
         </div>
         <div className={styles.mobileRange}>
         <select className={styles.rangeSelect} aria-label="历史时间区间" value={choices.range}
+          onPointerDown={event => { event.currentTarget.dataset.pointerFocus = 'true'; }}
+          onKeyDown={event => { if (event.key !== 'Escape') delete event.currentTarget.dataset.pointerFocus; }}
+          onBlur={event => { delete event.currentTarget.dataset.pointerFocus; }}
           onChange={event => choose({ range: event.target.value as typeof choices.range })}>
           {RANGES.map(([value, label]) => <option key={value} value={value}>
             {label}
@@ -210,8 +214,9 @@ export default function LongHistoryPage() {
         </div>
         <div className={styles.summary}>
           <dl>
-            <div><dt>区间涨幅</dt><dd className={returnClass(performance?.change)} title={performance?.reason}>{formatReturn(performance?.change ?? null)}</dd></div>
-            <div><dt>年化涨幅</dt><dd className={returnClass(performance?.cagr)} title={performance?.reason || performance?.cagrReason}>{formatReturn(performance?.cagr ?? null)}</dd></div>
+            <div><dt aria-describedby={`${noteId}-change`}>区间涨幅<sup className={styles.noteMark} aria-hidden="true">*</sup></dt><dd className={returnClass(performance?.change)} title={performance?.reason}>{formatReturn(performance?.change ?? null)}</dd></div>
+            <div><dt aria-describedby={`${noteId}-cagr`}>年化涨幅<sup className={styles.noteMark} aria-hidden="true">*</sup></dt><dd className={returnClass(performance?.cagr)} title={performance?.reason || performance?.cagrReason}>{formatReturn(performance?.cagr ?? null)}</dd></div>
+            <div><dt aria-describedby={`${noteId}-monthlyDrawdown`}>回撤<sup className={styles.noteMark} aria-hidden="true">*</sup></dt><dd className={styles.drawdown} title={monthlyDrawdownTitle(performance)}>{formatMonthlyDrawdown(performance)}</dd></div>
           </dl>
           <span>{startPeriod ?? '--'} 至 {endPeriod ?? '--'}</span>
         </div>
@@ -245,8 +250,8 @@ export default function LongHistoryPage() {
         <div className={styles.tableHeading}><h3>年度收益</h3></div>
         <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="年度收益表格">
           <table className={styles.table} aria-label={`${asset.name}年度收益`}>
-            <colgroup><col className={styles.yearCol} /><col /><col /><col /><col /></colgroup>
-            <thead><tr><th scope="col">年度</th><th scope="col">涨幅</th><th scope="col">期末收盘</th><th scope="col">基准收盘</th><th scope="col">截至</th></tr></thead>
+            <colgroup><col className={styles.yearCol} /><col /><col className={styles.annualDrawdownCol} /><col /><col /><col /></colgroup>
+            <thead><tr><th scope="col">年度</th><th scope="col" aria-describedby={`${noteId}-change`}>涨幅<sup className={styles.noteMark} aria-hidden="true">*</sup></th><th scope="col" title={MONTHLY_DRAWDOWN_NOTE} aria-describedby={`${noteId}-monthlyDrawdown`}>回撤<sup className={styles.noteMark} aria-hidden="true">*</sup></th><th scope="col">期末收盘</th><th scope="col">基准收盘</th><th scope="col">截至</th></tr></thead>
             <tbody>{(allYears ? annual : annual.slice(0, 10)).map(row => <tr key={row.year}>
               <th scope="row">{row.year}{row.partialYear && <small>首段</small>}</th>
               <td className={row.return == null ? styles.missing : row.return >= 0 ? styles.up : styles.down}>
@@ -254,6 +259,7 @@ export default function LongHistoryPage() {
                 {row.reason && <small>{row.reason}</small>}
                 {row.partialYear && <small>{row.startDate?.slice(0, 7)} 起</small>}
               </td>
+              <td className={styles.drawdown} title={monthlyDrawdownTitle(row)}>{formatMonthlyDrawdown(row)}{row.monthlyDrawdownReason && !row.reason && <small>{row.monthlyDrawdownReason}</small>}</td>
               <td>{number(row.endClose)}</td><td title={row.startDate ?? undefined}>{number(row.startClose)}</td>
               <td className={styles.date} title={row.endDate ?? undefined}>{row.endDate?.slice(0, 7) ?? '--'}</td>
             </tr>)}</tbody>
@@ -262,8 +268,13 @@ export default function LongHistoryPage() {
         {annual.length > 10 && <div className={styles.more}><button type="button" aria-expanded={allYears} onClick={() => setAllYears(!allYears)}>
           {allYears ? '收起历史年度' : `显示全部 ${annual.length} 个年度`}
         </button></div>}
-        <p className={styles.note}>* {asset.note}按完整月份统计，当前月份不纳入；年化为所选区间的复合年化涨幅，不含汇率和持有成本。首段按最早可用月末至当年末计算，不代表完整年度或上市首日以来收益；其余年度以上年末为基准。
-          {asset.missingMonths?.length ? ` 缺少 ${asset.missingMonths.length} 个月的有效月末记录。` : ''}{asset.refreshFailed ? ' 最新来源检查失败，保留已验证历史。' : ''}</p>
+        <div className={styles.notes}>
+          <p id={`${noteId}-change`}>* 涨幅：区间按起止月末计算；年度以上年末为基准，首段从最早可用月末起算，不代表完整年度或上市首日以来收益。</p>
+          <p id={`${noteId}-cagr`}>* 年化涨幅：所选区间的复合年化涨幅，不是年度涨幅的平均值；不足一年不计算。</p>
+          <p id={`${noteId}-monthlyDrawdown`}>* 回撤：{MONTHLY_DRAWDOWN_NOTE}走势对应所选区间，年度每年重置；缺月或数据不足时留空。</p>
+          <p>{asset.note}按完整月份统计，当前月份不纳入；不含汇率和持有成本。
+            {asset.missingMonths?.length ? ` 缺少 ${asset.missingMonths.length} 个月的有效月末记录。` : ''}{asset.refreshFailed ? ' 最新来源检查失败，保留已验证历史。' : ''}</p>
+        </div>
         <p className={styles.sourceNote}>数据来源：{asset.sources.join('、') || '待补全'}。</p>
       </>}
       </div>

@@ -35,6 +35,78 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('long-term history page', () => {
+  it('uses superscript footnotes with a separate explanation for each metric in both views', async () => {
+    render(<LongHistoryPage />);
+    await screen.findByRole('table');
+    const checkNote = (label: HTMLElement, text: RegExp) => {
+      expect(label.querySelector('sup')).toHaveTextContent('*');
+      expect(label.querySelector('sup')).toHaveAttribute('aria-hidden', 'true');
+      const note = document.getElementById(label.getAttribute('aria-describedby')!);
+      expect(note?.tagName).toBe('P');
+      expect(note).toHaveTextContent(text);
+      expect(label).toHaveAccessibleDescription(text);
+      return note!.id;
+    };
+    const texts = [/^\* 涨幅：/, /^\* 年化涨幅：/, /^\* 回撤：按月末收盘/];
+    const summary = [...document.querySelectorAll<HTMLElement>('dt')];
+    expect(summary).toHaveLength(3);
+    expect(new Set(summary.map((label, index) => checkNote(label, texts[index]))).size).toBe(3);
+    checkNote(screen.getByRole('columnheader', { name: '回撤' }), texts[2]);
+    expect(screen.queryByText('回撤（月末）')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: '涨幅' }));
+    ['涨幅', '年化涨幅', '回撤'].forEach((name, index) => {
+      checkNote(screen.getByRole('button', { name }), texts[index]);
+    });
+  });
+
+  it('keeps pointer selection focused without a sticky ring and restores keyboard focus indication', async () => {
+    render(<LongHistoryPage />);
+    await screen.findByRole('table');
+    const select = screen.getByLabelText('历史时间区间');
+    fireEvent.pointerDown(select, { pointerType: 'touch' });
+    select.focus();
+    expect(select).toHaveAttribute('data-pointer-focus', 'true');
+    fireEvent.change(select, { target: { value: '10' } });
+    expect(select).toHaveFocus();
+    expect(select).toHaveAttribute('data-pointer-focus', 'true');
+    fireEvent.keyDown(select, { key: 'Escape' });
+    expect(select).toHaveAttribute('data-pointer-focus', 'true');
+    fireEvent.keyDown(select, { key: 'ArrowDown' });
+    expect(select).not.toHaveAttribute('data-pointer-focus');
+    fireEvent.pointerDown(select, { pointerType: 'mouse' });
+    fireEvent.blur(select);
+    expect(select).not.toHaveAttribute('data-pointer-focus');
+  });
+
+  it('uses snapshot monthly drawdown for the selected range and a separate value for each year', async () => {
+    const withRisk = { ...sp, annual: [{ ...sp.annual[0], monthlyDrawdown: -10, monthlyDrawdownReason: '' }],
+      performance: { ...sp.performance!, all: { ...performance, monthlyDrawdown: -25 }, '5': { ...performance, monthlyDrawdown: -12 } } };
+    vi.mocked(fetchLongHistory).mockImplementation(async id => id ? series(withRisk) : catalog);
+    render(<LongHistoryPage />);
+    const table = await screen.findByRole('table');
+    const summary = screen.getAllByText('回撤').find(node => node.tagName === 'DT')!.parentElement!;
+    expect(summary).toHaveTextContent('-25.00%');
+    expect(table.querySelector('tbody td:nth-child(3)')).toHaveTextContent('-10.00%');
+    expect(table.querySelector('tbody td:nth-child(3)')!.className).not.toMatch(/_up_|_down_/);
+    fireEvent.click(screen.getByRole('button', { name: '近5年' }));
+    expect(summary).toHaveTextContent('-12.00%');
+    expect(table).toHaveTextContent('-10.00%');
+    expect(fetchLongHistory).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(/不包含月内波动/)).toBeInTheDocument();
+  });
+
+  it('shows missing monthly observations and legacy snapshots as unavailable rather than zero', async () => {
+    const gapped = { ...sp, annual: [{ ...sp.annual[0], monthlyDrawdown: null, monthlyDrawdownReason: '区间缺月，不计算回撤' }] };
+    vi.mocked(fetchLongHistory).mockImplementation(async id => id ? series(gapped) : catalog);
+    render(<LongHistoryPage />);
+    const table = await screen.findByRole('table');
+    expect(table).toHaveTextContent('区间缺月，不计算回撤');
+    expect(table.querySelector('tbody td:nth-child(3)')).toHaveTextContent('--');
+    const label = screen.getAllByText('回撤').find(node => node.tagName === 'DT')!;
+    expect(label.parentElement).toHaveTextContent('--');
+    expect(label.parentElement).not.toHaveTextContent('0.00%');
+  });
+
   it('loads the catalog and only the selected series, with keyboard point selection', async () => {
     render(<LongHistoryPage />);
     const chart = await screen.findByRole('img', { name: '标普500长期走势' });
@@ -120,7 +192,7 @@ describe('long-term history page', () => {
     expect(screen.queryByRole('combobox', { name: '历史涨幅年度' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('历史时间区间')).toHaveValue('10');
     expect(table.querySelector('tbody tr td:last-child')).toHaveTextContent('2016-01 至 2025-12');
-    expect(within(table).getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['排名', '名称', '涨幅↓', '年化涨幅', '起止值', '区间']);
+    expect(within(table).getAllByRole('columnheader').map(cell => cell.textContent)).toEqual(['排名', '名称', '涨幅*↓', '年化涨幅*', '回撤*', '起止值', '区间']);
     expect(table.querySelector('tbody th')).toHaveTextContent('标普500');
     expect(table.querySelector('tbody th')).not.toHaveTextContent('2016');
     fireEvent.click(within(table).getByRole('button', { name: '标普500' }));
@@ -204,14 +276,14 @@ describe('long-term history page', () => {
     window.history.replaceState({}, '', '/history?view=change&range=5');
     render(<LongHistoryPage />);
     const table = await screen.findByRole('table', { name: '区间涨幅' });
-    const values = table.querySelector('tbody tr td:nth-child(5)')!;
+    const values = table.querySelector('tbody tr td:nth-child(6)')!;
     expect(values).toHaveTextContent('100 → 160 点');
     expect(values).toHaveAttribute('title', '基准：2020-12；期末：2025-12；单位：点');
     expect(values.className).not.toMatch(/_up_|_down_/);
     expect(table.querySelector('tbody tr td:last-child')).toHaveTextContent('2021-01 至 2025-12');
     fireEvent.click(screen.getByRole('button', { name: '近10年' }));
-    expect(table.querySelector('tbody tr td:nth-child(5)')).toHaveTextContent('40 → 160');
-    expect(table.querySelector('tbody tr:nth-child(2) td:nth-child(5)')).toHaveTextContent('-- → 120');
+    expect(table.querySelector('tbody tr td:nth-child(6)')).toHaveTextContent('40 → 160');
+    expect(table.querySelector('tbody tr:nth-child(2) td:nth-child(6)')).toHaveTextContent('-- → 120');
     expect(fetchLongHistory).toHaveBeenCalledTimes(1);
   });
 
@@ -223,7 +295,7 @@ describe('long-term history page', () => {
       { id: 'SMALL', ...performance, startClose: 0.0625, endClose: 123456.78 },
     ];
     render(<HistoryComparisonTable comparison={{ ...comparison, rows }} assets={rows.map(row => asset(row.id, row.id))} onSelect={vi.fn()} />);
-    const valueFor = (name: string) => screen.getByRole('button', { name }).closest('tr')!.querySelector('td:nth-child(5)');
+    const valueFor = (name: string) => screen.getByRole('button', { name }).closest('tr')!.querySelector('td:nth-child(6)');
     expect(valueFor('ZERO')).toHaveTextContent('0 → -37.63');
     expect(valueFor('LEGACY')).toHaveTextContent('-- → --');
     expect(valueFor('INVALID')).toHaveTextContent('-- → --');
@@ -245,7 +317,7 @@ describe('long-term history page', () => {
     const rows = assets.map(item => ({ ...performance, id: item.id }));
     render(<HistoryComparisonTable comparison={{ ...comparison, rows }} assets={assets} onSelect={vi.fn()} />);
     for (const [, name, unit, expected] of cases) {
-      const cell = screen.getByRole('button', { name }).closest('tr')!.querySelector('td:nth-child(5)')!;
+      const cell = screen.getByRole('button', { name }).closest('tr')!.querySelector('td:nth-child(6)')!;
       expect(cell.textContent).toBe(expected);
       expect(cell).toHaveAttribute('title', `基准：2024-12；期末：2025-12${unit ? `；单位：${unit === 'USD' ? '美元 USD' : unit}` : ''}`);
       if (unit === 'USD') {
@@ -254,6 +326,28 @@ describe('long-term history page', () => {
         expect(cell).not.toHaveTextContent('$');
       }
     }
+    expect(fetchLongHistory).not.toHaveBeenCalled();
+  });
+
+  it('sorts drawdown by loss magnitude, keeps zero valid and leaves unavailable risk unranked', () => {
+    const rows = [
+      { ...performance, id: 'HIGH', monthlyDrawdown: -50 },
+      { ...performance, id: 'LOW', monthlyDrawdown: -10 },
+      { ...performance, id: 'FLAT', monthlyDrawdown: 0 },
+      { ...performance, id: 'MISSING', monthlyDrawdown: null, monthlyDrawdownReason: '区间缺月，不计算回撤' },
+      { ...performance, id: 'LEGACY' },
+    ];
+    render(<HistoryComparisonTable comparison={{ ...comparison, rows }} assets={rows.map(row => asset(row.id, row.id))} onSelect={vi.fn()} />);
+    const names = () => screen.getAllByRole('row').slice(1).map(row => within(row).getByRole('rowheader').textContent);
+    fireEvent.click(screen.getByRole('button', { name: '回撤' }));
+    expect(names()).toEqual(['HIGH', 'LOW', 'FLAT', 'MISSING', 'LEGACY']);
+    expect(screen.getByRole('columnheader', { name: '回撤' })).toHaveAttribute('aria-sort', 'descending');
+    expect(screen.getByRole('button', { name: 'FLAT' }).closest('tr')).toHaveTextContent('0.00%');
+    for (const name of ['MISSING', 'LEGACY']) {
+      expect(screen.getByRole('button', { name }).closest('tr')!.querySelector('td')).toHaveTextContent('--');
+    }
+    fireEvent.click(screen.getByRole('button', { name: '回撤' }));
+    expect(names()).toEqual(['FLAT', 'LOW', 'HIGH', 'MISSING', 'LEGACY']);
     expect(fetchLongHistory).not.toHaveBeenCalled();
   });
 

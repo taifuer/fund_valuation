@@ -1,7 +1,12 @@
 import { axisLabelWidth, valueAxis } from './chartLayout';
 export { nearestChartPoint as nearestHistoryPoint } from './chartLayout';
 
-export interface AnnualReturn {
+export interface MonthlyDrawdown {
+  monthlyDrawdown?: number | null;
+  monthlyDrawdownReason?: string;
+}
+
+export interface AnnualReturn extends MonthlyDrawdown {
   year: number;
   return: number | null;
   startDate: string | null;
@@ -17,7 +22,7 @@ export interface AnnualReturn {
 export type LongHistoryRange = '5' | '10' | '20' | '30' | 'all';
 export type LongHistoryGroup = 'all' | 'china' | 'usa' | 'asia' | 'assets';
 
-export interface PeriodPerformance {
+export interface PeriodPerformance extends MonthlyDrawdown {
   startPeriod: string | null;
   endPeriod: string | null;
   startClose?: number | null;
@@ -81,6 +86,22 @@ export function formatHistoryNumber(value: number | null, axis = false) {
   return value == null ? '--' : value.toLocaleString('en-US', {
     maximumFractionDigits: Math.abs(value) < 1 ? 4 : axis && Math.abs(value) >= 100 ? 0 : 2,
   });
+}
+
+export const MONTHLY_DRAWDOWN_NOTE = '按月末收盘计算区间峰值至后续低点的最大跌幅，不包含月内波动。';
+
+export function monthlyDrawdownValue(row?: MonthlyDrawdown | null): number | null {
+  const value = row?.monthlyDrawdown;
+  return value != null && Number.isFinite(value) && value <= 0 && !row?.monthlyDrawdownReason ? value : null;
+}
+
+export function formatMonthlyDrawdown(row?: MonthlyDrawdown | null) {
+  const value = monthlyDrawdownValue(row);
+  return value == null ? '--' : `${(Math.abs(value) < .005 ? 0 : value).toFixed(2)}%`;
+}
+
+export function monthlyDrawdownTitle(row?: MonthlyDrawdown | null) {
+  return row?.monthlyDrawdownReason || (monthlyDrawdownValue(row) == null ? '暂无完整月末回撤数据' : MONTHLY_DRAWDOWN_NOTE);
 }
 
 export function longHistoryChart(points: LongHistoryPoint[], width: number, logarithmic: boolean) {

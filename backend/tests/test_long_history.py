@@ -11,13 +11,93 @@ from zoneinfo import ZoneInfo
 from backend import storage
 from backend.long_history import (
     annual_returns, assets, completed_cutoff, completed_months, daily_month_ends, fetch_rows, missing_months, parse_nikkei, parse_tencent,
-    parse_twse, period_performance, range_performances, comparison_windows,
+    parse_twse, period_performance, range_performances, comparison_windows, monthly_drawdown,
     publish, read_points, refresh, save_points, stored_daily_points, valid_point,
 )
 
 
 def point(day: str, close: float = 100, source: str = "tencent") -> dict:
     return {"period": day[:7], "date": day, "close": close, "source": source, "sourceUrl": "https://example.com/history"}
+
+
+class MonthlyDrawdownTests(unittest.TestCase):
+    def test_tracks_a_prior_peak_not_the_endpoints_or_yearly_loss(self):
+        rows = [point('2025-12', 100), point('2026-01', 120), point('2026-02', 90), point('2026-03', 150)]
+        result = period_performance(rows, '2025-12', '2026-03')
+        self.assertEqual(result['change'], 50)
+        self.assertEqual(result['monthlyDrawdown'], -25)
+        self.assertEqual(result['monthlyDrawdownReason'], '')
+        # A later peak cannot be paired with an earlier trough.
+        self.assertEqual(monthly_drawdown(rows[:2], '2025-12', '2026-01')['monthlyDrawdown'], 0)
+        self.assertAlmostEqual(monthly_drawdown(rows, '2026-01', '2026-02')['monthlyDrawdown'], -25)
+        self.assertEqual(monthly_drawdown(list(reversed(rows)), '2025-12', '2026-03')['monthlyDrawdown'], -25)
+
+    def test_zero_drawdown_is_only_for_a_complete_flat_or_rising_series(self):
+        for values in [[100, 100, 100], [100, 110, 120]]:
+            rows = [point(f'2026-0{i + 1}', value) for i, value in enumerate(values)]
+            self.assertEqual(monthly_drawdown(rows, '2026-01', '2026-03')['monthlyDrawdown'], 0)
+        rows = [point('2026-01', 100), point('2026-02', 90), point('2026-03', 80)]
+        self.assertAlmostEqual(monthly_drawdown(rows, '2026-01', '2026-03')['monthlyDrawdown'], -20)
+
+    def test_missing_months_do_not_remove_independently_valid_endpoint_returns(self):
+        result = period_performance([point('2025-12', 100), point('2026-03', 150)], '2025-12', '2026-03')
+        self.assertEqual(result['change'], 50)
+        self.assertIsNone(result['monthlyDrawdown'])
+        self.assertIn('缺月', result['monthlyDrawdownReason'])
+        for rows, start, end in [([], None, None), ([point('2026-01')], '2026-01', '2026-01'),
+                                  ([point('2026-02')], '2026-01', '2026-02'),
+                                  ([point('2026-01')], '2026-01', '2026-02')]:
+            result = monthly_drawdown(rows, start, end)
+            self.assertIsNone(result['monthlyDrawdown'])
+            self.assertTrue(result['monthlyDrawdownReason'])
+
+    def test_bad_prices_are_not_silently_skipped_or_serialized_as_nan(self):
+        for value in [0, -37.63, float('nan'), float('inf'), True]:
+            result = monthly_drawdown([point('2026-01'), point('2026-02', value), point('2026-03')], '2026-01', '2026-03')
+            self.assertIsNone(result['monthlyDrawdown'])
+            self.assertIn('异常价格', result['monthlyDrawdownReason'])
+            json.dumps(result, allow_nan=False)
+
+    def test_annual_drawdown_resets_to_previous_december_not_an_older_peak(self):
+        rows = [point('2024-11', 500), point('2024-12', 100)]
+        rows += [point(f'2025-{month:02}', 80 if month == 1 else 120) for month in range(1, 13)]
+        annual = annual_returns(rows, 2025)[0]
+        self.assertAlmostEqual(annual['monthlyDrawdown'], -20)
+        self.assertAlmostEqual(annual['return'], 20)
+        self.assertAlmostEqual(period_performance(rows, '2024-11', '2025-12')['monthlyDrawdown'], -84)
+
+    def test_partial_first_year_and_current_year_only_use_the_available_completed_months(self):
+        rows = [point('2026-06', 100), point('2026-07', 80), point('2026-08', 110)]
+        result = annual_returns(rows, 2026)[0]
+        self.assertTrue(result['partialYear'])
+        self.assertTrue(result['yearToDate'])
+        self.assertAlmostEqual(result['monthlyDrawdown'], -20)
+        self.assertEqual(result['endDate'], '2026-08')
+        partial = annual_returns([point('2025-11', 100), point('2025-12', 90)], 2025)[0]
+        self.assertAlmostEqual(partial['monthlyDrawdown'], -10)
+
+    def test_bad_annual_boundaries_and_unfinished_market_year_do_not_get_a_drawdown(self):
+        rows = [point('2024-12'), point('2025-01', 90), point('2025-02', 80)]
+        result = annual_returns(rows, 2026)[1]
+        self.assertIsNone(result['monthlyDrawdown'])
+        self.assertEqual(result['monthlyDrawdownReason'], '年末数据不完整')
+        result = annual_returns(rows, 2026, unfinished_year=2025)[1]
+        self.assertEqual(result['monthlyDrawdownReason'], '该市场年度尚未结束')
+        result = annual_returns([point('2024-12'), point('2025-12', 90)], 2025)[0]
+        self.assertIsNotNone(result['return'])
+        self.assertIsNone(result['monthlyDrawdown'])
+        self.assertIn('缺月', result['monthlyDrawdownReason'])
+
+    def test_range_and_comparison_do_not_inherit_peaks_outside_the_selected_window(self):
+        rows = [point('2019-12', 1000)]
+        rows += [point(f'{2020 + i // 12}-{i % 12 + 1:02}', 80 if i == 30 else 100) for i in range(72)]
+        result = range_performances(rows)
+        self.assertAlmostEqual(result['all']['monthlyDrawdown'], -92)
+        self.assertAlmostEqual(result['5']['monthlyDrawdown'], -20)
+        catalog = [{'id': 'A', 'group': 'usa', 'completedThrough': '2025-12'}]
+        comparison = comparison_windows(catalog, {'A': rows}, 2026)['all']
+        self.assertAlmostEqual(comparison['5']['rows'][0]['monthlyDrawdown'], -20)
+        self.assertAlmostEqual(comparison['all']['rows'][0]['monthlyDrawdown'], -92)
 
 
 class AnnualCalculationTests(unittest.TestCase):
@@ -379,6 +459,10 @@ class LongHistoryStorageTests(unittest.TestCase):
             self.assertGreater(len(catalog.json['assets']), 15)
             detail = client.get('/api/longhistory?symbol=INX')
             self.assertAlmostEqual(detail.json['asset']['annual'][1]['return'], 20)
+            self.assertIsNone(detail.json['asset']['annual'][1]['monthlyDrawdown'])
+            self.assertIn('缺月', detail.json['asset']['annual'][1]['monthlyDrawdownReason'])
+            self.assertIn('monthlyDrawdown', detail.json['asset']['performance']['all'])
+            self.assertIn('monthlyDrawdown', catalog.json['comparisons']['all']['all']['rows'][0])
             self.assertEqual(client.get('/api/longhistory?symbol=INX', headers={'If-None-Match': detail.headers['ETag']}).status_code, 304)
 
     def test_no_futures_history_is_misrepresented_as_nikkei_cash(self):

@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { formatHistoryNumber, longHistoryChart, nearestHistoryPoint, type LongHistoryPoint } from './longHistory';
+import { formatHistoryNumber, formatMonthlyDrawdown, monthlyDrawdownValue, monthlyDrawdownTitle, longHistoryChart, nearestHistoryPoint, type LongHistoryPoint } from './longHistory';
 
 const point = (period: string, close: number): LongHistoryPoint => ({ period, date: period, close, source: 'test', sourceUrl: '' });
 
 describe('long-term history chart', () => {
+  it('formats monthly risk neutrally without invented zero or signed rounded zero', () => {
+    expect(formatMonthlyDrawdown({ monthlyDrawdown: -25 })).toBe('-25.00%');
+    expect(formatMonthlyDrawdown({ monthlyDrawdown: 0 })).toBe('0.00%');
+    expect(formatMonthlyDrawdown({ monthlyDrawdown: -.0001 })).toBe('0.00%');
+    for (const row of [undefined, {}, { monthlyDrawdown: NaN }, { monthlyDrawdown: Infinity }, { monthlyDrawdown: 10 },
+      { monthlyDrawdown: -20, monthlyDrawdownReason: '区间缺月，不计算回撤' }]) {
+      expect(formatMonthlyDrawdown(row)).toBe('--');
+      expect(monthlyDrawdownValue(row)).toBeNull();
+      expect(monthlyDrawdownTitle(row)).toBeTruthy();
+    }
+    expect(monthlyDrawdownTitle({ monthlyDrawdown: 0 })).toContain('不包含月内波动');
+  });
   it('prints full axis numbers and reserves space for wide positive and negative labels', () => {
     expect(formatHistoryNumber(123456.7, true)).toBe('123,457');
     expect(formatHistoryNumber(0.0523, true)).toBe('0.0523');

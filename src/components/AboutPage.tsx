@@ -30,12 +30,12 @@ const UPDATES = [
 
 export default function AboutPage() {
   return (
-    <main className={styles.page}>
+    <main className={styles.page} aria-labelledby="about-title">
       <header className={styles.pageHeader}>
-        <h2>关于本站</h2>
+        <h2 id="about-title" className={styles.pageTitle}>关于本站</h2>
       </header>
 
-      <div className={styles.content}>
+      <div>
         <section className={styles.section} aria-labelledby="about-introduction">
           <h3 id="about-introduction">本站简介</h3>
           <p>

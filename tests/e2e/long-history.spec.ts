@@ -9,17 +9,17 @@ const asset = {
   id: 'INX', name: '标普500', group: 'usa', basis: 'price', unit: '点', firstDate: monthly[0].date,
   lastDate: monthly.at(-1)!.date, count: monthly.length, sources: ['腾讯财经'], note: '价格涨跌，不含股息再投资。', refreshFailed: false,
   annual: [{ year: 2025, return: 20, startDate: '2024-12-31', startClose: 100, endDate: '2025-12-31', endClose: 120,
-    reason: '', yearToDate: false, sourceUrl: null }],
+    reason: '', yearToDate: false, sourceUrl: null, monthlyDrawdown: 0, monthlyDrawdownReason: '' }],
 };
 const performance = { id: 'INX', startPeriod: '2019-01', endPeriod: '2026-08', months: 91,
-  startClose: 100, endClose: 282, change: 182, cagr: (2.82 ** (12 / 91) - 1) * 100, reason: '', cagrReason: '' };
+  startClose: 100, endClose: 282, change: 182, cagr: (2.82 ** (12 / 91) - 1) * 100, reason: '', cagrReason: '', monthlyDrawdown: 0, monthlyDrawdownReason: '' };
 const fiveYear = { ...performance, startPeriod: '2021-08', months: 60,
   startClose: 162, change: (282 / 162 - 1) * 100, cagr: ((282 / 162) ** (1 / 5) - 1) * 100 };
 const calendarFive = { ...performance, startPeriod: '2020-12', endPeriod: '2025-12', months: 60,
   startClose: 146, endClose: 266, change: (266 / 146 - 1) * 100, cagr: ((266 / 146) ** (1 / 5) - 1) * 100 };
 const common = { ...calendarFive, startPeriod: '2019-12', months: 72,
   startClose: 122, change: (266 / 122 - 1) * 100, cagr: ((266 / 122) ** (1 / 6) - 1) * 100 };
-const missing = { ...calendarFive, startClose: null, change: null, cagr: null, reason: '缺少区间起止月数据' };
+const missing = { ...calendarFive, startClose: null, change: null, cagr: null, reason: '缺少区间起止月数据', monthlyDrawdown: null, monthlyDrawdownReason: '缺少区间起止月数据' };
 const ranges = {
   '5': { startPeriod: '2021-01', endPeriod: '2025-12', rows: [calendarFive] },
   '10': { startPeriod: '2016-01', endPeriod: '2025-12', rows: [missing] },
@@ -34,6 +34,60 @@ test.beforeEach(async ({ page }) => {
     : { schemaVersion: 1, generatedAt: 1, year: 2026, assets: [asset], comparisons: {
       all: ranges, china: ranges, usa: ranges, asia: ranges, assets: ranges,
     } } }));
+});
+
+for (const width of [390, 320]) test(`touch range selection at ${width}px has no persistent highlight but keeps keyboard focus visible`, async ({ page, isMobile }, testInfo) => {
+  test.skip(!isMobile, 'Native touch selector is only shown in the mobile layout');
+  await page.setViewportSize({ width, height: 844 });
+  await page.goto('/history');
+  const select = page.getByRole('combobox', { name: '历史时间区间' });
+  await select.tap();
+  await expect(select).toBeFocused();
+  await expect(select).toHaveCSS('outline-style', 'none');
+  await expect(select).toHaveCSS('border-color', 'rgb(226, 232, 240)');
+  await expect(select).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(select).toHaveCSS('-webkit-tap-highlight-color', 'rgba(0, 0, 0, 0)');
+  await page.keyboard.press('Escape');
+  await select.selectOption('5');
+  await expect(select).toHaveValue('5');
+  await expect(select).toBeFocused();
+  await expect(select).toHaveCSS('outline-style', 'none');
+  await expect(select).toHaveCSS('border-color', 'rgb(226, 232, 240)');
+  await page.screenshot({ path: testInfo.outputPath('touch-range-after-choice.png') });
+  await page.keyboard.press('ArrowDown');
+  await expect(select).toHaveCSS('outline-style', 'solid');
+  await expect(select).toHaveCSS('outline-width', '2px');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Shift+Tab');
+  await expect(select).toBeFocused();
+  await expect(select).toHaveCSS('outline-width', '2px');
+});
+
+test('monthly drawdown is readable in the summary and both tables without extra history requests', async ({ page }, testInfo) => {
+  const requests: string[] = [];
+  page.on('request', request => { if (request.url().includes('/api/longhistory')) requests.push(request.url()); });
+  await page.goto('/history');
+  const summary = page.locator('dl div').filter({has: page.locator('dt').filter({hasText: '回撤'})});
+  await expect(summary).toHaveText('回撤*0.00%');
+  const annual = page.getByRole('table', {name: '标普500年度收益'});
+  await expect(annual.locator('tbody td:nth-child(3)')).toHaveText('0.00%');
+  await expect(annual.getByRole('columnheader').nth(2)).toHaveText('回撤*');
+  await expect(summary.locator('sup')).toHaveCSS('vertical-align', 'super');
+  await expect(summary.locator('dt')).toHaveAccessibleDescription(/按月末收盘/);
+  await page.getByRole('tab', {name: '涨幅', exact: true}).click();
+  const table = page.getByRole('table', {name: '区间涨幅'});
+  await expect(table.locator('tbody td:nth-child(5)')).toHaveText('0.00%');
+  await table.getByRole('button', {name: '回撤'}).click();
+  await expect(table.getByRole('columnheader', {name: '回撤'})).toHaveAttribute('aria-sort', 'descending');
+  await expect(table.getByRole('button', {name: '回撤'})).toHaveAccessibleDescription(/按月末收盘/);
+  expect(requests).toHaveLength(2);
+  const layout = await table.evaluate(table => ({
+    overflow: document.documentElement.scrollWidth - innerWidth,
+    cells: [...table.querySelectorAll('td,th')].filter(cell => cell.scrollWidth > cell.clientWidth + 1).map(cell => cell.textContent),
+  }));
+  expect(layout.overflow).toBe(0);
+  expect(layout.cells).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath('monthly-drawdown-table.png'), fullPage: true });
 });
 
 test('historical route keeps navigation, year returns and exact chart pointer positions', async ({ page }) => {
@@ -190,7 +244,7 @@ test('large lifetime returns do not overlap the annualized column on a narrow vi
   const overflow = await table.evaluate(table => [...table.querySelectorAll('td,th')]
     .filter(cell => cell.scrollWidth > cell.clientWidth + 1).map(cell => cell.textContent));
   expect(overflow).toEqual([]);
-  const values = table.locator('tbody tr td:nth-child(5)');
+  const values = table.locator('tbody tr td:nth-child(6)');
   await expect(values).toHaveText('$0.0625 → 1,000,000,000.12');
   await expect(values).toHaveAttribute('title', '基准：2019-01；期末：2026-08；单位：美元 USD');
   expect(await values.locator('span span').evaluateAll(nodes => nodes.every(node => node.scrollWidth <= node.clientWidth + 1))).toBe(true);
@@ -205,10 +259,10 @@ test('comparison opens from the catalog, fits ranked columns and keeps the mobil
   await page.goto('/history?view=change');
   const table = page.getByRole('table', { name: '区间涨幅' });
   await expect(table).toContainText(`+${common.change.toFixed(2)}%`);
-  await expect(table.getByRole('columnheader')).toHaveText(['排名', '名称', '涨幅↓', '年化涨幅', '起止值', '区间']);
-  await expect(table.locator('tbody tr td:nth-child(5)')).toHaveText('122 → 266 点');
-  await expect(table.locator('tbody tr td:nth-child(5)')).toHaveAttribute('title', '基准：2019-12；期末：2025-12；单位：点');
-  const valueLayout = await table.locator('tbody tr td:nth-child(5)').evaluate(cell => {
+  await expect(table.getByRole('columnheader')).toHaveText(['排名', '名称', '涨幅*↓', '年化涨幅*', '回撤*', '起止值', '区间']);
+  await expect(table.locator('tbody tr td:nth-child(6)')).toHaveText('122 → 266 点');
+  await expect(table.locator('tbody tr td:nth-child(6)')).toHaveAttribute('title', '基准：2019-12；期末：2025-12；单位：点');
+  const valueLayout = await table.locator('tbody tr td:nth-child(6)').evaluate(cell => {
     const pair = cell.firstElementChild!;
     const [start, arrow, end] = [...pair.children].map(item => item.getBoundingClientRect());
     return {
@@ -298,7 +352,7 @@ test('five-year selection survives reload and switches between rolling and full-
   const table = page.getByRole('table', { name: '区间涨幅' });
   await expect(table).toContainText(`+${calendarFive.change.toFixed(2)}%`);
   await expect(table).toContainText(`+${calendarFive.cagr.toFixed(2)}%`);
-  await expect(table.locator('tbody tr td:nth-child(5)')).toHaveText('146 → 266 点');
+  await expect(table.locator('tbody tr td:nth-child(6)')).toHaveText('146 → 266 点');
   await expect(table.locator('tbody tr').first().locator('td').last()).toHaveText('2021-01 至 2025-12');
   expect(historyRequests).toHaveLength(2);
   await page.reload();

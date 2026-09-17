@@ -591,7 +591,7 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
     <main className={styles.page}>
       <header className={styles.pageHeader}>
         <div>
-          <h2>{pageMode === 'trend' ? '公司经营趋势' : '财报日历'}</h2>
+          <h2 className={styles.pageTitle}>{pageMode === 'trend' ? '公司经营趋势' : '财报日历'}</h2>
           <p>{pageMode === 'trend'
             ? '聚焦营业收入、利润、研发投入与员工人数的长期变化'
             : '集中查看已披露报告与官方确认的财报日期'}</p>

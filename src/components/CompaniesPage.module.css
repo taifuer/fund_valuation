@@ -1,25 +1,13 @@
 .page {
-  color: #172033;
-  margin: 0 auto;
-  max-width: 1040px;
-  padding: 18px 16px 34px;
+  composes: page from './PageBase.module.css';
 }
 
 .pageHeader {
-  align-items: flex-end;
-  border-bottom: 1px solid #dfe5ec;
-  display: flex;
-  gap: 28px;
-  justify-content: space-between;
-  padding: 10px 2px 20px;
+  composes: header from './PageBase.module.css';
 }
 
-.pageHeader h2 {
-  color: #111827;
-  font-size: 22px;
-  font-weight: 800;
-  line-height: 1.35;
-  margin: 0;
+.pageTitle {
+  composes: title from './PageBase.module.css';
 }
 
 .pageHeader p {
@@ -825,21 +813,6 @@
 }
 
 @media (max-width: 640px) {
-  .page {
-    padding: 12px 12px 28px;
-  }
-
-  .pageHeader {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 10px;
-    padding: 8px 1px 15px;
-  }
-
-  .pageHeader h2 {
-    font-size: 19px;
-  }
-
   .pickerToolbar {
     grid-template-columns: minmax(0, 1fr);
     padding-inline: 0;

@@ -1,0 +1,37 @@
+.page {
+  color: var(--ink);
+  margin: 0 auto;
+  max-width: 1040px;
+  min-width: 0;
+  padding: 28px 16px 32px;
+  width: 100%;
+}
+
+.header {
+  align-items: flex-end;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  padding-bottom: 16px;
+}
+
+.title {
+  color: var(--ink);
+  font-size: var(--font-heading);
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 20px 12px 28px;
+  }
+
+  .header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+}

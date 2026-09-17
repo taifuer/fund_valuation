@@ -258,11 +258,13 @@ def annual_returns(points: list[dict[str, Any]], year: int, *, unfinished_year: 
         change = None if reason or not end else (end["close"] / baseline["close"] - 1) * 100
         if change is not None and not math.isfinite(change):
             change, reason = None, "价格异常，不计算比例收益"
+        drawdown = ({'monthlyDrawdown': None, 'monthlyDrawdownReason': reason} if reason else
+                    monthly_drawdown(list(months.values()), baseline['period'], end['period']))
         result.append({"year": value, "return": change, "startDate": baseline["date"] if baseline else None,
                        "startClose": baseline["close"] if baseline else None,
                        "endDate": end["date"] if end else None, "endClose": end["close"] if end else None,
                        "reason": reason, "yearToDate": value == year, "partialYear": partial,
-                       "sourceUrl": end["sourceUrl"] if end else None})
+                       "sourceUrl": end["sourceUrl"] if end else None, **drawdown})
     return result
 
 
@@ -271,9 +273,30 @@ def month_number(period: str) -> int:
     return year * 12 + month - 1
 
 
+def monthly_drawdown(points: list[dict[str, Any]], start: str | None, end: str | None) -> dict[str, Any]:
+    result = {'monthlyDrawdown': None, 'monthlyDrawdownReason': ''}
+    if not start or not end or start >= end:
+        return {**result, 'monthlyDrawdownReason': '至少需要两个连续月末记录'}
+    available = {row['period']: row for row in points if start <= row['period'] <= end}
+    if start not in available or end not in available:
+        return {**result, 'monthlyDrawdownReason': '缺少区间起止月数据'}
+    if len(available) != month_number(end) - month_number(start) + 1:
+        return {**result, 'monthlyDrawdownReason': '区间缺月，不计算回撤'}
+    values = [available[period]['close'] for period in sorted(available)]
+    if any(isinstance(value, bool) or not isinstance(value, (int, float))
+           or not math.isfinite(value) or value <= 0 for value in values):
+        return {**result, 'monthlyDrawdownReason': '非正或异常价格，不计算回撤'}
+    peak, drawdown = values[0], 0.0
+    for value in values[1:]:
+        peak = max(peak, value)
+        drawdown = min(drawdown, (value / peak - 1) * 100)
+    return {**result, 'monthlyDrawdown': drawdown}
+
+
 def period_performance(points: list[dict[str, Any]], start: str | None, end: str | None) -> dict[str, Any]:
     result = {'startPeriod': start, 'endPeriod': end, 'months': 0, 'change': None, 'cagr': None,
-              'startClose': None, 'endClose': None, 'reason': '', 'cagrReason': ''}
+              'startClose': None, 'endClose': None, 'reason': '', 'cagrReason': '',
+              **monthly_drawdown(points, start, end)}
     if not start or not end or start >= end:
         return {**result, 'reason': '缺少可比较的完整区间'}
     months = month_number(end) - month_number(start)
