@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   fetchAllQuotes,
   fetchDashboardSnapshot,
-  fetchOverviewSnapshot,
   fetchFundHistory,
   fetchFundNavs,
   fetchFundReturnSummaries,
@@ -151,13 +150,11 @@ export function useHeaderFxRates(enabled = true) {
   return fxRates;
 }
 
-export function useOverviewData(funds: Fund[], enabled: boolean) {
+export function useOverviewData(enabled: boolean) {
   const [quotes, setQuotes] = useState<Map<string, QuoteData>>(new Map());
   const [fxRates, setFxRates] = useState<Map<string, FxRateData>>(new Map());
   const [marketStates, setMarketStates] = useState<Map<string, MarketStateData>>(new Map());
-  const [fundSummaries, setFundSummaries] = useState<Map<string, FundNavData>>(new Map());
   const [loading, setLoading] = useState(false);
-  const [fundLoading, setFundLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Ref mirror of marketStates for the polling timer (sees latest without restart).
   const marketStatesRef = useRef<Map<string, MarketStateData>>(new Map());
@@ -170,12 +167,9 @@ export function useOverviewData(funds: Fund[], enabled: boolean) {
       ...ETF_ASSETS.map((item) => item.sinaSymbol),
     ])]
   ), []);
-  const fundKey = useMemo(() => funds.map((fund) => fund.code).join(','), [funds]);
-
   useEffect(() => {
     if (!enabled) {
       setLoading(false);
-      setFundLoading(false);
       return;
     }
 
@@ -186,14 +180,12 @@ export function useOverviewData(funds: Fund[], enabled: boolean) {
         // the overview. A refresh may deliberately wait for the next worker
         // snapshot, but that should not replace usable cards with skeletons.
         setLoading(quotes.size === 0);
-        setFundLoading(fundSummaries.size === 0);
       }
       setError(null);
       try {
-        const snapshot = await fetchOverviewSnapshot(
+        const snapshot = await fetchDashboardSnapshot(
           symbols,
           DISPLAY_FX_CURRENCIES,
-          funds.map((fund) => fund.code),
         );
         if (cancelled) return;
         if (!snapshot || snapshot.quotes.size === 0) {
@@ -206,36 +198,11 @@ export function useOverviewData(funds: Fund[], enabled: boolean) {
           marketStatesRef.current = merged;
           return merged;
         });
-        const missingFundCodes = funds
-          .map((fund) => fund.code)
-          .filter((code) => !snapshot.fundSummaries.has(code));
-        if (missingFundCodes.length === 0) {
-          setFundSummaries(snapshot.fundSummaries);
-        } else {
-          const history = await fetchFundHistory(missingFundCodes);
-          if (cancelled) return;
-          const summaries = new Map(snapshot.fundSummaries);
-          for (const fund of funds) {
-            const hist = history.get(fund.code);
-            if (!hist || summaries.has(fund.code)) continue;
-            summaries.set(fund.code, {
-              code: fund.code,
-              name: fund.name,
-              navDate: hist.navDate,
-              nav: hist.nav,
-              officialChange: hist.officialChange,
-              estimatedNav: hist.nav,
-              estimatedChange: 0,
-            });
-          }
-          setFundSummaries(summaries);
-        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : '概览数据加载失败');
       } finally {
         if (!cancelled) {
           setLoading(false);
-          setFundLoading(false);
         }
       }
     }
@@ -249,9 +216,9 @@ export function useOverviewData(funds: Fund[], enabled: boolean) {
       cancelled = true;
       stopMarketPolling();
     };
-  }, [enabled, fundKey, funds, symbols]);
+  }, [enabled, symbols]);
 
-  return { quotes, fxRates, marketStates, fundSummaries, loading, fundLoading, error };
+  return { quotes, fxRates, marketStates, loading, error };
 }
 
 export function useRankingMarketData(enabled: boolean) {

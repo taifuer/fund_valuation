@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-function overviewPayload(price: number, generatedAt: number, fundCodes: string[]) {
+function dashboardPayload(price: number, generatedAt: number) {
   return {
     schemaVersion: 1,
     generatedAt,
@@ -25,12 +25,6 @@ function overviewPayload(price: number, generatedAt: number, fundCodes: string[]
         source: 'test',
       },
     },
-    fundSummaries: Object.fromEntries(fundCodes.map((code) => [code, {
-      code,
-      navDate: '2026-08-06',
-      nav: 1.2,
-      officialChange: 0.5,
-    }])),
   };
 }
 
@@ -148,6 +142,8 @@ test('overview market groups have a consistent visible separation', async ({ pag
     if (previousBottom) expect(geometry.top - previousBottom).toBeGreaterThanOrEqual(20);
     previousBottom = geometry.bottom;
   }
+  const footerTop = await page.getByRole('contentinfo').evaluate(element => element.getBoundingClientRect().top);
+  expect(footerTop - previousBottom).toBeGreaterThanOrEqual(32);
 });
 
 test('company choices wrap on narrow screens without horizontal scrolling', async ({ page }) => {
@@ -258,17 +254,16 @@ for (const returnVia of ['navigation', 'brand'] as const) {
     const refreshGate = new Promise<void>((resolve) => {
       releaseRefresh = resolve;
     });
-    await page.route('**/api/overview?*', async (route) => {
+    await page.route('**/api/dashboard?*', async (route) => {
       const isRefresh = holdRefresh;
       if (isRefresh) {
         refreshRequested = true;
         await refreshGate;
       }
-      const fundCodes = new URL(route.request().url()).searchParams.get('fundCodes')?.split(',') ?? [];
       await route.fulfill({
         json: isRefresh
-          ? overviewPayload(3210, 200, fundCodes)
-          : overviewPayload(3200, 100, fundCodes),
+          ? dashboardPayload(3210, 200)
+          : dashboardPayload(3200, 100),
       });
     });
 
@@ -278,7 +273,7 @@ for (const returnVia of ['navigation', 'brand'] as const) {
     await expect(shanghaiCard).toContainText('3,200');
 
     await navigation.getByRole('button', { name: '基金', exact: true }).click();
-    await expect(page).toHaveURL(/\/funds$/);
+    await expect(page).toHaveURL(/\/funds\?strategy=active$/);
     holdRefresh = true;
     if (returnVia === 'navigation') {
       await navigation.getByRole('button', { name: '概览', exact: true }).click();
@@ -294,26 +289,42 @@ for (const returnVia of ['navigation', 'brand'] as const) {
   });
 }
 
-test('overview fund cards open the matching fund detail', async ({ page }) => {
-  await page.route('**/api/overview?*', async (route) => {
-    const fundCodes = new URL(route.request().url()).searchParams.get('fundCodes')?.split(',') ?? [];
-    await route.fulfill({ json: overviewPayload(3200, 100, fundCodes) });
+test('overview loads only market data and funds load after navigating to their page', async ({ page }) => {
+  const requests: URL[] = [];
+  page.on('request', request => {
+    if (request.url().includes('/api/')) requests.push(new URL(request.url()));
+  });
+  await page.route('**/api/dashboard?*', route => {
+    return route.fulfill({ json: dashboardPayload(3200, 100) });
   });
 
   await page.goto('/');
-  await expect(page.locator('button[aria-label^="查看 "][aria-label$=" 详情"]')).toHaveCount(18);
-  await page.getByRole('button', { name: '查看 汇添富全球医疗 详情' }).click();
+  const shanghaiCard = page.getByRole('button').filter({ hasText: '上证指数' }).first();
+  await expect(shanghaiCard).toContainText('3,200');
+  await expect(page.locator('button[aria-label^="查看 "][aria-label$=" 详情"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '查看估值', exact: true })).toHaveCount(0);
+  const refresh = page.waitForResponse(response => response.url().includes('/api/dashboard?'));
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await refresh;
+  expect(requests.filter(url => /^\/api\/(fund|overview)/.test(url.pathname))).toEqual([]);
+  expect(requests.some(url => url.searchParams.has('fundCodes'))).toBe(false);
 
-  await expect(page).toHaveURL(/\/funds\/004877$/);
+  await page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '基金', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /QDII 基金 · 16/ })).toBeVisible();
+  await expect.poll(() => requests.some(url => url.pathname === '/api/fundestimates')).toBe(true);
+  await page.locator('#fund-004877').getByRole('button', { name: /展开详情/ }).click();
+
+  await expect(page).toHaveURL(/\/funds\/004877\?strategy=active$/);
   await expect(page.locator('#fund-004877 [aria-expanded="true"]')).toBeVisible();
   await expect(page.locator('#fund-004877')).not.toContainText('仅官方净值');
 });
 
-test('fund page keeps one complete ranking without a strategy filter', async ({ page }) => {
+test('fund page has a non-collapsible title and strategy filters', async ({ page }) => {
   await page.goto('/funds');
 
-  await expect(page.getByRole('button', { name: /QDII 主动基金 · 18只/ })).toBeVisible();
-  await expect(page.getByRole('combobox', { name: '基金策略筛选' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: /QDII 基金 · 16/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /QDII 基金/ })).toHaveCount(0);
+  await expect(page.getByRole('group', { name: '基金类型筛选' })).toBeVisible();
   await expect(page.locator('#fund-004877')).toContainText('汇添富全球医疗');
 });
 

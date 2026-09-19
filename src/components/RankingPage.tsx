@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { fetchMarketReturnSummaries } from '../api';
 import { MARKET_ASSETS, RANKING_ETFS, RANKING_INDEX_ETFS, RANKING_INDICES, RANKING_SECTOR_ETFS } from '../constants';
 import { getMarketState, marketLocalDate } from '../marketHours';
 import { startAdaptivePolling } from '../polling';
 import { rankingStateLabel } from '../displayStatus';
 import TableSkeleton from './TableSkeleton';
+import RecentHistoryModal, { type RecentHistoryTarget } from './RecentHistoryModal';
 import { useFundReturnData } from '../hooks/usePageData';
 import { choiceFromSearch, replaceSearchParams } from '../routing';
+import { FUND_FILTERS, FUND_FILTER_KEYS, matchesFundFilter, fundStrategyLabel, type FundFilter } from '../fundClassification';
 import type { FundEstimate } from '../hooks/useQuotes';
-import type { Fund, FundReturnRangeKey, IndexConfig, MarketReturnSummary, MarketStateData, QuoteData } from '../types';
+import type { Fund, FundReturnRangeKey, HistoryRangeKey, IndexConfig, MarketReturnSummary, MarketStateData, QuoteData } from '../types';
 import styles from './RankingPage.module.css';
 
 type RankingRangeKey = 'today' | '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | 'ytd';
@@ -31,6 +33,7 @@ interface RankingItem {
   symbol: string;
   category: Exclude<CategoryKey, 'all'>;
   categoryLabel: string;
+  strategy?: Fund['strategy'];
   returnPercent: number | null;
   currentValue: number | null;
   maxDrawdownPercent: number | null;
@@ -38,6 +41,7 @@ interface RankingItem {
   startDate?: string;
   endDate?: string;
   sourceLabel: string;
+  historyTarget: RecentHistoryTarget;
 }
 
 const RANGES: Array<{ key: RankingRangeKey; label: string }> = [
@@ -142,6 +146,7 @@ function makeMarketItems(
       symbol: item.symbol,
       category,
       categoryLabel,
+      historyTarget: { kind: 'market', item },
       returnPercent: range === 'today'
         ? (useLatestCloseReturn ? latestReturn.returnPercent : quote?.changePercent ?? latestReturn?.returnPercent ?? null)
         : rangeReturn?.returnPercent ?? null,
@@ -177,7 +182,9 @@ function makeFundItems(
       name: estimate.fund.name,
       symbol: estimate.fund.code,
       category: 'fund',
-      categoryLabel: '基金',
+      categoryLabel: fundStrategyLabel(estimate.fund),
+      historyTarget: { kind: 'fund', item: estimate.fund },
+      strategy: estimate.fund.strategy,
       returnPercent: range === 'today' ? officialNAV?.officialChange ?? null : rangeReturn?.returnPercent ?? null,
       currentValue: range === 'today' ? officialNAV?.nav ?? null : rangeReturn?.endNav ?? officialNAV?.nav ?? null,
       maxDrawdownPercent: finiteOrNull(rangeReturn?.maxDrawdownPercent),
@@ -254,6 +261,7 @@ export default function RankingPage({
   const showRisk = range !== 'today';
   const [category, setCategory] = useState<CategoryKey>(() => choiceFromSearch(window.location.search, 'category', CATEGORY_KEYS, 'index'));
   const [etfFilter, setEtfFilter] = useState<EtfFilterKey>(() => choiceFromSearch(window.location.search, 'etf', ETF_FILTER_KEYS, 'all'));
+  const [fundFilter, setFundFilter] = useState<FundFilter>(() => choiceFromSearch(window.location.search, 'strategy', FUND_FILTER_KEYS, 'all'));
   const [sortKey, setSortKey] = useState<SortKey>(() => choiceFromSearch(window.location.search, 'sort', showRisk ? SORT_KEYS : ['return', 'value'], 'return'));
   const [sortDirection, setSortDirection] = useState<SortDirection>(() => {
     const requestedSort = choiceFromSearch(window.location.search, 'sort', SORT_KEYS, 'return');
@@ -262,6 +270,11 @@ export default function RankingPage({
   });
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
   const [returnsLoading, setReturnsLoading] = useState(true);
+  const [selectedHistory, setSelectedHistory] = useState<{
+    target: RecentHistoryTarget; initialRange: HistoryRangeKey; asOf?: string;
+  } | null>(null);
+  const tableRef = useRef<HTMLElement>(null);
+  const gesture = useRef<{ x: number; y: number; scrollLeft: number; moved: boolean } | null>(null);
   const refreshTick = useMarketReturnRefreshTick();
   const shouldLoadFunds = category === 'fund';
   const fundData = useFundReturnData(funds, shouldLoadFunds);
@@ -271,10 +284,11 @@ export default function RankingPage({
       category: category === 'index' ? null : category,
       range: range === 'today' ? null : range,
       etf: category === 'etf' && etfFilter !== 'all' ? etfFilter : null,
+      strategy: category === 'fund' && fundFilter !== 'all' ? fundFilter : null,
       sort: sortKey === 'return' ? null : sortKey,
       order: sortDirection === 'desc' ? null : sortDirection,
     });
-  }, [category, etfFilter, range, sortDirection, sortKey]);
+  }, [category, etfFilter, fundFilter, range, sortDirection, sortKey]);
   const selectedMarketConfigs = useMemo(
     () => marketConfigs(category, etfFilter),
     [category, etfFilter],
@@ -314,6 +328,7 @@ export default function RankingPage({
     ];
     return allItems
       .filter((item) => (category === 'all' ? item.category !== 'fund' : item.category === category))
+      .filter((item) => category !== 'fund' || matchesFundFilter(item, fundFilter))
       .filter((item) => (
         category !== 'etf' ||
         etfFilter === 'all' ||
@@ -327,7 +342,7 @@ export default function RankingPage({
         if (bValue == null) return -1;
         return sortDirection === 'desc' ? bValue - aValue : aValue - bValue;
       });
-  }, [category, etfFilter, fundData.fundEstimates, marketReturns, marketStates, quotes, range, sortDirection, sortKey]);
+  }, [category, etfFilter, fundFilter, fundData.fundEstimates, marketReturns, marketStates, quotes, range, sortDirection, sortKey]);
 
   const loading = category === 'fund'
     ? fundData.loading
@@ -355,6 +370,19 @@ export default function RankingPage({
   function sortLabel(label: string, key: SortKey) {
     if (sortKey !== key) return label;
     return `${label} ${sortDirection === 'desc' ? '↓' : '↑'}`;
+  }
+
+  function openHistory(event: MouseEvent<HTMLTableRowElement>, item: RankingItem) {
+    // A scroll, drag, or text selection is not a request to open the row.
+    if (event.detail !== 0 && (gesture.current?.moved
+      || (gesture.current && tableRef.current?.scrollLeft !== gesture.current.scrollLeft)
+      || window.getSelection()?.toString())) return;
+    event.currentTarget.querySelector('button')?.focus({ preventScroll: true });
+    setSelectedHistory({
+      target: item.historyTarget,
+      initialRange: range === 'today' ? '1m' : range,
+      asOf: range === 'today' ? undefined : item.endDate,
+    });
   }
 
   return (
@@ -392,6 +420,18 @@ export default function RankingPage({
             </div>
           </div>
         )}
+        {category === 'fund' && (
+          <div className={`${styles.controlBlock} ${styles.subControl}`} role="group" aria-label="基金类型筛选">
+            <div className={styles.segmented}>
+              {FUND_FILTERS.map(item => (
+                <button key={item.key} type="button"
+                  aria-pressed={fundFilter === item.key}
+                  className={`${styles.segmentButton} ${fundFilter === item.key ? styles.segmentButtonActive : ''}`}
+                  onClick={() => setFundFilter(item.key)}>{item.label}</button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className={`${styles.controlBlock} ${styles.rangeControl}`} aria-label="收益区间">
           <div className={styles.segmented}>
             {RANGES.map((item) => (
@@ -409,7 +449,15 @@ export default function RankingPage({
         </div>
       </section>
 
-      <section className={styles.tableWrap} aria-label="近期表现表格" tabIndex={0}>
+      <section ref={tableRef} className={styles.tableWrap} aria-label="近期表现表格" tabIndex={0}
+        onPointerDown={event => {
+          gesture.current = { x: event.clientX, y: event.clientY, scrollLeft: event.currentTarget.scrollLeft, moved: false };
+        }}
+        onPointerMove={event => {
+          const current = gesture.current;
+          if (current && Math.hypot(event.clientX - current.x, event.clientY - current.y) > 8) current.moved = true;
+        }}
+        onPointerCancel={() => { if (gesture.current) gesture.current.moved = true; }}>
         <table className={`${styles.table} ${showRisk ? styles.withRisk : ''}`} aria-label="近期表现">
           <colgroup>
             <col className={styles.rankCol} />
@@ -456,11 +504,13 @@ export default function RankingPage({
             {!showSkeleton && items.map((item, index) => {
               const up = (item.returnPercent ?? 0) >= 0;
               return (
-                <tr key={item.id}>
+                <tr key={item.id} className={styles.historyRow} onClick={event => openHistory(event, item)}>
                   <td><span className={`${styles.rank} ${rankStyle(index)}`}>#{index + 1}</span></td>
                   <td className={styles.nameCell}>
-                    <strong title={item.name}>{item.name}</strong>
-                    <span>{item.symbol}</span>
+                    <button type="button" className={styles.nameButton} aria-label={`${item.name}走势`} aria-haspopup="dialog" title={item.name}>
+                      <strong>{item.name}</strong>
+                      <span>{item.symbol}</span>
+                    </button>
                   </td>
                   <td className={`${styles.numericCell} ${styles.percent} ${up ? styles.up : styles.down}`}>{formatPercent(item.returnPercent)}</td>
                   <td className={`${styles.numericCell} ${styles.value}`}>{formatValue(item.currentValue)}</td>
@@ -483,6 +533,7 @@ export default function RankingPage({
           ? '* 收益与风险指标使用同区间历史收盘价或官方净值；缺失数据以 -- 显示，数据以官方披露为准。'
           : '* 最新收益可能包含盘中行情；基金收益使用已披露官方净值。数据可能存在延迟或误差，以官方披露为准。'}
       </p>
+      {selectedHistory && <RecentHistoryModal {...selectedHistory} onClose={() => setSelectedHistory(null)} />}
     </main>
   );
 }

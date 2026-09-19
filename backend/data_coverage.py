@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .config import configured_fund_codes, configured_market_return_items, load_universe
+from .config import configured_fund_codes, configured_market_return_items, fund_estimate_enabled, load_universe
 from .fx_history import ECB_CURRENCIES, fx_history_summary
 from .storage import get_conn
 
@@ -31,7 +31,7 @@ def expected_holding_periods(*, years: int = 3, as_of: date | None = None) -> li
 
 def missing_holding_requests(*, years: int = 3, as_of: date | None = None) -> list[dict[str, Any]]:
     periods = expected_holding_periods(years=years, as_of=as_of)
-    codes = configured_fund_codes()
+    codes = [code for code in configured_fund_codes() if fund_estimate_enabled(code)]
     inception_dates = fund_inception_dates()
     with get_conn() as conn:
         existing = {
@@ -96,7 +96,7 @@ def historical_data_coverage(*, years: int = 3, as_of: date | None = None) -> di
     for code in codes:
         expected_dates = {
             report_date for report_date in all_expected_dates
-            if report_date >= inception_dates.get(code, "0000-00-00")
+            if fund_estimate_enabled(code) and report_date >= inception_dates.get(code, "0000-00-00")
         }
         available_periods = holdings_by_code.get(code, set())
         missing_periods = sorted(expected_dates - available_periods, reverse=True)

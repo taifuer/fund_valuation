@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react';
 import { fetchFundProfiles, fetchFundPurchaseStatuses, fetchFundReturnSummaries } from '../api';
 import type { Fund, FundPurchaseData, FundRangeReturn, FundReturnRangeKey, FundReturnSummary } from '../types';
+import { fundStrategyLabel } from '../fundClassification';
 import styles from './FundProfilePanel.module.css';
 
 interface Props {
   fundCode: string;
   fallbackProfile?: Fund['profile'];
+  strategy?: Fund['strategy'];
+  trackingIndex?: string;
+  shareClass?: Fund['shareClass'];
+  navCurrency?: Fund['navCurrency'];
 }
 
 const RETURN_RANGES: FundReturnRangeKey[] = ['1w', '1m', '3m', '6m', '1y', '3y', 'ytd'];
+const NAV_CURRENCIES = { CNY: '人民币（CNY）', USD: '美元（USD）', HKD: '港币（HKD）' };
 
 function formatChineseDate(value: string): string {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -48,7 +54,7 @@ function ReturnItems({ summary }: { summary: FundReturnSummary | null }) {
   );
 }
 
-export default function FundProfilePanel({ fundCode, fallbackProfile }: Props) {
+export default function FundProfilePanel({ fundCode, fallbackProfile, strategy, trackingIndex, shareClass, navCurrency }: Props) {
   const [profile, setProfile] = useState<Fund['profile']>(fallbackProfile);
   const [purchase, setPurchase] = useState<FundPurchaseData | null>(null);
   const [returns, setReturns] = useState<FundReturnSummary | null>(null);
@@ -78,6 +84,13 @@ export default function FundProfilePanel({ fundCode, fallbackProfile }: Props) {
     <div className={styles.panel}>
       <section className={styles.section}>
         <h4>基本资料</h4>
+        {(purchase?.name || strategy || trackingIndex || shareClass || navCurrency) && <dl className={styles.details}>
+          {purchase?.name && <div className={styles.fullWidth}><dt>份额名称</dt><dd>{purchase.name}</dd></div>}
+          {shareClass && <div><dt>份额类别</dt><dd>{shareClass} 类</dd></div>}
+          {navCurrency && <div><dt>净值币种</dt><dd>{NAV_CURRENCIES[navCurrency]}</dd></div>}
+          {strategy && <div><dt>投资方式</dt><dd>{fundStrategyLabel({ strategy })}</dd></div>}
+          {trackingIndex && <div><dt>跟踪指数</dt><dd>{trackingIndex}</dd></div>}
+        </dl>}
         {profile ? (
           <dl className={styles.details}>
             <div><dt>成立日期</dt><dd>{formatChineseDate(profile.inceptionDate)}</dd></div>

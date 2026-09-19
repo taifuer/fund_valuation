@@ -2186,7 +2186,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         codes = server.configured_fund_codes_from_constants()
         holdings = server.parse_default_fund_holdings_from_constants(codes[0])
 
-        self.assertEqual(len(codes), 18)
+        self.assertEqual(len(codes), 26)
         self.assertGreater(len(holdings), 0)
         self.assertRegex(holdings[0]["sinaSymbol"], r"^[A-Za-z0-9_]+$")
         self.assertIn("sina-cn:sh000001", server.configured_market_return_items_from_constants())
@@ -2299,7 +2299,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertTrue(periods)
         self.assertTrue(all(str(period["availableDate"]) <= "2026-07-03" for period in periods))
         self.assertEqual(coverage["status"], "incomplete")
-        self.assertEqual(coverage["summary"]["fundsWithoutNav"], 18)
+        self.assertEqual(coverage["summary"]["fundsWithoutNav"], 26)
         self.assertGreater(coverage["summary"]["missingHoldingPeriods"], 0)
         self.assertEqual(
             coverage["summary"]["marketsWithoutHistory"],
@@ -2380,6 +2380,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         }]
 
         with (
+            patch.object(server, "configured_fund_estimate_enabled", return_value=True),
             patch.object(server, "fetch_upstream", return_value=(200, "text/plain", b"payload")) as fetch,
             patch.object(
                 server,
@@ -2413,6 +2414,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             "weight": 0.1301, "market": "us", "sinaSymbol": "gb_nvda", "currency": "USD",
         }]
         with (
+            patch.object(server, "configured_fund_estimate_enabled", return_value=True),
             patch.object(server, "fetch_upstream", return_value=(200, "text/plain", b"payload")) as fetch,
             patch.object(server, "parse_fund_holdings", return_value=rows) as parse,
         ):
@@ -3014,6 +3016,28 @@ class ServerDataRefreshTests(unittest.TestCase):
         points = server.read_fund_performance_from_db('017436')
         self.assertAlmostEqual((points[-1]['returnValue'] / points[0]['returnValue'] - 1) * 100, 1)
 
+    def test_market_dashboard_does_not_read_fund_summaries_or_fetch_upstream(self):
+        server.store_dashboard_snapshot({
+            'schemaVersion': 1, 'generatedAt': server.now_ms(),
+            'quotes': {'sh000001': {
+                'symbol': 'sh000001', 'price': 3200, 'previousClose': 3190,
+                'changePercent': 0.31, 'fetchedAt': server.now_ms(),
+            }},
+            'quotesText': '', 'fxText': '', 'marketStates': {},
+        })
+        with patch.object(
+            server, 'fetch_upstream', side_effect=AssertionError('read path must not fetch'),
+        ), patch.object(
+            server, 'read_fund_overview_summary_from_db', side_effect=AssertionError('market page must not read fund NAV'),
+        ), patch.object(
+            server, 'schedule_fund_history_refresh', side_effect=AssertionError('market page must not refresh fund history'),
+        ):
+            response = server.app.test_client().get('/api/dashboard?symbols=sh000001&currencies=USD,EUR')
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload['quotes']['sh000001']['price'], 3200)
+        self.assertNotIn('fundSummaries', payload)
+
     def test_standalone_fx_uses_dashboard_without_upstream(self):
         fx = 'var hq_str_fx_susdcny="09:30:00,7.10,7.10,7.00,7.00,7.10,7.00,美元人民币,1.43,0.1,7.10,7.10,7.10,7.10,7.10,7.10,2026-09-04";'
         server.store_dashboard_snapshot({'schemaVersion': 1, 'generatedAt': server.now_ms(), 'quotes': {}, 'quoteText': '', 'fxText': fx, 'marketStates': {}})
@@ -3037,6 +3061,35 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(server.available_fund_estimates(['017436']), {})
         server.store_fund_history('017436', [{'FSRQ': '2026-09-02', 'DWJZ': 2.02, 'JZZZL': 1}])
         self.assertIsNone(server.fund_card_snapshot(['017436'])['cards']['017436']['estimate'])
+
+    def test_passive_comparison_funds_use_official_nav_without_estimation_or_holdings_fetch(self):
+        codes = ['017091', '161128', '270042', '160213', '050025', '161125', '040046', '000834', '016532', '007721']
+        for code in codes:
+            self.assertIn(code, server.configured_fund_codes_from_constants())
+            self.assertFalse(server.configured_fund_estimate_enabled(code))
+            server.store_fund_history(code, [
+                {'FSRQ': '2026-08-25', 'DWJZ': 2, 'JZZZL': 0, 'LJJZ': 2},
+                {'FSRQ': '2026-09-01', 'DWJZ': 1.02, 'JZZZL': 1, 'LJJZ': 2.02},
+            ])
+        server.store_dashboard_snapshot({code: {
+            'officialNavDate': '2026-09-01', 'officialNav': 1.02,
+            'preview': {'estimatedNav': 99},
+        } for code in codes}, server.FUND_ESTIMATE_SNAPSHOT_NAME)
+        with patch.object(server, 'fetch_upstream', side_effect=AssertionError('no upstream on page reads')):
+            cards = server.fund_card_snapshot(codes)['cards']
+            self.assertEqual(server.available_fund_estimates(codes), {})
+            self.assertEqual(server.refresh_latest_fund_holdings(codes)['checked'], 0)
+            for code in codes:
+                self.assertEqual(cards[code]['official']['nav'], 1.02)
+                self.assertEqual(cards[code]['official']['officialChange'], 1)
+                self.assertIsNone(cards[code]['estimate'])
+                summary = server.read_fund_return_summary_from_db(code)
+                self.assertAlmostEqual(summary['ranges']['1w']['returnPercent'], 1)
+        self.assertFalse(set(codes) & {item['code'] for item in server.missing_holding_requests()})
+        for item in historical_data_coverage()['funds']:
+            if item['code'] in codes:
+                self.assertEqual(item['missingHoldingPeriods'], [])
+                self.assertEqual(item['expectedHoldingPeriodCount'], 0)
 
     def test_smaller_same_period_holdings_cannot_replace_expanded_disclosure(self):
         rows = [{'reportDate': '2026-06-30', 'rank': rank, 'stockCode': f'A{rank}', 'name': 'A', 'weight': 0.01} for rank in range(1, 21)]

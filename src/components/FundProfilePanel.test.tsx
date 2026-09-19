@@ -22,7 +22,7 @@ describe('FundProfilePanel', () => {
       salesServiceFee: '0.00%',
     }]]));
     vi.mocked(fetchFundPurchaseStatuses).mockResolvedValue(new Map([['017436', {
-      code: '017436', name: '华宝纳斯达克精选', fundType: 'QDII', navDate: '2026-07-21',
+      code: '017436', name: '华宝纳斯达克精选股票发起式(QDII)A', fundType: 'QDII', navDate: '2026-07-21',
       purchaseStatus: '限大额', redeemStatus: '开放赎回', nextOpenDate: '', minPurchase: '10',
       dailyLimit: '10000', feeRate: '0.12', fetchedAt: Date.UTC(2026, 6, 22),
     }]]));
@@ -32,11 +32,46 @@ describe('FundProfilePanel', () => {
       },
     }]]));
 
-    render(<FundProfilePanel fundCode="017436" />);
+    render(<FundProfilePanel fundCode="017436" shareClass="A" navCurrency="CNY" />);
     expect(screen.getByText('基金资料加载中...')).toBeInTheDocument();
     expect(await screen.findByText('47.06亿元')).toBeInTheDocument();
     expect(screen.getByText('2026年6月30日', { exact: false })).toBeInTheDocument();
     expect(screen.getByText('限大额')).toBeInTheDocument();
     expect(screen.getByText('+2.35%')).toBeInTheDocument();
+    expect(screen.getByText('A 类')).toBeInTheDocument();
+    expect(screen.getByText('人民币（CNY）')).toBeInTheDocument();
+    expect(screen.getByText('华宝纳斯达克精选股票发起式(QDII)A')).toBeInTheDocument();
+  });
+
+  it('keeps the verified strategy and index visible even if remote profile data is missing', async () => {
+    vi.mocked(fetchFundProfiles).mockResolvedValue(new Map());
+    vi.mocked(fetchFundPurchaseStatuses).mockResolvedValue(new Map());
+    vi.mocked(fetchFundReturnSummaries).mockResolvedValue(new Map());
+    render(<FundProfilePanel fundCode="270042" strategy="index" trackingIndex="纳斯达克100指数" />);
+    expect(await screen.findByText('指数基金')).toBeInTheDocument();
+    expect(screen.getByText('纳斯达克100指数')).toBeInTheDocument();
+    expect(screen.getByText('暂无基本资料')).toBeInTheDocument();
+  });
+
+  it('keeps confirmed class C and currency visible without upstream profile data', async () => {
+    vi.mocked(fetchFundProfiles).mockResolvedValue(new Map());
+    vi.mocked(fetchFundPurchaseStatuses).mockResolvedValue(new Map());
+    vi.mocked(fetchFundReturnSummaries).mockResolvedValue(new Map());
+    render(<FundProfilePanel fundCode="022184" shareClass="C" navCurrency="CNY" />);
+    expect(await screen.findByText('C 类')).toBeInTheDocument();
+    expect(screen.getByText('人民币（CNY）')).toBeInTheDocument();
+    expect(screen.queryByText('A 类')).not.toBeInTheDocument();
+  });
+
+  it.each(['CNY', undefined] as const)('does not infer a share class or unknown currency (%s)', async (navCurrency) => {
+    vi.mocked(fetchFundProfiles).mockResolvedValue(new Map());
+    vi.mocked(fetchFundPurchaseStatuses).mockResolvedValue(new Map());
+    vi.mocked(fetchFundReturnSummaries).mockResolvedValue(new Map());
+    render(<FundProfilePanel fundCode={navCurrency ? '004877' : '999999'} navCurrency={navCurrency} />);
+    await screen.findByText('暂无基本资料');
+    expect(screen.queryByText('份额类别')).not.toBeInTheDocument();
+    expect(screen.queryByText('A 类')).not.toBeInTheDocument();
+    if (navCurrency) expect(screen.getByText('人民币（CNY）')).toBeInTheDocument();
+    else expect(screen.queryByText('净值币种')).not.toBeInTheDocument();
   });
 });

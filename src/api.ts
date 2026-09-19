@@ -516,10 +516,6 @@ export interface DashboardSnapshot {
   marketStates: Map<string, MarketStateData>;
 }
 
-export interface OverviewSnapshot extends DashboardSnapshot {
-  fundSummaries: Map<string, FundNavData>;
-}
-
 export interface DataHealth {
   status: 'ok' | 'degraded';
   updatedAt: number;
@@ -570,7 +566,6 @@ export interface DataHealth {
 }
 
 const dashboardSnapshotPending = new Map<string, Promise<DashboardSnapshot | null>>();
-const overviewSnapshotPending = new Map<string, Promise<OverviewSnapshot | null>>();
 const DASHBOARD_BROWSER_CACHE_TTL_MS = 2 * 60 * 1000;
 
 function dashboardStorageKey(cacheKey: string): string {
@@ -717,70 +712,6 @@ export async function fetchDashboardSnapshot(
   });
 
   dashboardSnapshotPending.set(cacheKey, request);
-  return request;
-}
-
-export async function fetchOverviewSnapshot(
-  symbols: string[],
-  currencies: string[],
-  fundCodes: string[],
-): Promise<OverviewSnapshot | null> {
-  const uniqueSymbols = [...new Set(symbols.filter(Boolean))];
-  const uniqueCurrencies = [...new Set(currencies.filter((currency) => currency !== 'CNY'))];
-  const uniqueFundCodes = [...new Set(fundCodes.filter(Boolean))];
-  if (uniqueSymbols.length > 160 || uniqueFundCodes.length > 50) return null;
-  const cacheKey = `${uniqueSymbols.join(',')}|${uniqueCurrencies.join(',')}|${uniqueFundCodes.join(',')}`;
-  const dashboardCacheKey = `${uniqueSymbols.join(',')}|${uniqueCurrencies.join(',')}`;
-  const pending = overviewSnapshotPending.get(cacheKey);
-  if (pending) return pending;
-  const stored = readStoredDashboard(dashboardCacheKey);
-  const storedSnapshot = stored
-    ? parseDashboardSnapshotPayload(stored, uniqueSymbols, Date.now())
-    : null;
-
-  const request = (async () => {
-    const params = new URLSearchParams({
-      symbols: uniqueSymbols.join(','),
-      currencies: uniqueCurrencies.join(','),
-      fundCodes: uniqueFundCodes.join(','),
-    });
-    const requestSnapshot = async (refresh = false): Promise<OverviewSnapshot | null> => {
-      if (refresh) params.set('refresh', '1');
-      const res = await fetchWithTimeout(
-        apiUrl(`/api/overview?${params.toString()}`),
-        4_000,
-        { headers: fundManagementHeaders() },
-      );
-      if (!res.ok) return null;
-      const json = await res.json();
-      storeDashboard(dashboardCacheKey, json);
-      const snapshot = parseDashboardSnapshotPayload(json, uniqueSymbols, Date.now());
-      const fundSummaries = new Map<string, FundNavData>();
-      for (const code of uniqueFundCodes) {
-        const raw = json.fundSummaries?.[code];
-        if (!raw) continue;
-        const nav = Number(raw.nav);
-        fundSummaries.set(code, {
-          code,
-          name: code,
-          navDate: String(raw.navDate ?? ''),
-          nav: Number.isFinite(nav) ? nav : 0,
-          officialChange: nullableNumber(raw.officialChange),
-          estimatedNav: Number.isFinite(nav) ? nav : 0,
-          estimatedChange: 0,
-        });
-      }
-      return { ...snapshot, fundSummaries };
-    };
-
-    const snapshot = await requestSnapshot();
-    if (!snapshot) return storedSnapshot ? { ...storedSnapshot, fundSummaries: new Map() } : null;
-    return snapshot;
-  })().catch(() => storedSnapshot ? { ...storedSnapshot, fundSummaries: new Map() } : null).finally(() => {
-    overviewSnapshotPending.delete(cacheKey);
-  });
-
-  overviewSnapshotPending.set(cacheKey, request);
   return request;
 }
 

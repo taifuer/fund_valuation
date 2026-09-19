@@ -40,173 +40,6 @@
   margin: 10px 2px 5px;
 }
 
-.summarySection {
-  margin: 0 auto;
-  max-width: 1040px;
-  padding: 0 16px 32px;
-}
-
-.summaryHeader {
-  align-items: center;
-  display: flex;
-  justify-content: flex-start;
-  gap: 12px;
-  margin: 22px 0 8px;
-}
-
-.summaryHeaderLeft {
-  align-items: center;
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.summaryTitle {
-  align-items: center;
-  color: #64748b;
-  display: inline-flex;
-  font-size: 12px;
-  font-weight: 600;
-  gap: 5px;
-  line-height: 20px;
-}
-
-.summaryAction {
-  background: transparent;
-  border: 0;
-  color: inherit;
-  cursor: pointer;
-  flex: 0 0 auto;
-  font: inherit;
-  padding: 0;
-}
-
-.summaryAction:hover {
-  color: #334155;
-}
-
-.summaryAction:focus-visible {
-  outline: 2px solid #94a3b8;
-  outline-offset: 2px;
-}
-
-.summaryGrid {
-  display: grid;
-  gap: 6px;
-  grid-template-columns: repeat(4, 1fr);
-}
-
-.summaryCard {
-  background: #fff;
-  border: 1px solid #f1f5f9;
-  border-radius: 8px;
-  color: #0f172a;
-  cursor: pointer;
-  display: block;
-  font: inherit;
-  padding: 8px 10px 9px;
-  position: relative;
-  text-align: center;
-  width: 100%;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-}
-
-.summaryCard:hover {
-  border-color: #cbd5e1;
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
-}
-
-.summaryRank {
-  background: #f1f5f9;
-  border-radius: 6px 0 4px 0;
-  color: #94a3b8;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 16px;
-  padding: 1px 5px;
-  position: absolute;
-  left: 0;
-  top: 0;
-}
-
-.summaryRankGold,
-.summaryRankSilver,
-.summaryRankBronze {
-  color: #fff;
-}
-
-.summaryRankGold {
-  background: linear-gradient(135deg, #f59e0b, #eab308);
-}
-
-.summaryRankSilver {
-  background: linear-gradient(135deg, #94a3b8, #64748b);
-}
-
-.summaryRankBronze {
-  background: linear-gradient(135deg, #d97706, #b45309);
-}
-
-.summaryName {
-  color: #64748b;
-  font-size: 11px;
-  line-height: 16px;
-  margin-bottom: 2px;
-  overflow: hidden;
-  padding: 0 44px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.summaryCode {
-  background: #f8fafc;
-  border-radius: 0 6px 0 4px;
-  color: #94a3b8;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 16px;
-  padding: 1px 5px;
-  pointer-events: none;
-  position: absolute;
-  right: 0;
-  top: 0;
-}
-
-.summaryValue {
-  color: #0f172a;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0;
-  line-height: 1.2;
-}
-
-.summaryChangeUp,
-.summaryChangeDown {
-  font-size: 11px;
-  font-weight: 500;
-  line-height: normal;
-  margin-top: 1px;
-}
-
-.summaryChangeUp {
-  color: var(--color-up);
-}
-
-.summaryChangeDown {
-  color: var(--color-down);
-}
-
-.summaryMeta {
-  bottom: 3px;
-  color: #64748b;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 14px;
-  pointer-events: none;
-  position: absolute;
-  right: 6px;
-}
-
 .sectionHeader {
   display: flex;
   align-items: center;
@@ -216,6 +49,9 @@
 }
 
 .fundToolbar {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 8px;
   backdrop-filter: blur(10px);
   background: rgba(248, 250, 252, 0.94);
   border-bottom: 1px solid #e2e8f0;
@@ -233,36 +69,16 @@
   margin: 0;
 }
 
-.sectionTitleButton {
+.fundControls {
   align-items: center;
-  background: transparent;
-  border: 0;
-  color: #64748b;
-  cursor: pointer;
-  display: inline-flex;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  gap: 5px;
-  margin: 0;
-  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: space-between;
 }
 
-.sectionTitleButton:hover {
-  color: #334155;
-}
-
-.toggleIcon {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
-  color: #64748b;
-  display: inline-block;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 14px;
-  text-align: center;
-  width: 16px;
+.fundControls > .sortToggle .sortButton {
+  min-width: 52px;
 }
 
 .count {
@@ -592,6 +408,10 @@
     gap: 8px;
   }
 
+  .fundToolbar {
+    align-items: stretch;
+  }
+
   .sortControls {
     flex-wrap: wrap;
   }
@@ -633,28 +453,25 @@
     display: none;
   }
 
-  .summaryGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .fundControlsOfficial {
+    column-gap: 8px;
+    flex-wrap: nowrap;
   }
 
-  .summaryCard {
-    min-height: 92px;
-    padding-top: 7px;
+  .fundControlsOfficial > .sortToggle .sortButton {
+    min-width: 44px;
   }
 
-  .summaryName {
-    display: -webkit-box;
-    min-height: 32px;
-    padding: 0 34px;
-    text-overflow: clip;
-    white-space: normal;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+  .fundControlsOfficial .sortControls {
+    flex: 1 0 auto;
+    justify-content: flex-end;
+    overflow: visible;
+    padding-bottom: 0;
+    width: auto;
   }
 
-  .summaryHeader {
-    align-items: flex-start;
-    flex-direction: column;
+  .fundControlsOfficial .managerTrigger {
+    margin-left: 0;
   }
 
   .fundManager {

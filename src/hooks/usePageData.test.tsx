@@ -1,13 +1,12 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { OverviewSnapshot } from '../api';
-import type { Fund } from '../types';
+import type { DashboardSnapshot } from '../api';
+import { ETF_ASSETS, INDICES, MARKET_ASSETS } from '../constants';
 import { useOverviewData, useRankingMarketData } from './usePageData';
 
 const apiMocks = vi.hoisted(() => ({
   fetchAllQuotes: vi.fn(),
   fetchDashboardSnapshot: vi.fn(),
-  fetchOverviewSnapshot: vi.fn(),
   fetchFundHistory: vi.fn(),
   fetchFundNavs: vi.fn(),
   fetchFundReturnSummaries: vi.fn(),
@@ -19,15 +18,7 @@ const apiMocks = vi.hoisted(() => ({
 
 vi.mock('../api', () => apiMocks);
 
-const fund: Fund = {
-  symbol: '000001',
-  code: '000001',
-  name: '测试基金',
-  holdings: [],
-};
-const funds = [fund];
-
-function overviewSnapshot(price: number, generatedAt: number): OverviewSnapshot {
+function overviewSnapshot(price: number, generatedAt: number): DashboardSnapshot {
   return {
     generatedAt,
     quotes: new Map([[
@@ -46,38 +37,26 @@ function overviewSnapshot(price: number, generatedAt: number): OverviewSnapshot 
     ]]),
     fxRates: new Map(),
     marketStates: new Map(),
-    fundSummaries: new Map([[
-      fund.code,
-      {
-        code: fund.code,
-        name: fund.name,
-        navDate: '2026-08-06',
-        nav: 1.2,
-        officialChange: 0.5,
-        estimatedNav: 1.2,
-        estimatedChange: 0,
-      },
-    ]]),
   };
 }
 
 describe('useOverviewData', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('keeps the previous snapshot visible while refreshing after page re-entry', async () => {
     const initial = overviewSnapshot(3200, 100);
-    let finishRefresh: (snapshot: OverviewSnapshot) => void = () => undefined;
-    const pendingRefresh = new Promise<OverviewSnapshot>((resolve) => {
+    let finishRefresh: (snapshot: DashboardSnapshot) => void = () => undefined;
+    const pendingRefresh = new Promise<DashboardSnapshot>((resolve) => {
       finishRefresh = resolve;
     });
-    apiMocks.fetchOverviewSnapshot
+    apiMocks.fetchDashboardSnapshot
       .mockResolvedValueOnce(initial)
       .mockReturnValueOnce(pendingRefresh);
 
     const { result, rerender } = renderHook(
-      ({ enabled }) => useOverviewData(funds, enabled),
+      ({ enabled }) => useOverviewData(enabled),
       { initialProps: { enabled: true } },
     );
 
@@ -87,9 +66,8 @@ describe('useOverviewData', () => {
     rerender({ enabled: false });
     rerender({ enabled: true });
 
-    await waitFor(() => expect(apiMocks.fetchOverviewSnapshot).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(apiMocks.fetchDashboardSnapshot).toHaveBeenCalledTimes(2));
     expect(result.current.loading).toBe(false);
-    expect(result.current.fundLoading).toBe(false);
     expect(result.current.quotes.get('sh000001')?.price).toBe(3200);
 
     await act(async () => {
@@ -97,6 +75,64 @@ describe('useOverviewData', () => {
       await pendingRefresh;
     });
     await waitFor(() => expect(result.current.quotes.get('sh000001')?.price).toBe(3210));
+  });
+
+  it('loads only market symbols and display currencies, including on focus refresh', async () => {
+    apiMocks.fetchDashboardSnapshot.mockResolvedValue(overviewSnapshot(3200, 100));
+    const { result } = renderHook(() => useOverviewData(true));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const symbols = [...new Set([
+      ...INDICES.map(item => item.sinaSymbol),
+      ...INDICES.flatMap(item => item.futures?.sinaSymbol ?? []),
+      ...MARKET_ASSETS.map(item => item.sinaSymbol),
+      ...ETF_ASSETS.map(item => item.sinaSymbol),
+    ])];
+    expect(apiMocks.fetchDashboardSnapshot).toHaveBeenCalledWith(symbols, ['USD', 'EUR']);
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(apiMocks.fetchDashboardSnapshot).toHaveBeenCalledTimes(2);
+    for (const [name, mock] of Object.entries(apiMocks)) {
+      if (name !== 'fetchDashboardSnapshot') expect(mock).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does not request data while inactive or accept an old response after leaving', async () => {
+    let finish: (snapshot: DashboardSnapshot) => void = () => undefined;
+    const pending = new Promise<DashboardSnapshot>(resolve => { finish = resolve; });
+    apiMocks.fetchDashboardSnapshot.mockReturnValue(pending);
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useOverviewData(enabled),
+      { initialProps: { enabled: false } },
+    );
+    expect(apiMocks.fetchDashboardSnapshot).not.toHaveBeenCalled();
+    rerender({ enabled: true });
+    expect(result.current.loading).toBe(true);
+    rerender({ enabled: false });
+    await act(async () => {
+      finish(overviewSnapshot(3200, 100));
+      await pending;
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(apiMocks.fetchDashboardSnapshot).toHaveBeenCalledTimes(1);
+    expect(result.current.quotes.size).toBe(0);
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('retains usable market cards after a failed refresh without fund fallbacks', async () => {
+    apiMocks.fetchDashboardSnapshot
+      .mockResolvedValueOnce(overviewSnapshot(3200, 100))
+      .mockResolvedValueOnce(null);
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useOverviewData(enabled),
+      { initialProps: { enabled: true } },
+    );
+    await waitFor(() => expect(result.current.quotes.size).toBe(1));
+    rerender({ enabled: false });
+    rerender({ enabled: true });
+    await waitFor(() => expect(result.current.error).toBe('概览行情快照暂不可用'));
+    expect(result.current.loading).toBe(false);
+    expect(result.current.quotes.get('sh000001')?.price).toBe(3200);
+    expect(apiMocks.fetchFundHistory).not.toHaveBeenCalled();
+    expect(apiMocks.fetchFundNavs).not.toHaveBeenCalled();
   });
 
   it('does not request live quotes for close-only index archives', async () => {

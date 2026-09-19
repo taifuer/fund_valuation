@@ -15,6 +15,7 @@ FUND_CODE_RE = re.compile(r"^\d{6}$")
 SINA_SYMBOL_RE = re.compile(r"^[A-Za-z0-9_]{1,40}$")
 HISTORY_SYMBOL_RE = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
 HISTORY_SOURCES = {
+    "nikkei-index",
     "yahoo-index",
     "sina-cn",
     "sina-us",
@@ -25,6 +26,7 @@ HISTORY_SOURCES = {
     "coinmetrics-crypto",
 }
 FUND_ESTIMATE_MODES = {"holdings", "official"}
+FUND_STRATEGIES = {"active", "index"}
 FUND_BENCHMARK_COMPONENT_KINDS = {"market", "stable"}
 
 
@@ -124,9 +126,21 @@ def load_universe() -> dict[str, Any]:
             if not FUND_CODE_RE.fullmatch(code) or code in fund_codes:
                 raise RuntimeError("Invalid or duplicate fund code in universe configuration")
             fund_codes.add(code)
+            share_class = fund.get("shareClass")
+            if share_class is not None and (not isinstance(share_class, str) or not re.fullmatch(r"[A-Z]", share_class)):
+                raise RuntimeError(f"Invalid share class for fund {code}")
+            nav_currency = fund.get("navCurrency")
+            if nav_currency is not None and (not isinstance(nav_currency, str) or nav_currency not in {"CNY", "USD", "HKD"}):
+                raise RuntimeError(f"Invalid NAV currency for fund {code}")
             estimate_mode = str(fund.get("estimateMode") or "holdings")
             if estimate_mode not in FUND_ESTIMATE_MODES:
                 raise RuntimeError(f"Invalid estimate mode for fund {code}")
+            strategy = fund.get("strategy")
+            if strategy is not None and (not isinstance(strategy, str) or strategy not in FUND_STRATEGIES):
+                raise RuntimeError(f"Invalid strategy for fund {code}")
+            tracking_index = fund.get("trackingIndex")
+            if strategy == "index" and (not isinstance(tracking_index, str) or not tracking_index.strip()):
+                raise RuntimeError(f"Missing tracking index for fund {code}")
             if fund.get("benchmark") is not None and normalize_fund_benchmark(fund) is None:
                 raise RuntimeError(f"Invalid benchmark for fund {code}")
             holdings = fund.get("holdings")

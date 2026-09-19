@@ -4,16 +4,19 @@ import { nextChartIndex } from '../chartKeyboard';
 import { fetchMarketHistory } from '../api';
 import { useChartWidth } from '../hooks/useChartWidth';
 import { fitAxisTicks } from '../chartLayout';
-import type { IndexConfig, MarketHistoryPoint, QuoteData } from '../types';
+import type { HistoryRangeKey, IndexConfig, MarketHistoryPoint, QuoteData } from '../types';
+import HistoryDialog from './HistoryDialog';
 import styles from './MarketHistoryModal.module.css';
 
 interface Props {
   item: IndexConfig;
   currentQuote?: QuoteData;
+  initialRange?: HistoryRangeKey;
+  asOf?: string;
   onClose: () => void;
 }
 
-type RangeKey = '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | '5y' | 'ytd' | 'all';
+type RangeKey = HistoryRangeKey;
 type TextAnchor = 'start' | 'middle' | 'end';
 
 const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
@@ -49,14 +52,13 @@ function selectRange(points: MarketHistoryPoint[], days: number | null): MarketH
 }
 
 function selectYearToDate(points: MarketHistoryPoint[]): MarketHistoryPoint[] {
-  if (points.length <= 2) return points;
+  if (points.length === 0) return points;
   const latest = points[points.length - 1];
   const yearStart = `${latest.date.slice(0, 4)}-01-01`;
   const firstThisYear = points.findIndex((point) => point.date >= yearStart);
   if (firstThisYear < 0) return points;
-  const startIndex = firstThisYear > 0 ? firstThisYear - 1 : firstThisYear;
-  const sliced = points.slice(startIndex);
-  return sliced.length >= 2 ? sliced : points.slice(-2);
+  const startIndex = points[firstThisYear].date === yearStart ? firstThisYear : Math.max(0, firstThisYear - 1);
+  return points.slice(startIndex);
 }
 
 function tickCount(range: RangeKey): number {
@@ -188,22 +190,22 @@ function pointerSvgX(event: React.PointerEvent<SVGSVGElement>): number {
   return point.matrixTransform(matrix.inverse()).x;
 }
 
-export default function MarketHistoryModal({ item, onClose }: Props) {
-  const [range, setRange] = useState<RangeKey>('3m');
+export default function MarketHistoryModal(props: Props) {
+  return (
+    <HistoryDialog name={props.item.name} symbol={props.item.symbol} onClose={props.onClose}>
+      <MarketHistoryChart {...props} />
+    </HistoryDialog>
+  );
+}
+
+export function MarketHistoryChart({ item, initialRange = '3m', asOf }: Omit<Props, 'onClose'>) {
+  const [range, setRange] = useState<RangeKey>(initialRange);
   const cacheKey = item.history ? `${item.history.source}:${item.history.symbol}` : item.sinaSymbol;
   const [history, setHistory] = useState<MarketHistoryPoint[]>(() => historyCache.get(cacheKey) ?? []);
   const [loading, setLoading] = useState(!historyCache.get(cacheKey)?.length);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const { width: chartWidth, ref: chartRef } = useChartWidth();
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
 
   useEffect(() => {
     let cancelled = false;
@@ -253,9 +255,12 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
 
   const selectedRange = RANGES.find((rangeItem) => rangeItem.key === range) ?? RANGES[2];
   const visible = useMemo(() => {
-    if (range === 'ytd') return selectYearToDate(history);
-    return selectRange(history, selectedRange.days);
-  }, [history, range, selectedRange.days]);
+    const points = asOf ? history.filter(point => point.date <= asOf) : history;
+    if (range === 'ytd') return selectYearToDate(points);
+    return selectRange(points, selectedRange.days);
+  }, [asOf, history, range, selectedRange.days]);
+  const incompleteRange = selectedRange.days !== null && visible.length > 0
+    && visible[0].date > cutoffDate(visible[visible.length - 1].date, selectedRange.days);
 
   const metrics = useMemo(() => {
     if (visible.length < 2) return null;
@@ -308,23 +313,13 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
   };
 
   return (
-    <div className={styles.backdrop} onClick={onClose}>
-      <div className={styles.dialog} role="dialog" aria-modal="true" aria-label={`${item.name}历史走势`} onClick={(event) => event.stopPropagation()}>
-        <div className={styles.header}>
-          <div>
-            <div className={styles.title}>{item.name}</div>
-            <div className={styles.subtitle}>{item.symbol}</div>
-          </div>
-          <button type="button" className={styles.closeButton} onClick={onClose} aria-label="关闭">
-            ×
-          </button>
-        </div>
-
+    <>
         <div className={styles.rangeGroup} aria-label="历史行情区间">
           {RANGES.map((rangeItem) => (
             <button
               key={rangeItem.key}
               type="button"
+              aria-pressed={range === rangeItem.key}
               className={`${styles.rangeButton} ${range === rangeItem.key ? styles.rangeButtonActive : ''}`}
               onClick={() => setRange(rangeItem.key)}
             >
@@ -333,9 +328,10 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
           ))}
         </div>
 
-        {displayLoading && <div className={styles.state}>历史行情加载中...</div>}
+        {displayLoading && <div className={styles.state} role="status">历史行情加载中...</div>}
         {!displayLoading && displayError && <div className={styles.stateError} role="alert">{displayError}</div>}
         {!displayLoading && !displayError && displayEmpty && <div className={styles.state}>暂无历史行情</div>}
+        {!displayLoading && !displayError && !displayEmpty && !metrics && <div className={styles.state}>历史行情不足，至少需要两个交易日</div>}
         {!displayLoading && !displayEmpty && metrics && (
           <>
             <div className={styles.metrics}>
@@ -405,10 +401,9 @@ export default function MarketHistoryModal({ item, onClose }: Props) {
                 ))}
               </svg>
             </div>
-          <p className={styles.note}>{metrics.returnPct === null ? '区间存在待核实除权断点，暂不计算收益与回撤。' : history.some(point => point.adjusted) ? '走势与区间指标按分红、拆分数据调整；最新价格为未复权收盘价。' : ''}</p>
+          <p className={styles.note}>{incompleteRange ? '所选区间历史不足，以下为实际可用区间：' : ''}{metrics.first.date} 至 {metrics.last.date} · 历史收盘数据，不含盘中行情。{metrics.returnPct === null ? '区间存在待核实除权断点，暂不计算收益与回撤。' : history.some(point => point.adjusted) ? '走势与区间指标按分红、拆分数据调整；最新价格为未复权收盘价。' : ''}</p>
           </>
         )}
-      </div>
-    </div>
+    </>
   );
 }

@@ -26,6 +26,7 @@ export interface Holding {
 }
 
 export type FundEstimateMode = 'holdings' | 'official';
+export type FundStrategy = 'active' | 'index';
 
 export interface FundBenchmarkComponent {
   kind?: 'market' | 'stable';
@@ -50,7 +51,11 @@ export interface Fund {
   symbol: string;
   name: string;
   code: string; // Chinese fund code for NAV fetch
+  shareClass?: string;
+  navCurrency?: 'CNY' | 'USD' | 'HKD';
   estimateMode?: FundEstimateMode;
+  strategy?: FundStrategy;
+  trackingIndex?: string;
   benchmark?: FundBenchmark;
   profile?: {
     inceptionDate: string;
@@ -268,8 +273,10 @@ export interface SystemStatus {
   workerLastSuccessAt: number;
 }
 
+export type HistoryRangeKey = '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | '5y' | 'ytd' | 'all';
+
 export interface MarketHistoryConfig {
-  source: 'sina-cn' | 'sina-us' | 'sina-futures' | 'tencent-hk' | 'twse-official' | 'naver-korea' | 'coinmetrics-crypto' | 'yahoo-index';
+  source: 'sina-cn' | 'sina-us' | 'sina-futures' | 'tencent-hk' | 'twse-official' | 'naver-korea' | 'coinmetrics-crypto' | 'yahoo-index' | 'nikkei-index';
   symbol: string;
 }
 

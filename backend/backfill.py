@@ -102,6 +102,8 @@ def cached_text(cache_key: str) -> str | None:
     if not cached:
         return None
     _, _, body = cached
+    if cache_key == "markethistory:nikkei-index:N225":
+        return body.decode("cp932")
     return decode_body(body)
 
 

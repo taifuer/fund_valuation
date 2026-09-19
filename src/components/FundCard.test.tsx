@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { FundEstimate } from '../hooks/useQuotes';
 import type { Fund, FundEstimateProjection } from '../types';
+import { FUNDS } from '../constants';
 import FundCard from './FundCard';
 
 const fund: Fund = {
@@ -140,5 +141,24 @@ describe('FundCard valuation labels', () => {
     expect(screen.queryByText('1.0800')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /展开详情/ }));
     expect(await screen.findByText('复合代理数据准备中，暂不生成估值。')).toBeInTheDocument();
+  });
+
+  it.each(['017091', '161128'])('ignores legacy pending and preview estimates for index fund %s', (code) => {
+    const indexFund = FUNDS.find(item => item.code === code)!;
+    const legacyEstimate: FundEstimate = {
+      ...estimate,
+      fund: indexFund,
+      fundCode: code,
+      fundName: indexFund.name,
+    };
+    const { rerender } = render(<FundCard fund={indexFund} estimate={legacyEstimate} rank={1} sortMode="pending" loading={false} />);
+    for (const sortMode of ['pending', 'preview', 'official'] as const) {
+      rerender(<FundCard fund={indexFund} estimate={legacyEstimate} rank={1} sortMode={sortMode} loading={false} />);
+      expect(screen.getByText('07/29 已出净值')).toBeInTheDocument();
+      expect(screen.getByText('仅官方净值')).toBeInTheDocument();
+      expect(screen.queryByText(/待公布|实时参考|盘前|已收盘/)).not.toBeInTheDocument();
+      expect(screen.queryByText('1.0800')).not.toBeInTheDocument();
+      expect(screen.queryByText('1.1000')).not.toBeInTheDocument();
+    }
   });
 });

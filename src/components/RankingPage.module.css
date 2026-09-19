@@ -169,6 +169,34 @@
   min-width: 0;
 }
 
+.historyRow {
+  cursor: pointer;
+}
+
+.nameButton {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.nameButton:focus-visible {
+  outline: 2px solid var(--ink-muted);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+@media (hover: hover) {
+  .table .historyRow:hover td {
+    background: #f5f7f9;
+  }
+}
+
 .nameCell strong {
   color: #0f172a;
   display: block;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import universe from '../config/universe.json';
+import { FUNDS } from './constants';
 
 interface HistoryConfig {
   source: string;
@@ -12,6 +13,17 @@ interface IndexConfig {
 }
 
 describe('market universe configuration', () => {
+  it('labels the selected share class without inventing classes for unlabelled products', () => {
+    expect(FUNDS.filter(fund => fund.shareClass === 'A')).toHaveLength(22);
+    expect(FUNDS.filter(fund => fund.shareClass === 'C').map(fund => fund.code)).toEqual(['022184']);
+    expect(FUNDS.filter(fund => !fund.shareClass).map(fund => fund.code).sort()).toEqual(['000043', '004877', '160213']);
+    for (const fund of FUNDS) {
+      expect(fund.navCurrency).toBe('CNY');
+      if (fund.shareClass) expect(fund.name).toMatch(new RegExp(`${fund.shareClass}(?:$|[（(])`));
+    }
+    expect(FUNDS.find(fund => fund.code === '022184')?.name).toBe('富国全球科技互联网C');
+  });
+
   it('keeps ranking history enabled for indices that have overview history', () => {
     const overview = universe.indices as IndexConfig[];
     const ranking = universe.rankingIndices as IndexConfig[];
@@ -59,7 +71,7 @@ describe('market universe configuration', () => {
     }>;
     const healthcare = funds.find((fund) => fund.code === '004877');
 
-    expect(funds).toHaveLength(18);
+    expect(funds).toHaveLength(26);
     expect(healthcare).toMatchObject({
       benchmark: {
         id: 'global-healthcare-v1',

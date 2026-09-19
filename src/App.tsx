@@ -9,6 +9,8 @@ import {
   type FundManagementMode,
 } from './fundManagementAuth';
 import { FUNDS } from './constants';
+import { FUND_FILTERS, matchesFundFilter, type FundFilter } from './fundClassification';
+import { readFundPageFilter, storeFundPageFilter } from './fundPagePreferences';
 import {
   rankFundEstimates,
   type FundSortDirection,
@@ -20,10 +22,11 @@ import {
   canonicalizePageLocation,
   expandedFundCodeFromPathname,
   fundExpansionPath,
+  replaceSearchParams,
   pageFromPathname,
   type PageKey,
 } from './routing';
-import type { Fund, FundNavData } from './types';
+import type { Fund } from './types';
 import Header from './components/Header';
 import IndexCards from './components/IndexCards';
 import FundCard from './components/FundCard';
@@ -34,14 +37,8 @@ const CompaniesPage = lazy(() => import('./components/CompaniesPage'));
 const AboutPage = lazy(() => import('./components/AboutPage'));
 const DiagnosticsPage = lazy(() => import('./components/DiagnosticsPage'));
 
-const FUND_SECTION_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_section';
-const FUND_SUMMARY_COLLAPSED_KEY = 'fund_valuation:collapsed_fund_summary';
 const FUND_MANAGER_KEY = 'fund_valuation:managed_funds';
 const MAX_CUSTOM_FUNDS = 50;
-interface FundSummary {
-  fund: Fund;
-  nav: FundNavData | null;
-}
 
 interface ManagedFundSettings {
   hiddenDefaultCodes: string[];
@@ -52,20 +49,6 @@ const EMPTY_MANAGED_SETTINGS: ManagedFundSettings = {
   hiddenDefaultCodes: [],
   customFunds: [],
 };
-
-function readCollapsedFlag(key: string): boolean {
-  try {
-    return window.localStorage.getItem(key) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function writeCollapsedFlag(key: string, value: boolean) {
-  try {
-    window.localStorage.setItem(key, value ? '1' : '0');
-  } catch { /* skip */ }
-}
 
 function readManagedFundSettings(): ManagedFundSettings {
   try {
@@ -116,98 +99,6 @@ function toCustomFund(fund: { code: string; name: string }): Fund {
   };
 }
 
-function formatDate(yyyymmdd: string): string {
-  if (!yyyymmdd) return '--';
-  const m = yyyymmdd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m) return `${m[1]}/${m[2]}/${m[3]}`;
-  return yyyymmdd;
-}
-
-function fundSummarySortValue(summary: FundSummary): number | null {
-  return summary.nav?.officialChange ?? null;
-}
-
-function summaryRankClass(index: number): string {
-  if (index === 0) return styles.summaryRankGold;
-  if (index === 1) return styles.summaryRankSilver;
-  if (index === 2) return styles.summaryRankBronze;
-  return '';
-}
-
-function FundSummaryCards({
-  funds,
-  summaries,
-  loading,
-  collapsed,
-  onToggle,
-  onOpenFunds,
-  onOpenFund,
-}: {
-  funds: Fund[];
-  summaries: FundSummary[];
-  loading: boolean;
-  collapsed: boolean;
-  onToggle: () => void;
-  onOpenFunds: () => void;
-  onOpenFund: (code: string) => void;
-}) {
-  return (
-    <section className={styles.summarySection}>
-      <div className={styles.summaryHeader}>
-        <div className={styles.summaryHeaderLeft}>
-          <button
-            type="button"
-            className={styles.sectionTitleButton}
-            aria-expanded={!collapsed}
-            onClick={onToggle}
-          >
-            <span className={styles.toggleIcon}>{collapsed ? '+' : '-'}</span>
-            <span>基金</span>
-            <span className={styles.count}>· {funds.length} · 最新净值 ·</span>
-          </button>
-          <div className={styles.summaryTitle}>
-            <button type="button" className={styles.summaryAction} onClick={onOpenFunds}>
-              查看估值
-            </button>
-          </div>
-        </div>
-      </div>
-      {collapsed ? null : loading && summaries.length === 0 ? (
-        <div className={styles.fundLoading}>基金净值加载中...</div>
-      ) : (
-        <div className={styles.summaryGrid}>
-          {summaries.map((summary, index) => {
-            const change = summary.nav?.officialChange ?? null;
-            const up = (change ?? 0) >= 0;
-            return (
-              <button
-                type="button"
-                key={summary.fund.code}
-                className={styles.summaryCard}
-                aria-label={`查看 ${summary.fund.name} 详情`}
-                onClick={() => onOpenFund(summary.fund.code)}
-              >
-                <div className={`${styles.summaryRank} ${summaryRankClass(index)}`}>#{index + 1}</div>
-                <div className={styles.summaryName}>{summary.fund.name}</div>
-                <div className={styles.summaryValue}>
-                  {summary.nav ? summary.nav.nav.toFixed(4) : '--'}
-                </div>
-                <div className={up ? styles.summaryChangeUp : styles.summaryChangeDown}>
-                  {change == null ? '--' : `${up ? '+' : ''}${change.toFixed(2)}%`}
-                </div>
-                <span className={styles.summaryCode}>{summary.fund.code}</span>
-                <div className={styles.summaryMeta}>
-                  <span>{formatDate(summary.nav?.navDate ?? '')}</span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
-
 export default function App() {
   const [managedFunds, setManagedFunds] = useState<ManagedFundSettings>(() => readManagedFundSettings());
   const [fundManagementMode, setFundManagementMode] = useState<FundManagementMode>('disabled');
@@ -224,8 +115,8 @@ export default function App() {
   const pendingFundScrollRef = useRef<string | null>(expandedFundCodeFromPathname(window.location.pathname));
 
   const handleFundExpandedChange = useCallback((code: string, expanded: boolean) => {
-    const targetPath = fundExpansionPath(code, expanded);
-    if (window.location.pathname !== targetPath) {
+    const targetPath = `${fundExpansionPath(code, expanded)}${window.location.search}`;
+    if (`${window.location.pathname}${window.location.search}` !== targetPath) {
       window.history.pushState({}, '', targetPath);
     }
     setExpandedCode(expanded ? code : null);
@@ -247,7 +138,7 @@ export default function App() {
     false,
     activePage === 'funds',
   );
-  const overviewData = useOverviewData(funds, activePage === 'overview');
+  const overviewData = useOverviewData(activePage === 'overview');
   const showMarketMeta = activePage !== 'about' && activePage !== 'companies';
   const headerFxRates = useHeaderFxRates(showMarketMeta && activePage !== 'overview' && activePage !== 'funds');
   const marketPageData = useRankingMarketData(activePage === 'ranking');
@@ -266,8 +157,9 @@ export default function App() {
       : null;
   const [sortMode, setSortMode] = useState<FundSortMode>('preview');
   const [sortDirection, setSortDirection] = useState<FundSortDirection>('desc');
-  const [fundCollapsed, setFundCollapsed] = useState(() => readCollapsedFlag(FUND_SECTION_COLLAPSED_KEY));
-  const [fundSummaryCollapsed, setFundSummaryCollapsed] = useState(() => readCollapsedFlag(FUND_SUMMARY_COLLAPSED_KEY));
+  const [fundFilter, setFundFilter] = useState<FundFilter>(() => (
+    readFundPageFilter(window.location.search)
+  ));
   const [fundSearchQuery, setFundSearchQuery] = useState('');
   const [addingFund, setAddingFund] = useState(false);
   const [fundManageMessage, setFundManageMessage] = useState('');
@@ -343,31 +235,23 @@ export default function App() {
     };
   }, [fundManagerOpen]);
 
+  const effectiveSortMode = fundFilter === 'index' ? 'official' : sortMode;
+  const filteredFunds = useMemo(() => funds.filter(fund => matchesFundFilter(fund, fundFilter)), [funds, fundFilter]);
   const sortedEstimates = useMemo(() => (
-    rankFundEstimates(fundEstimates, sortMode, sortDirection)
-  ), [fundEstimates, sortDirection, sortMode]);
+    rankFundEstimates(fundEstimates.filter(item => matchesFundFilter(item.fund, fundFilter)), effectiveSortMode, sortDirection)
+  ), [fundEstimates, fundFilter, sortDirection, effectiveSortMode]);
 
-  const sortLabel = sortMode === 'official'
+  const sortLabel = effectiveSortMode === 'official'
     ? '按最新净值涨跌排序'
-    : sortMode === 'preview'
+    : effectiveSortMode === 'preview'
       ? '按实时参考（含汇率）涨跌排序'
       : '待公布优先 · 各组按涨跌排序';
-  const overviewFundSummaries = useMemo(() => {
-    const items = funds.map((fund) => ({ fund, nav: overviewData.fundSummaries.get(fund.code) ?? null }));
-    return items.sort((a, b) => {
-      const aValue = fundSummarySortValue(a);
-      const bValue = fundSummarySortValue(b);
-      if (aValue === null && bValue === null) return a.fund.name.localeCompare(b.fund.name);
-      if (aValue === null) return 1;
-      if (bValue === null) return -1;
-      return bValue - aValue;
-    });
-  }, [overviewData.fundSummaries, funds]);
 
   useEffect(() => {
     function handlePopState() {
       const page = canonicalizePageLocation();
       setActivePage(page);
+      if (page === 'funds') setFundFilter(readFundPageFilter(window.location.search));
       setExpandedCode(page === 'funds' ? expandedFundCodeFromPathname(window.location.pathname) : null);
     }
     window.addEventListener('popstate', handlePopState);
@@ -388,14 +272,18 @@ export default function App() {
       pendingFundScrollRef.current = null;
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [activePage, expandedCode, fundEstimates.length]);
+  }, [activePage, expandedCode, fundEstimates.length, fundFilter]);
 
   useEffect(() => {
-    if (activePage === 'funds' && fundCollapsed) {
-      setFundCollapsed(false);
-      writeCollapsedFlag(FUND_SECTION_COLLAPSED_KEY, false);
+    if (activePage !== 'funds') return;
+    const expandedFund = funds.find(fund => fund.code === expandedCode);
+    if (expandedFund && !matchesFundFilter(expandedFund, fundFilter)) {
+      setFundFilter('all');
+      return;
     }
-  }, [activePage, fundCollapsed]);
+    replaceSearchParams({ strategy: fundFilter });
+    storeFundPageFilter(fundFilter);
+  }, [activePage, expandedCode, fundFilter, funds]);
 
   function navigatePage(page: PageKey) {
     rememberPageSearch();
@@ -404,18 +292,9 @@ export default function App() {
       window.history.pushState({}, '', path);
     }
     setActivePage(page);
+    if (page === 'funds') setFundFilter(readFundPageFilter(window.location.search));
     setExpandedCode(null);
     window.scrollTo({ top: 0, behavior: 'auto' });
-  }
-
-  function navigateFund(code: string) {
-    const path = fundExpansionPath(code, true);
-    if (window.location.pathname !== path) {
-      window.history.pushState({}, '', path);
-    }
-    pendingFundScrollRef.current = code;
-    setActivePage('funds');
-    setExpandedCode(code);
   }
 
   function updateManagedFunds(next: ManagedFundSettings) {
@@ -467,6 +346,7 @@ export default function App() {
       ...managedFunds,
       hiddenDefaultCodes: managedFunds.hiddenDefaultCodes.filter((item) => item !== defaultFund.code),
     });
+    if (!matchesFundFilter(defaultFund, fundFilter)) changeFundFilter('all');
     setFundSearchQuery('');
     setFundManageMessage(`已恢复 ${defaultFund.name}`);
   }
@@ -531,6 +411,7 @@ export default function App() {
         ...managedFunds,
         customFunds: [...managedFunds.customFunds, { code: query, name: displayName }],
       });
+      changeFundFilter('all');
       setFundSearchQuery('');
       setFundManageMessage(`已添加 ${displayName}`);
     } catch {
@@ -562,20 +443,10 @@ export default function App() {
     setFundManageMessage(`已恢复默认 ${FUNDS.length} 只基金`);
   }
 
-  function toggleFundSection() {
-    setFundCollapsed((prev) => {
-      const next = !prev;
-      writeCollapsedFlag(FUND_SECTION_COLLAPSED_KEY, next);
-      return next;
-    });
-  }
-
-  function toggleFundSummary() {
-    setFundSummaryCollapsed((prev) => {
-      const next = !prev;
-      writeCollapsedFlag(FUND_SUMMARY_COLLAPSED_KEY, next);
-      return next;
-    });
+  function changeFundFilter(filter: FundFilter) {
+    if (filter === fundFilter) return;
+    setFundFilter(filter);
+    if (expandedCode) handleFundExpandedChange(expandedCode, false);
   }
 
   return (
@@ -590,38 +461,28 @@ export default function App() {
       />
       {activeError && <div className={styles.error}>{activeError}</div>}
       {activePage === 'overview' ? (
-        <>
-          <IndexCards quotes={overviewData.quotes} marketStates={overviewData.marketStates} loading={overviewData.loading} />
-          <FundSummaryCards
-            funds={funds}
-            summaries={overviewFundSummaries}
-            loading={overviewData.fundLoading}
-            collapsed={fundSummaryCollapsed}
-            onToggle={toggleFundSummary}
-            onOpenFunds={() => navigatePage('funds')}
-            onOpenFund={navigateFund}
-          />
-        </>
+        <IndexCards quotes={overviewData.quotes} marketStates={overviewData.marketStates} loading={overviewData.loading} />
       ) : activePage === 'funds' ? (
         <>
           <div className={styles.fundSection}>
             <div className={`${styles.sectionHeader} ${styles.fundToolbar}`}>
-              <button
-                type="button"
-                className={styles.sectionTitleButton}
-                aria-expanded={!fundCollapsed}
-                onClick={toggleFundSection}
-              >
-                <span className={styles.toggleIcon}>{fundCollapsed ? '+' : '-'}</span>
-                <span>QDII 主动基金</span>
+              <h2 className={styles.sectionTitle}>
+                QDII 基金
                 <span className={styles.count}>
-                  {' · '}{funds.length}只
-                  {fundCollapsed ? '' : ` · ${sortLabel}`}
+                  {' · '}{filteredFunds.length} · {sortLabel}
                 </span>
-              </button>
-              {!fundCollapsed && (
+              </h2>
+              <div className={`${styles.fundControls} ${fundFilter === 'index' ? styles.fundControlsOfficial : ''}`}>
+                <div className={styles.sortToggle} role="group" aria-label="基金类型筛选">
+                  {FUND_FILTERS.map(item => (
+                    <button key={item.key} type="button"
+                      className={`${styles.sortButton} ${fundFilter === item.key ? styles.sortButtonActive : ''}`}
+                      aria-pressed={fundFilter === item.key}
+                      onClick={() => changeFundFilter(item.key)}>{item.label}</button>
+                  ))}
+                </div>
                 <div className={styles.sortControls}>
-                  <div className={styles.sortToggle} aria-label="基金排序方式">
+                  {fundFilter !== 'index' && <div className={styles.sortToggle} aria-label="基金排序方式">
                     <button
                       type="button"
                       aria-pressed={sortMode === 'pending'}
@@ -646,7 +507,7 @@ export default function App() {
                     >
                       最新净值
                     </button>
-                  </div>
+                  </div>}
                   <button
                     type="button"
                     className={styles.sortDirectionButton}
@@ -662,9 +523,9 @@ export default function App() {
                     </button>
                   )}
                 </div>
-              )}
+              </div>
             </div>
-            {fundManagementAvailable && !fundCollapsed && fundManagerOpen && (
+            {fundManagementAvailable && fundManagerOpen && (
               <div className={styles.managerOverlay} role="presentation" onClick={() => setFundManagerOpen(false)}>
                 <section
                   ref={managerDialogRef}
@@ -746,14 +607,15 @@ export default function App() {
                 </section>
               </div>
             )}
-            {!fundCollapsed && fundLoading && sortedEstimates.length === 0 && (
+            {fundLoading && sortedEstimates.length === 0 && (
               <div className={styles.fundLoading}>基金数据加载中...</div>
             )}
-            {!fundCollapsed && sortedEstimates.map((est) => {
+            {!fundLoading && filteredFunds.length === 0 && <div className={styles.fundLoading}>暂无此类基金</div>}
+            {sortedEstimates.map((est) => {
               const fund = est.estimate.fund;
               return (
                 <Fragment key={fund.code}>
-                  {sortMode === 'pending' && est.groupStart && (
+                  {effectiveSortMode === 'pending' && est.groupStart && (
                     <div className={styles.fundSortGroup}>
                       <span>{est.group === 'pending' ? '待公布' : est.group === 'officialOnly' ? '仅官方净值' : '已公布'}</span>
                       <span>· {est.groupCount}</span>
@@ -764,7 +626,7 @@ export default function App() {
                     fund={fund}
                     estimate={est.estimate}
                     rank={est.rank}
-                    sortMode={sortMode}
+                    sortMode={effectiveSortMode}
                     loading={false}
                     marketStates={marketStates}
                     onRemove={fundManagementGranted ? removeFund : undefined}

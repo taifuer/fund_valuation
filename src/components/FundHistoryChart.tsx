@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { intervalMetrics, formatReturn } from '../historyMetrics';
 import { nextChartIndex } from '../chartKeyboard';
-import type { FundHistoryPoint } from '../types';
+import type { FundHistoryPoint, HistoryRangeKey } from '../types';
 import { useFundHistory } from '../hooks/useFundHistory';
 import { useChartWidth } from '../hooks/useChartWidth';
 import { fitAxisTicks } from '../chartLayout';
@@ -9,9 +9,11 @@ import styles from './FundHistoryChart.module.css';
 
 interface Props {
   fundCode: string;
+  initialRange?: HistoryRangeKey;
+  asOf?: string;
 }
 
-type RangeKey = '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | '5y' | 'ytd' | 'all';
+type RangeKey = HistoryRangeKey;
 type TextAnchor = 'start' | 'middle' | 'end';
 
 const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
@@ -73,14 +75,13 @@ function selectRange(points: FundHistoryPoint[], days: number | null): FundHisto
 }
 
 function selectYearToDate(points: FundHistoryPoint[]): FundHistoryPoint[] {
-  if (points.length <= 2) return points;
+  if (points.length === 0) return points;
   const latest = points[points.length - 1];
   const yearStart = `${latest.date.slice(0, 4)}-01-01`;
   const firstThisYear = points.findIndex((point) => point.date >= yearStart);
   if (firstThisYear < 0) return points;
-  const startIndex = firstThisYear > 0 ? firstThisYear - 1 : firstThisYear;
-  const sliced = points.slice(startIndex);
-  return sliced.length >= 2 ? sliced : points.slice(-2);
+  const startIndex = points[firstThisYear].date === yearStart ? firstThisYear : Math.max(0, firstThisYear - 1);
+  return points.slice(startIndex);
 }
 
 function makeChart(points: FundHistoryPoint[], width: number) {
@@ -173,17 +174,20 @@ function pointerSvgX(event: React.PointerEvent<SVGSVGElement>): number {
   return point.matrixTransform(matrix.inverse()).x;
 }
 
-export default function FundHistoryChart({ fundCode }: Props) {
-  const [range, setRange] = useState<RangeKey>('3m');
+export default function FundHistoryChart({ fundCode, initialRange = '3m', asOf }: Props) {
+  const [range, setRange] = useState<RangeKey>(initialRange);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const { history, loading, error } = useFundHistory(fundCode);
   const { width: chartWidth, ref: chartRef } = useChartWidth();
 
   const selectedRange = RANGES.find((item) => item.key === range) ?? RANGES[2];
   const visible = useMemo(() => {
-    if (range === 'ytd') return selectYearToDate(history);
-    return selectRange(history, selectedRange.days);
-  }, [history, range, selectedRange.days]);
+    const points = asOf ? history.filter(point => point.date <= asOf) : history;
+    if (range === 'ytd') return selectYearToDate(points);
+    return selectRange(points, selectedRange.days);
+  }, [asOf, history, range, selectedRange.days]);
+  const incompleteRange = selectedRange.days !== null && visible.length > 0
+    && visible[0].date > cutoffDate(visible[visible.length - 1].date, selectedRange.days);
 
   const metrics = useMemo(() => {
     if (visible.length < 2) return null;
@@ -237,6 +241,7 @@ export default function FundHistoryChart({ fundCode }: Props) {
             <button
               key={item.key}
               type="button"
+              aria-pressed={range === item.key}
               className={`${styles.rangeButton} ${range === item.key ? styles.rangeButtonActive : ''}`}
               onClick={() => setRange(item.key)}
             >
@@ -246,8 +251,9 @@ export default function FundHistoryChart({ fundCode }: Props) {
         </div>
       </div>
 
-      {loading && <div className={styles.state}>历史净值加载中...</div>}
+      {loading && <div className={styles.state} role="status">历史净值加载中...</div>}
       {!loading && error && <div className={styles.stateError} role="alert">{error}</div>}
+      {!loading && !error && !metrics && <div className={styles.state}>历史净值不足，至少需要两个交易日</div>}
       {!loading && metrics && (
         <>
           <div className={styles.metrics}>
@@ -317,7 +323,7 @@ export default function FundHistoryChart({ fundCode }: Props) {
               ))}
             </svg>
           </div>
-        <p className={styles.note}>折线为单位净值；区间收益与回撤按可获取的分红、拆分数据调整。{metrics.returnPct === null ? '区间存在待核实断点，暂不计算收益。' : ''}</p>
+        <p className={styles.note}>{incompleteRange ? '所选区间历史不足，以下为实际可用区间：' : ''}{metrics.first.date} 至 {metrics.last.date} · 折线为官方单位净值；区间收益与回撤按可获取的分红、拆分数据调整。{metrics.returnPct === null ? '区间存在待核实断点，暂不计算收益。' : ''}</p>
         </>
       )}
     </div>

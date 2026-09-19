@@ -110,6 +110,7 @@ CN_ETF_HISTORY_SYMBOL_RE = re.compile(r"^(?:sh5\d{5}|sz159\d{3})$")
 MARKET_HISTORY_CORPORATE_ACTION_LOW_RATIO = 0.65
 MARKET_HISTORY_CORPORATE_ACTION_HIGH_RATIO = 1 / MARKET_HISTORY_CORPORATE_ACTION_LOW_RATIO
 MARKET_HISTORY_SOURCES = {
+    "nikkei-index",
     "yahoo-index",
     "sina-cn",
     "sina-us",
@@ -2215,6 +2216,8 @@ def fund_history_is_stale(latest_date: str | None, now: datetime | None = None) 
 
 
 def market_history_quote_symbol(source: str, symbol: str) -> str | None:
+    if source == "nikkei-index" and symbol == "N225":
+        return "int_nikkei"
     if source == "sina-cn":
         return symbol
     if source in {"sina-us", "yahoo-index"}:
@@ -2649,7 +2652,10 @@ def refresh_latest_fund_holdings(
     *,
     force_refresh: bool = False,
 ) -> dict[str, Any]:
-    fund_codes = sorted(dict.fromkeys(codes or configured_fund_codes_from_constants()))
+    fund_codes = [
+        code for code in sorted(dict.fromkeys(codes or configured_fund_codes_from_constants()))
+        if configured_fund_estimate_enabled(code)
+    ]
     if not fund_codes:
         return {"checked": 0, "stored": 0, "updated": 0, "unavailable": 0, "errors": []}
 
@@ -4189,7 +4195,15 @@ def parse_binance_bitcoin_history(text: str, *, current_ms: int | None = None) -
 
 def store_market_history(source: str, symbol: str, text: str) -> int:
     rows: list[dict[str, Any]] = []
-    if source == "yahoo-index":
+    if source == "nikkei-index":
+        from .nikkei_daily import parse_daily
+        if symbol != "N225":
+            raise ValueError("Unsupported Nikkei index")
+        cutoff = latest_completed_trading_day("int_nikkei")
+        if not cutoff:
+            raise ValueError("Missing completed Japan trading day")
+        rows = parse_daily(text, cutoff)
+    elif source == "yahoo-index":
         from .index_archives import parse_index_history
         cutoff = latest_completed_trading_day(f"gb_{symbol.lower()}")
         if not cutoff:
@@ -6372,6 +6386,11 @@ def fund_purchase() -> Response:
 
 
 def market_history_url(source: str, symbol: str) -> tuple[str, str]:
+    if source == "nikkei-index":
+        from .nikkei_daily import DAILY_URL
+        if symbol != "N225":
+            raise ValueError("Unsupported Nikkei index")
+        return DAILY_URL, "https://indexes.nikkei.co.jp/"
     if source == "yahoo-index":
         from .index_archives import index_history_url
         latest, _ = latest_market_history_meta(source, symbol)
@@ -6531,6 +6550,9 @@ def fetch_market_history_payload(
             raise
         status, content_type, body = 599, "application/json; charset=utf-8", b""
 
+    if source == "nikkei-index" and status < 400:
+        return status, "text/csv; charset=utf-8", body.decode("cp932").encode("utf-8")
+
     if source == "coinmetrics-crypto":
         primary_rows = parse_coinmetrics_bitcoin_history(decode_body(body)) if status < 400 else []
         if primary_rows:
@@ -6665,7 +6687,7 @@ def market_history() -> Response:
     else:
         if stored_count == 0 and cached_rows:
             return json_response(read_market_history_from_db(source, symbol, adjust_corporate_actions=True) or cached_rows)
-        if source in {"naver-korea", "coinmetrics-crypto", "yahoo-index"}:
+        if source in {"naver-korea", "coinmetrics-crypto", "yahoo-index", "nikkei-index"}:
             return json_response(read_market_history_from_db(source, symbol))
         if cn_etf_history_needs_adjustment(source, symbol):
             return json_response(read_market_history_from_db(source, symbol, adjust_corporate_actions=True))

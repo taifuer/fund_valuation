@@ -62,13 +62,13 @@ function FundDetails({
   return (
     <div className={styles.expanded}>
       <div className={styles.tabs}>
-        <button
+        {estimateEnabled && <button
           type="button"
           className={`${styles.tabButton} ${activeTab === 'holdings' ? styles.tabButtonActive : ''}`}
           onClick={() => onTabChange('holdings')}
         >
           持仓
-        </button>
+        </button>}
         <button
           type="button"
           className={`${styles.tabButton} ${activeTab === 'nav' ? styles.tabButtonActive : ''}`}
@@ -115,7 +115,8 @@ function FundDetails({
         {activeTab === 'nav' && <FundNavTable fundCode={fund.code} />}
         {activeTab === 'trend' && <FundHistoryChart fundCode={fund.code} />}
         {activeTab === 'profile' && (
-          <FundProfilePanel fundCode={fund.code} fallbackProfile={fund.profile} />
+          <FundProfilePanel fundCode={fund.code} fallbackProfile={fund.profile} strategy={fund.strategy} trackingIndex={fund.trackingIndex}
+            shareClass={fund.shareClass} navCurrency={fund.navCurrency} />
         )}
       </Suspense>
     </div>
