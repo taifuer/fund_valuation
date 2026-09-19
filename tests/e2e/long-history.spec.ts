@@ -160,7 +160,8 @@ test('opening history does not load live quotes or fund estimates', async ({ pag
   await page.goto('/history');
   await expect(page.getByRole('table', { name: '标普500年度收益' })).toBeVisible();
   expect(requests.filter(url => /fundestimates|fundnav|fundhistory|marketreturns/.test(url))).toEqual([]);
-  expect(requests.filter(url => url.includes('/api/dashboard')).every(url => new URL(url).searchParams.get('symbols') === '')).toBe(true);
+  expect(requests.filter(url => /\/api\/(dashboard|systemstatus|sina)/.test(url))).toEqual([]);
+  await expect(page.getByText(/北京时间/)).toHaveCount(0);
 });
 
 test('company and history charts share their visual foundation and accessible point selection', async ({ page }, testInfo) => {
@@ -252,6 +253,34 @@ test('large lifetime returns do not overlap the annualized column on a narrow vi
   expect(await values.locator('span span').evaluateAll(nodes => nodes.every(node => node.scrollWidth <= node.clientWidth + 1))).toBe(true);
   await table.getByRole('button', { name: '年化涨幅' }).click();
   await expect(table.getByRole('columnheader', { name: '年化涨幅' })).toHaveAttribute('aria-sort', 'descending');
+});
+
+test('long-term comparison fits the desktop content width without squeezing values', async ({ page, isMobile }, testInfo) => {
+  test.skip(isMobile, 'Mobile retains horizontal scrolling for all seven columns');
+  await page.route('**/api/longhistory*', route => route.fulfill({ json: {
+    schemaVersion: 1, year: 2026,
+    assets: [{ ...asset, name: '费城半导体' }, { ...asset, id: 'BTC', name: '比特币', unit: 'USD' }],
+    comparisons: { all: { all: { independentPeriods: true, rows: [
+      { ...performance, startClose: 176.52, endClose: 66311.93 },
+      { ...performance, id: 'BTC', startClose: .0675, endClose: 78533.89, change: 116267514.73, cagr: 138.3 },
+    ] } } },
+  } }));
+  for (const width of [1024, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/history?view=change&range=all');
+    const table = page.getByRole('table', { name: '区间涨幅' });
+    await expect(table).toContainText('+116267514.73%');
+    const geometry = await table.evaluate(element => ({
+      available: element.parentElement!.clientWidth,
+      width: element.getBoundingClientRect().width,
+      overflowingCells: [...element.querySelectorAll('th, td')].filter(cell => cell.scrollWidth > cell.clientWidth + 1).map(cell => cell.textContent),
+      nameWidth: element.querySelectorAll('thead th')[1].getBoundingClientRect().width,
+    }));
+    expect(geometry.width).toBeLessThanOrEqual(geometry.available + 1);
+    expect(geometry.nameWidth).toBeLessThanOrEqual(125);
+    expect(geometry.overflowingCells).toEqual([]);
+    if (width === 1280) await page.screenshot({ path: testInfo.outputPath('compact-long-term-comparison.png') });
+  }
 });
 
 test('comparison opens from the catalog, fits ranked columns and keeps the mobile toolbar in two rows', async ({ page }, testInfo) => {

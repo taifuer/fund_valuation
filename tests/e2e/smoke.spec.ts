@@ -191,8 +191,8 @@ test('mobile pages keep wide data tables inside local scrollers', async ({ page 
   }
 });
 
-test('market metadata has balanced spacing and a stable loading slot', async ({ page }) => {
-  for (const path of ['/', '/funds', '/returns', '/risk']) {
+test('market metadata has balanced spacing without a global loading banner', async ({ page }) => {
+  for (const path of ['/']) {
     await page.goto(path);
     await expect(page.getByText(/北京时间/)).toBeVisible();
     const selector = path === '/' ? '[class*="_sectionToggle_"]'
@@ -204,18 +204,35 @@ test('market metadata has balanced spacing and a stable loading slot', async ({ 
       const fx = document.querySelector('[class*="_fxRow_"]')!.getBoundingClientRect();
       const content = document.querySelector(selector)!;
       const before = content.getBoundingClientRect().top;
-      document.querySelector('[class*="_statusMessage_"]')!.textContent = '行情数据加载中...';
       return {
         top: time.top - header.bottom,
         bottom: before - fx.bottom,
-        shift: content.getBoundingClientRect().top - before,
         overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       };
     }, selector);
     expect(geometry.top, `${path} top spacing`).toBe(20);
     expect(geometry.bottom, `${path} bottom spacing`).toBe(20);
-    expect(geometry.shift, `${path} loading shift`).toBe(0);
+    await expect(page.locator('[class*="_statusMessage_"]')).toHaveCount(0);
     expect(geometry.overflow, `${path} overflow`).toBeLessThanOrEqual(1);
+  }
+});
+
+test('analysis, fund and company headings share their type and page inset without the global market strip', async ({ page }, testInfo) => {
+  let reference: { fontSize: string; left: number; topGap: number } | undefined;
+  for (const [path, title] of [['/companies', '公司经营趋势'], ['/returns', '资产走势'], ['/history', '资产走势'], ['/funds', 'QDII 基金']]) {
+    await page.goto(path);
+    const heading = page.getByRole('heading', { name: title, exact: true });
+    await expect(heading).toBeVisible();
+    await expect(page.locator('[class*="_datetime_"], [class*="_fxRow_"]')).toHaveCount(0);
+    const geometry = await heading.evaluate(element => ({
+      fontSize: getComputedStyle(element).fontSize,
+      left: element.getBoundingClientRect().left,
+      topGap: element.getBoundingClientRect().top - document.querySelector('header')!.getBoundingClientRect().bottom,
+    }));
+    if (!reference) reference = geometry;
+    expect(geometry).toEqual(reference);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath(`heading-${path.slice(1)}.png`) });
   }
 });
 
@@ -283,6 +300,8 @@ for (const returnVia of ['navigation', 'brand'] as const) {
     await expect.poll(() => refreshRequested).toBe(true);
 
     await expect(shanghaiCard).toContainText('3,200');
+    await page.waitForTimeout(1100);
+    await expect(page.getByRole('status').filter({ hasText: '行情数据加载中...' })).toHaveCount(0);
     releaseRefresh();
     await expect(shanghaiCard).toContainText('3,210');
   });
@@ -309,7 +328,8 @@ test('overview loads only market data and funds load after navigating to their p
   expect(requests.some(url => url.searchParams.has('fundCodes'))).toBe(false);
 
   await page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '基金', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /QDII 基金 · 16/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'QDII 基金', exact: true })).toBeVisible();
+  await expect(page.getByText(/^16 · 按实时参考/)).toBeVisible();
   await expect.poll(() => requests.some(url => url.pathname === '/api/fundestimates')).toBe(true);
   await page.locator('#fund-004877').getByRole('button', { name: /展开详情/ }).click();
 
@@ -321,7 +341,8 @@ test('overview loads only market data and funds load after navigating to their p
 test('fund page has a non-collapsible title and strategy filters', async ({ page }) => {
   await page.goto('/funds');
 
-  await expect(page.getByRole('heading', { name: /QDII 基金 · 16/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'QDII 基金', exact: true })).toBeVisible();
+  await expect(page.getByText(/^16 · 按实时参考/)).toBeVisible();
   await expect(page.getByRole('button', { name: /QDII 基金/ })).toHaveCount(0);
   await expect(page.getByRole('group', { name: '基金类型筛选' })).toBeVisible();
   await expect(page.locator('#fund-004877')).toContainText('汇添富全球医疗');

@@ -14,14 +14,11 @@ import type {
 } from '../types';
 import CompanyReportCalendar from './CompanyReportCalendar';
 import styles from './CompaniesPage.module.css';
+import PageHeading from './PageHeading';
 
 type MetricKey = 'revenue' | 'operatingProfit' | 'margin' | 'researchAndDevelopment' | 'employees';
 type TrendMode = 'value' | 'yoy';
 type CompanyPageMode = 'trend' | 'calendar';
-
-interface Props {
-  onStatusMessageChange?: (message: string) => void;
-}
 
 interface ChangeValue {
   value: number | null;
@@ -446,7 +443,7 @@ function TrendChart({ company, points, frequency, metric, mode }: TrendChartProp
   );
 }
 
-export default function CompaniesPage({ onStatusMessageChange }: Props) {
+export default function CompaniesPage() {
   const companies = companyFundamentalsDataset.companies;
   const orderedCompanies = useMemo(
     () => [...companies].sort((left, right) => COMPANY_NAME_COLLATOR.compare(left.nameEn, right.nameEn)),
@@ -473,11 +470,6 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
   });
   const [companyQuery, setCompanyQuery] = useState('');
   const [showAllDisclosures, setShowAllDisclosures] = useState(false);
-
-  useEffect(() => {
-    onStatusMessageChange?.('');
-    return () => onStatusMessageChange?.('');
-  }, [onStatusMessageChange]);
 
   const selectedCompany = companies.find((company) => company.id === selectedId) ?? companies[0];
   const filteredCompanies = useMemo(() => {
@@ -589,13 +581,10 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
 
   return (
     <main className={styles.page}>
-      <header className={styles.pageHeader}>
-        <div>
-          <h2 className={styles.pageTitle}>{pageMode === 'trend' ? '公司经营趋势' : '财报日历'}</h2>
-          <p>{pageMode === 'trend'
+      <PageHeading title={pageMode === 'trend' ? '公司经营趋势' : '财报日历'}
+        description={pageMode === 'trend'
             ? '聚焦营业收入、利润、研发投入与员工人数的长期变化'
-            : '集中查看已披露报告与官方确认的财报日期'}</p>
-        </div>
+            : '集中查看已披露报告与官方确认的财报日期'}>
         <nav className={styles.viewNav} aria-label="公司页面视图">
           <button
             type="button"
@@ -612,7 +601,7 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
             财报日历
           </button>
         </nav>
-      </header>
+      </PageHeading>
 
       {pageMode === 'calendar' ? <CompanyReportCalendar /> : <>
         <section className={styles.trendLayout}>

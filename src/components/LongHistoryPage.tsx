@@ -8,6 +8,7 @@ import { formatReturn } from '../historyMetrics';
 import { formatHistoryNumber as number, formatMonthlyDrawdown, monthlyDrawdownTitle, MONTHLY_DRAWDOWN_NOTE, longHistoryChart, nearestHistoryPoint } from '../longHistory';
 import type { LongHistoryCatalog, LongHistorySeries } from '../longHistory';
 import HistoryComparisonTable from './HistoryComparisonTable';
+import DataNotice from './DataNotice';
 import styles from './LongHistoryPage.module.css';
 
 const GROUPS = [['all', '全部'], ['china', 'A股'], ['usa', '美股'], ['asia', '亚太'], ['assets', '资产']] as const;
@@ -198,7 +199,9 @@ export default function LongHistoryPage() {
           onClick={() => choose({ asset: item.id })}>{item.name}</button>)}
       </div>}
       {error && <div role="status" className={styles.message}>{error}<button type="button" onClick={() => setAttempt(value => value + 1)}>重试</button></div>}
-      {busy && !error && !currentSeries && <div className={styles.placeholder} aria-hidden="true" />}
+      {busy && !error && !currentSeries && <div className={styles.placeholder} aria-busy="true">
+        <DataNotice loading message="历史数据加载中..." />
+      </div>}
       {choices.view === 'change' && catalog && !comparison && !error && <div role="status" className={styles.message}>
         区间结果待更新<button type="button" onClick={() => setAttempt(value => value + 1)}>重试</button>
       </div>}

@@ -1,19 +1,15 @@
 .viewHeader {
-  margin: 0 auto;
-  max-width: 1040px;
-  padding: 0 16px;
-  width: 100%;
+  composes: page from './PageBase.module.css';
+  padding-bottom: 0;
 }
 
 .viewNav {
   composes: viewNav from './AnalysisBase.module.css';
+  border-bottom: 0;
+  flex: 0 0 auto;
 }
 
 @media (max-width: 720px) {
-  .viewHeader {
-    padding: 0 12px;
-  }
-
   .viewNav {
     gap: 22px;
   }

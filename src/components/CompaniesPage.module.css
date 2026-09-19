@@ -2,22 +2,7 @@
   composes: page from './PageBase.module.css';
 }
 
-.pageHeader {
-  composes: header from './PageBase.module.css';
-}
-
-.pageTitle {
-  composes: title from './PageBase.module.css';
-}
-
 .viewNav { composes: viewNav from './AnalysisBase.module.css'; border-bottom: 0; }
-
-.pageHeader p {
-  color: #6b7585;
-  font-size: 13px;
-  line-height: 1.7;
-  margin: 5px 0 0;
-}
 
 .segmented {
   composes: segmented from './AnalysisBase.module.css';

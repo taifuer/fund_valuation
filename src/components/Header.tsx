@@ -22,7 +22,6 @@ interface Props {
   fxRates: Map<string, FxRateData>;
   activePage: PageKey;
   onPageChange: (page: PageKey) => void;
-  statusMessage?: string;
   systemStatus?: SystemStatus | null;
   showMarketMeta?: boolean;
 }
@@ -33,9 +32,8 @@ export default function Header({
   fxRates,
   activePage,
   onPageChange,
-  statusMessage = '',
   systemStatus = null,
-  showMarketMeta = true,
+  showMarketMeta = activePage === 'overview',
 }: Props) {
   const [time, setTime] = useState(formatTime());
   const displayRates = FX_ORDER.map((currency) => fxRates.get(currency)).filter((rate): rate is FxRateData => rate != null);
@@ -142,7 +140,6 @@ export default function Header({
                   );
                 })}
               </div>
-              <div className={styles.statusMessage} role="status" aria-live="polite" title={statusMessage || undefined}>{statusMessage}</div>
           </div>
         </div>
       )}

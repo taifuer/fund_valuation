@@ -10,6 +10,7 @@ import {
   type QuoteDisplayState,
 } from '../displayStatus';
 import MarketHistoryModal from './MarketHistoryModal';
+import DataNotice from './DataNotice';
 import { shouldUseFuturesQuote } from './IndexCards.logic';
 import styles from './IndexCards.module.css';
 
@@ -17,6 +18,7 @@ interface Props {
   quotes: Map<string, QuoteData>;
   marketStates?: Map<string, MarketStateData>;
   loading: boolean;
+  error?: string | null;
 }
 
 const EMPTY_MARKET_STATES: Map<string, MarketStateData> = new Map();
@@ -161,7 +163,7 @@ function Card({
   );
 }
 
-const IndexCards = memo(function IndexCards({ quotes, marketStates = EMPTY_MARKET_STATES, loading }: Props) {
+const IndexCards = memo(function IndexCards({ quotes, marketStates = EMPTY_MARKET_STATES, loading, error }: Props) {
   const [selectedHistory, setSelectedHistory] = useState<SelectedHistory | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(readCollapsedGroups);
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
@@ -188,6 +190,7 @@ const IndexCards = memo(function IndexCards({ quotes, marketStates = EMPTY_MARKE
 
   return (
     <div className={styles.container}>
+      <DataNotice loading={loading && quotes.size === 0} message="行情数据加载中..." error={error} />
       {GROUPS.map((g) => (
         <div key={g.title}>
           <button

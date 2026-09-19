@@ -46,18 +46,18 @@
 .table td.drawdown small { white-space: normal; }
 .table tbody th { font-weight: 600; }
 .table small { display: block; font-size: var(--font-caption); color: var(--ink-muted); font-weight: 400; line-height: 1.6; }
-.comparisonTable { composes: table from './AnalysisBase.module.css'; min-width: calc(812px + var(--comparison-values-width)); font-size: 13px; font-variant-numeric: tabular-nums; }
+.comparisonTable { composes: table from './AnalysisBase.module.css'; min-width: calc(768px + var(--comparison-values-width)); font-size: 13px; font-variant-numeric: tabular-nums; }
 .comparisonTable th, .comparisonTable td { text-align: right; }
 .comparisonTable tr > :nth-child(-n+2) { text-align: left; }
 .comparisonRankCol { width: 64px; }
-.comparisonNameCol { width: 140px; }
+.comparisonNameCol { width: 116px; }
 .comparisonChangeCol { width: 148px; }
 .comparisonCagrCol { width: 128px; }
 .comparisonDrawdownCol { width: 132px; }
 .comparisonValuesCol { width: var(--comparison-values-width); }
 .comparisonTable .comparisonValues { color: var(--ink-muted); font-size: var(--font-small); font-weight: 400; }
 .valuesPair { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
-.comparisonPeriodCol { width: 200px; }
+.comparisonPeriodCol { width: 180px; }
 .comparisonTable .comparisonPeriod { color: var(--ink-muted); font-size: var(--font-small); white-space: nowrap; }
 .comparisonTable small { display: block; color: var(--ink-muted); font-weight: 400; font-size: var(--font-caption); line-height: 1.6; margin-top: 3px; }
 .sortButton { composes: sortButton from './AnalysisBase.module.css'; }

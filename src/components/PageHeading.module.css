@@ -1,0 +1,30 @@
+.header {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.content {
+  align-items: flex-end;
+  display: flex;
+  gap: 16px 24px;
+  justify-content: space-between;
+}
+
+.copy { min-width: 0; }
+.title { composes: title from './PageBase.module.css'; }
+.description {
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 5px 0 0;
+  min-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .content {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+}

@@ -2,6 +2,8 @@ import type { Fund } from '../types';
 import { lazy, Suspense } from 'react';
 import type { MarketStateData, QuoteData } from '../types';
 import RankingPage from './RankingPage';
+import PageHeading from './PageHeading';
+import DataNotice from './DataNotice';
 import styles from './PerformancePage.module.css';
 
 type PerformanceMode = 'ranking' | 'history';
@@ -14,7 +16,7 @@ interface Props {
   marketStates: Map<string, MarketStateData>;
   marketLoading: boolean;
   onModeChange: (mode: PerformanceMode) => void;
-  onStatusMessageChange?: (message: string) => void;
+  error?: string | null;
 }
 
 export default function PerformancePage({
@@ -24,30 +26,32 @@ export default function PerformancePage({
   marketStates,
   marketLoading,
   onModeChange,
-  onStatusMessageChange,
+  error,
 }: Props) {
   return (
     <>
       <div className={styles.viewHeader}>
-        <nav className={styles.viewNav} aria-label="走势分析视图">
-          <button
-            type="button"
-            aria-current={mode === 'ranking' ? 'page' : undefined}
-            onClick={() => onModeChange('ranking')}
-          >
-            近期
-          </button>
-          <button
-            type="button"
-            aria-current={mode === 'history' ? 'page' : undefined}
-            onClick={() => onModeChange('history')}
-          >
-            长期
-          </button>
-        </nav>
+        <PageHeading title="资产走势" description="按各市场交易日统计，历史指标截至最近可用数据。">
+          <nav className={styles.viewNav} aria-label="走势分析视图">
+            <button
+              type="button"
+              aria-current={mode === 'ranking' ? 'page' : undefined}
+              onClick={() => onModeChange('ranking')}
+            >
+              近期
+            </button>
+            <button
+              type="button"
+              aria-current={mode === 'history' ? 'page' : undefined}
+              onClick={() => onModeChange('history')}
+            >
+              长期
+            </button>
+          </nav>
+        </PageHeading>
       </div>
       {mode === 'history' ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<div className={styles.viewHeader}><DataNotice loading message="历史数据加载中..." /></div>}>
           <LongHistoryPage />
         </Suspense>
       ) : (
@@ -56,7 +60,7 @@ export default function PerformancePage({
           funds={funds}
           marketStates={marketStates}
           marketLoading={marketLoading}
-          onStatusMessageChange={onStatusMessageChange}
+          error={error}
         />
       )}
     </>

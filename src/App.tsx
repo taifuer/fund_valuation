@@ -1,6 +1,6 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuotes } from './hooks/useQuotes';
-import { useHeaderFxRates, useOverviewData, useRankingMarketData, useSystemStatus } from './hooks/usePageData';
+import { useOverviewData, useRankingMarketData, useSystemStatus } from './hooks/usePageData';
 import { fetchApiMeta, fetchFundNavs, fetchSinaFundNavs, verifyFundManagementToken } from './api';
 import {
   clearFundManagementToken,
@@ -30,6 +30,8 @@ import type { Fund } from './types';
 import Header from './components/Header';
 import IndexCards from './components/IndexCards';
 import FundCard from './components/FundCard';
+import PageHeading from './components/PageHeading';
+import DataNotice from './components/DataNotice';
 import styles from './App.module.css';
 
 const PerformancePage = lazy(() => import('./components/PerformancePage'));
@@ -133,28 +135,15 @@ export default function App() {
       .map(toCustomFund);
     return [...defaultFunds, ...customFunds];
   }, [fundManagementGranted, managedFunds]);
-  const { quotes, fundEstimates, fxRates, marketStates, fundLoading, error } = useQuotes(
+  const { fundEstimates, marketStates, fundLoading, error } = useQuotes(
     funds,
     false,
     activePage === 'funds',
   );
   const overviewData = useOverviewData(activePage === 'overview');
-  const showMarketMeta = activePage !== 'about' && activePage !== 'companies';
-  const headerFxRates = useHeaderFxRates(showMarketMeta && activePage !== 'overview' && activePage !== 'funds');
+  const showMarketMeta = activePage === 'overview';
   const marketPageData = useRankingMarketData(activePage === 'ranking');
   const systemStatus = useSystemStatus(showMarketMeta);
-  const activeFxRates = activePage === 'overview'
-    ? overviewData.fxRates
-    : activePage === 'funds'
-      ? fxRates
-      : headerFxRates;
-  const activeError = activePage === 'overview'
-    ? overviewData.error
-    : activePage === 'funds'
-      ? error
-    : activePage === 'ranking'
-      ? marketPageData.error
-      : null;
   const [sortMode, setSortMode] = useState<FundSortMode>('preview');
   const [sortDirection, setSortDirection] = useState<FundSortDirection>('desc');
   const [fundFilter, setFundFilter] = useState<FundFilter>(() => (
@@ -166,7 +155,6 @@ export default function App() {
   const [fundManagerOpen, setFundManagerOpen] = useState(false);
   const managerTriggerRef = useRef<HTMLButtonElement>(null);
   const managerDialogRef = useRef<HTMLElement>(null);
-  const [pageStatusMessage, setPageStatusMessage] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -240,12 +228,16 @@ export default function App() {
   const sortedEstimates = useMemo(() => (
     rankFundEstimates(fundEstimates.filter(item => matchesFundFilter(item.fund, fundFilter)), effectiveSortMode, sortDirection)
   ), [fundEstimates, fundFilter, sortDirection, effectiveSortMode]);
+  const showFundGroups = effectiveSortMode === 'pending'
+    && sortedEstimates.some(item => item.group !== sortedEstimates[0]?.group);
+  const showFundSkeleton = fundLoading && sortedEstimates.length === 0;
 
   const sortLabel = effectiveSortMode === 'official'
     ? '按最新净值涨跌排序'
     : effectiveSortMode === 'preview'
       ? '按实时参考（含汇率）涨跌排序'
-      : '待公布优先 · 各组按涨跌排序';
+      : showFundGroups ? '待公布优先 · 各组按涨跌排序'
+        : sortedEstimates[0]?.group === 'published' ? '按实时参考（含汇率）涨跌排序' : '按待公布估值涨跌排序';
 
   useEffect(() => {
     function handlePopState() {
@@ -257,10 +249,6 @@ export default function App() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
-
-  useEffect(() => {
-    setPageStatusMessage('');
-  }, [activePage]);
 
   useEffect(() => {
     const code = pendingFundScrollRef.current;
@@ -452,26 +440,20 @@ export default function App() {
   return (
     <div className={styles.app}>
       <Header
-        fxRates={activeFxRates}
+        fxRates={overviewData.fxRates}
         activePage={activePage}
         onPageChange={navigatePage}
-        statusMessage={pageStatusMessage}
         systemStatus={systemStatus}
         showMarketMeta={showMarketMeta}
       />
-      {activeError && <div className={styles.error}>{activeError}</div>}
       {activePage === 'overview' ? (
-        <IndexCards quotes={overviewData.quotes} marketStates={overviewData.marketStates} loading={overviewData.loading} />
+        <IndexCards quotes={overviewData.quotes} marketStates={overviewData.marketStates} loading={overviewData.loading} error={overviewData.error} />
       ) : activePage === 'funds' ? (
         <>
           <div className={styles.fundSection}>
-            <div className={`${styles.sectionHeader} ${styles.fundToolbar}`}>
-              <h2 className={styles.sectionTitle}>
-                QDII 基金
-                <span className={styles.count}>
-                  {' · '}{filteredFunds.length} · {sortLabel}
-                </span>
-              </h2>
+            <PageHeading title="QDII 基金" description="估算包含汇率影响，不代表官方净值。" />
+            <div className={styles.fundToolbar}>
+              <p className={styles.fundSortLabel}>{filteredFunds.length} · {sortLabel}</p>
               <div className={`${styles.fundControls} ${fundFilter === 'index' ? styles.fundControlsOfficial : ''}`}>
                 <div className={styles.sortToggle} role="group" aria-label="基金类型筛选">
                   {FUND_FILTERS.map(item => (
@@ -607,15 +589,16 @@ export default function App() {
                 </section>
               </div>
             )}
-            {fundLoading && sortedEstimates.length === 0 && (
-              <div className={styles.fundLoading}>基金数据加载中...</div>
-            )}
             {!fundLoading && filteredFunds.length === 0 && <div className={styles.fundLoading}>暂无此类基金</div>}
+            <DataNotice loading={showFundSkeleton} message="基金数据加载中..." error={error} />
+            {showFundSkeleton && <div aria-busy="true" aria-label="基金列表">
+              {filteredFunds.map((fund, index) => <FundCard key={fund.code} fund={fund} rank={index + 1} sortMode={effectiveSortMode} loading />)}
+            </div>}
             {sortedEstimates.map((est) => {
               const fund = est.estimate.fund;
               return (
                 <Fragment key={fund.code}>
-                  {effectiveSortMode === 'pending' && est.groupStart && (
+                  {showFundGroups && est.groupStart && (
                     <div className={styles.fundSortGroup}>
                       <span>{est.group === 'pending' ? '待公布' : est.group === 'officialOnly' ? '仅官方净值' : '已公布'}</span>
                       <span>· {est.groupCount}</span>
@@ -639,11 +622,11 @@ export default function App() {
           </div>
         </>
       ) : activePage === 'companies' ? (
-        <Suspense fallback={<div className={styles.pageFallback}>公司页面加载中...</div>}>
-          <CompaniesPage onStatusMessageChange={setPageStatusMessage} />
+        <Suspense fallback={<div className={styles.pageFallback}><DataNotice loading message="公司页面加载中..." /></div>}>
+          <CompaniesPage />
         </Suspense>
       ) : activePage === 'ranking' || activePage === 'history' ? (
-        <Suspense fallback={activePage === 'history' ? null : <div className={styles.pageFallback}>走势页面加载中...</div>}>
+        <Suspense fallback={<div className={styles.pageFallback}><DataNotice loading message="走势页面加载中..." /></div>}>
           <PerformancePage
             mode={activePage}
             quotes={marketPageData.quotes}
@@ -651,15 +634,15 @@ export default function App() {
             marketStates={marketPageData.marketStates}
             marketLoading={marketPageData.loading}
             onModeChange={navigatePage}
-            onStatusMessageChange={setPageStatusMessage}
+            error={activePage === 'ranking' ? marketPageData.error : null}
           />
         </Suspense>
       ) : activePage === 'about' ? (
-        <Suspense fallback={<div className={styles.pageFallback}>关于页面加载中...</div>}>
+        <Suspense fallback={<div className={styles.pageFallback}><DataNotice loading message="关于页面加载中..." /></div>}>
           <AboutPage />
         </Suspense>
       ) : (
-        <Suspense fallback={<div className={styles.pageFallback}>诊断页面加载中...</div>}>
+        <Suspense fallback={<div className={styles.pageFallback}><DataNotice loading message="诊断页面加载中..." /></div>}>
           <DiagnosticsPage />
         </Suspense>
       )}

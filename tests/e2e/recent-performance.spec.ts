@@ -102,6 +102,29 @@ test('switching recent ranges shares history data and never loads fund estimates
   expect(apiRequests.some(path => /^\/api\/fund/.test(path))).toBe(false);
 });
 
+test('slow recent loading stays in the content area without requesting global FX', async ({ page }) => {
+  let release = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const dashboardRequests: string[] = [];
+  page.on('request', request => {
+    if (request.url().includes('/api/dashboard')) dashboardRequests.push(request.url());
+  });
+  await page.route('**/api/marketreturns*', async route => { await gate; await route.fallback(); });
+  try {
+    await page.goto('/returns?category=index&range=1m');
+    await expect(page.getByRole('heading', { name: '资产走势' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: '近期表现加载中...' })).toBeVisible();
+    await expect(page.getByText('按各市场交易日统计，历史指标截至最近可用数据。')).toBeVisible();
+    await expect(page.locator('header [role="status"]')).toHaveCount(0);
+    await expect(page.getByRole('table').locator('tbody')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.locator('[class*="_fxRow_"], [class*="_datetime_"]')).toHaveCount(0);
+    release();
+    await expect(page.getByRole('table', { name: '近期表现' })).toContainText('+123.45%');
+    await expect(page.getByRole('status').filter({ hasText: '近期表现加载中...' })).toHaveCount(0);
+    expect(dashboardRequests.every(url => new URL(url).searchParams.get('currencies') === '')).toBe(true);
+  } finally { release(); }
+});
+
 test('recent subcategories share a row with the right-aligned mobile range', async ({ page, isMobile }, testInfo) => {
   await page.goto('/returns?range=5y&category=etf');
   for (const width of isMobile ? [320, 390, 720] : [1280]) {

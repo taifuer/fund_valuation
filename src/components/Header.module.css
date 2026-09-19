@@ -154,21 +154,6 @@
   font-weight: 600;
 }
 
-.statusMessage {
-  bottom: 0;
-  color: #64748b;
-  font-size: 12px;
-  height: var(--meta-space);
-  left: 16px;
-  line-height: var(--meta-space);
-  overflow: hidden;
-  position: absolute;
-  right: 16px;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .live {
   display: inline-block;
   width: 7px;

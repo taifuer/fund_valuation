@@ -1,0 +1,9 @@
+.notice {
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 20px;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+
+.error { color: #b91c1c; }

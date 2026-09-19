@@ -45,14 +45,15 @@ test('fund strategies are filterable and official-only details do not fetch hold
   const requests: string[] = [];
   page.on('request', request => { if (request.url().includes('/api/')) requests.push(new URL(request.url()).pathname); });
   await page.goto('/funds');
-  await expect(page.getByRole('heading', { name: /QDII 基金 · 16 · 按实时参考（含汇率）涨跌排序/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'QDII 基金', exact: true })).toBeVisible();
+  await expect(page.getByText('16 · 按实时参考（含汇率）涨跌排序', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /QDII 基金/ })).toHaveCount(0);
   await expect(page.locator('[id^="fund-"]')).toHaveCount(16);
   await expect(page.getByRole('group', { name: '基金类型筛选' }).getByRole('button', { name: '主动' })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('group', { name: '基金类型筛选' }).getByRole('button', { name: '指数' }).click();
   await expect(page).toHaveURL(/\/funds\?strategy=index$/);
   await expect(page.locator('[id^="fund-"]')).toHaveCount(10);
-  await expect(page.getByRole('heading', { name: /QDII 基金 · 10 · 按最新净值涨跌排序/ })).toBeVisible();
+  await expect(page.getByText('10 · 按最新净值涨跌排序', { exact: true })).toBeVisible();
   await expect(page.locator('[id^="fund-"]').first()).toHaveAttribute('id', 'fund-270042');
   for (const code of ['017091', '161128']) {
     const indexCard = page.locator(`#fund-${code}`);
@@ -79,6 +80,78 @@ test('fund strategies are filterable and official-only details do not fetch hold
   await expect(page.locator('#fund-017091')).toHaveCount(0);
   await page.goBack();
   await expect(page.locator('#fund-270042 [aria-expanded="true"]')).toBeVisible();
+});
+
+test('slow fund loading and failures stay below the toolbar without replacing the description', async ({ page }) => {
+  let release = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/fundestimates*', async route => {
+    await gate;
+    await route.fulfill({ status: 503, json: { error: '基金快照暂不可用' } });
+  });
+  try {
+    await page.goto('/funds');
+    await expect(page.getByRole('heading', { name: 'QDII 基金', exact: true })).toBeVisible();
+    await expect(page.getByText('估算包含汇率影响，不代表官方净值。')).toBeVisible();
+    await expect(page.getByLabel('基金列表')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.getByRole('status')).toHaveText('基金数据加载中...');
+    await expect(page.locator('header [role="status"]')).toHaveCount(0);
+    await expect(page.locator('[class*="_fxRow_"], [class*="_datetime_"]')).toHaveCount(0);
+    release();
+    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(page.getByRole('alert')).not.toBeEmpty();
+    await expect(page.getByRole('status')).toHaveCount(0);
+    await expect(page.getByText('估算包含汇率影响，不代表官方净值。')).toBeVisible();
+  } finally { release(); }
+});
+
+test('pending headings only separate distinct groups and reappear for mixed funds', async ({ page }) => {
+  await page.route('**/api/fundestimates*', route => route.fulfill({ json: {
+    schemaVersion: 1, generatedAt: Date.now(), fxText: '', marketStates: {},
+    cards: Object.fromEntries(funds.map(fund => [fund.code, {
+      official: { code: fund.code, navDate: '2026-09-17', nav: 2.1234, officialChange: 1 },
+      estimate: { code: fund.code, pending: { kind: 'pending', targetDate: '2026-09-18',
+        estimatedNav: 2.2, changePercent: 2, localChangePercent: 2, coverage: 1, phase: 'CLOSED' } },
+    }])),
+  } }));
+  await page.goto('/funds');
+  await expect(page.locator('[id^="fund-"]')).toHaveCount(16);
+  await page.getByRole('button', { name: '待公布估值', exact: true }).click();
+  const groups = page.locator('[class*="_fundSortGroup_"]');
+  await expect(groups).toHaveCount(0);
+  await expect(page.getByText('16 · 按待公布估值涨跌排序', { exact: true })).toBeVisible();
+  await page.getByRole('group', { name: '基金类型筛选' }).getByRole('button', { name: '全部', exact: true }).click();
+  await expect(groups).toHaveCount(2);
+  await expect(groups.first()).toContainText('待公布');
+  await expect(groups.last()).toContainText('仅官方净值');
+  await page.getByRole('group', { name: '基金类型筛选' }).getByRole('button', { name: '主动', exact: true }).click();
+  await expect(groups).toHaveCount(0);
+});
+
+test('returning to funds refreshes silently without hiding cached cards', async ({ page }) => {
+  await page.goto('/funds');
+  await expect(page.locator('[id^="fund-"]')).toHaveCount(16);
+  const navigation = page.getByRole('navigation', { name: '页面切换' });
+  await navigation.getByRole('button', { name: '公司', exact: true }).click();
+  let release = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let refreshing = false;
+  await page.route('**/api/fundestimates*', async route => {
+    refreshing = true;
+    await gate;
+    await route.fulfill({ status: 503, json: {} });
+  });
+  try {
+    await navigation.getByRole('button', { name: '基金', exact: true }).click();
+    await expect.poll(() => refreshing).toBe(true);
+    await page.waitForTimeout(1100);
+    await expect(page.locator('[id^="fund-"]')).toHaveCount(16);
+    await expect(page.getByRole('status')).toHaveCount(0);
+    await expect(page.getByLabel('基金列表')).toHaveCount(0);
+    release();
+    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(page.locator('[id^="fund-"]')).toHaveCount(16);
+  } finally { release(); }
 });
 
 test('fund filters remember user choices while explicit links and history keep their own selection', async ({ page }) => {

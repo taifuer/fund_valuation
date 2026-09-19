@@ -3,17 +3,22 @@ import { describe, expect, it, vi } from 'vitest';
 import Header from './Header';
 
 describe('Header', () => {
-  it('keeps one live region for loading updates without inserting another row', () => {
+  it.each(['funds', 'ranking', 'history', 'companies', 'about', 'diagnostics'] as const)(
+    'omits the clock, FX and freshness polling UI by default on %s', (activePage) => {
+      render(<Header activePage={activePage} onPageChange={vi.fn()} fxRates={new Map([
+        ['USD', { currency: 'USD', pair: 'USD/CNY', rate: 7, changePercent: 0, date: '2026-09-19', fetchedAt: 1 }],
+      ])} />);
+      expect(screen.queryByText(/北京时间/)).not.toBeInTheDocument();
+      expect(screen.queryByText('USD/CNY')).not.toBeInTheDocument();
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    },
+  );
+
+  it('keeps overview metadata without a global loading banner', () => {
     const props = { fxRates: new Map(), activePage: 'overview' as const, onPageChange: vi.fn() };
-    const { rerender } = render(<Header {...props} />);
-    const region = screen.getByRole('status');
-    expect(region).toBeEmptyDOMElement();
-    rerender(<Header {...props} statusMessage="行情数据加载中..." />);
-    expect(screen.getByRole('status')).toBe(region);
-    expect(region).toHaveTextContent('行情数据加载中...');
-    expect(region).toHaveAttribute('title', '行情数据加载中...');
-    rerender(<Header {...props} />);
-    expect(region).toBeEmptyDOMElement();
+    render(<Header {...props} />);
+    expect(screen.getByText(/北京时间/)).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   it('describes the dashboard coverage in the brand subtitle', () => {

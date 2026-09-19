@@ -5,6 +5,7 @@ import { getMarketState, marketLocalDate } from '../marketHours';
 import { startAdaptivePolling } from '../polling';
 import { rankingStateLabel } from '../displayStatus';
 import TableSkeleton from './TableSkeleton';
+import DataNotice from './DataNotice';
 import RecentHistoryModal, { type RecentHistoryTarget } from './RecentHistoryModal';
 import { useFundReturnData } from '../hooks/usePageData';
 import { choiceFromSearch, replaceSearchParams } from '../routing';
@@ -24,7 +25,7 @@ interface Props {
   funds: Fund[];
   marketStates?: Map<string, MarketStateData>;
   marketLoading: boolean;
-  onStatusMessageChange?: (message: string) => void;
+  error?: string | null;
 }
 
 interface RankingItem {
@@ -256,7 +257,7 @@ export default function RankingPage({
   funds,
   marketStates = new Map(),
   marketLoading,
-  onStatusMessageChange,
+  error,
 }: Props) {
   const [range, setRange] = useState<RankingRangeKey>(() => choiceFromSearch(window.location.search, 'range', RANGE_KEYS, 'today'));
   const showRisk = range !== 'today';
@@ -349,11 +350,6 @@ export default function RankingPage({
     ? fundData.loading
     : marketLoading || (returnsLoading && marketReturns.size === 0);
   const showSkeleton = (loading || returnsLoading) && !items.some(item => item.returnPercent !== null);
-
-  useEffect(() => {
-    onStatusMessageChange?.(loading ? '近期表现加载中...' : '');
-    return () => onStatusMessageChange?.('');
-  }, [loading, onStatusMessageChange]);
 
   function updateSort(nextKey: SortKey) {
     setSortDirection((currentDirection) => nextDirection(sortKey, currentDirection, nextKey));
@@ -459,6 +455,7 @@ export default function RankingPage({
         </div>
       </section>
 
+      <DataNotice loading={showSkeleton} message="近期表现加载中..." error={category === 'fund' ? fundData.error : error} />
       <section ref={tableRef} className={styles.tableWrap} aria-label="近期表现表格" tabIndex={0}
         onPointerDown={event => {
           gesture.current = { x: event.clientX, y: event.clientY, scrollLeft: event.currentTarget.scrollLeft, moved: false };
