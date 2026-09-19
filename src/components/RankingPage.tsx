@@ -76,7 +76,7 @@ const RISK_SORT_KEYS: SortKey[] = ['drawdown', 'ratio', 'winRate'];
 const SORT_KEYS: SortKey[] = ['return', 'value', ...RISK_SORT_KEYS];
 const SORT_DIRECTIONS: SortDirection[] = ['desc', 'asc'];
 const VALUE_COLUMNS: Array<{ key: SortKey; label: string; title?: string }> = [
-  { key: 'return', label: '收益' },
+  { key: 'return', label: '涨跌幅' },
   { key: 'value', label: '现值' },
   { key: 'drawdown', label: '回撤', title: '区间最大回撤，按幅度大小排序' },
   { key: 'ratio', label: '收益回撤比', title: '区间收益 / 最大回撤绝对值；回撤为零时不计算' },
@@ -350,7 +350,7 @@ export default function RankingPage({
   const showSkeleton = (loading || returnsLoading) && !items.some(item => item.returnPercent !== null);
 
   useEffect(() => {
-    onStatusMessageChange?.(loading ? '收益数据加载中...' : '');
+    onStatusMessageChange?.(loading ? '近期表现加载中...' : '');
     return () => onStatusMessageChange?.('');
   }, [loading, onStatusMessageChange]);
 
@@ -432,7 +432,7 @@ export default function RankingPage({
             </div>
           </div>
         )}
-        <div className={`${styles.controlBlock} ${styles.rangeControl}`} aria-label="收益区间">
+        <div className={`${styles.controlBlock} ${styles.rangeControl}`} aria-label="表现区间">
           <div className={styles.segmented}>
             {RANGES.map((item) => (
               <button
@@ -498,7 +498,7 @@ export default function RankingPage({
             {showSkeleton && <TableSkeleton rows={items.length || 10} columns={showRisk ? 10 : 7} />}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={showRisk ? 10 : 7} className={styles.empty}>暂无收益数据</td>
+                <td colSpan={showRisk ? 10 : 7} className={styles.empty}>暂无区间表现数据</td>
               </tr>
             )}
             {!showSkeleton && items.map((item, index) => {
@@ -530,8 +530,8 @@ export default function RankingPage({
       </section>
       <p className={styles.note}>
         {showRisk
-          ? '* 收益与风险指标使用同区间历史收盘价或官方净值；缺失数据以 -- 显示，数据以官方披露为准。'
-          : '* 最新收益可能包含盘中行情；基金收益使用已披露官方净值。数据可能存在延迟或误差，以官方披露为准。'}
+          ? '* 涨跌幅与风险指标使用同区间历史收盘价或官方净值；缺失数据以 -- 显示，数据以官方披露为准。'
+          : '* 最新涨跌幅可能包含盘中行情；基金涨跌幅使用已披露官方净值。数据可能存在延迟或误差，以官方披露为准。'}
       </p>
       {selectedHistory && <RecentHistoryModal {...selectedHistory} onClose={() => setSelectedHistory(null)} />}
     </main>

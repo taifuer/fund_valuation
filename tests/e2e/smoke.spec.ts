@@ -28,12 +28,12 @@ function dashboardPayload(price: number, generatedAt: number) {
   };
 }
 
-for (const [path, activeLabel] of [['/', '概览'], ['/funds', '基金'], ['/returns', '收益'], ['/risk', '收益'], ['/companies', '公司'], ['/about', '关于']] as const) {
+for (const [path, activeLabel] of [['/', '概览'], ['/funds', '基金'], ['/returns', '走势'], ['/risk', '走势'], ['/companies', '公司'], ['/about', '关于']] as const) {
   test(`${path} survives direct navigation`, async ({ page }) => {
     await page.goto(path);
     await expect(page.getByRole('heading', { name: '全球资产看板' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: '页面切换' }).getByRole('button'))
-      .toHaveText(['概览', '收益', '基金', '公司', '关于']);
+      .toHaveText(['概览', '走势', '基金', '公司', '关于']);
     await expect(
       page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: activeLabel, exact: true }),
     ).toBeVisible();
@@ -167,7 +167,7 @@ test('company choices wrap on narrow screens without horizontal scrolling', asyn
 
 test('performance subpages keep their routes while sharing one primary entry', async ({ page }) => {
   await page.goto('/returns');
-  const viewNav = page.getByRole('navigation', { name: '收益分析视图' });
+  const viewNav = page.getByRole('navigation', { name: '走势分析视图' });
   await expect(viewNav.getByRole('button', { name: '近期' })).toHaveAttribute('aria-current', 'page');
   await expect(viewNav.getByRole('button')).toHaveCount(2);
   await viewNav.getByRole('button', { name: '历史' }).click();
@@ -178,7 +178,7 @@ test('performance subpages keep their routes while sharing one primary entry', a
   await page.goForward();
   await expect(viewNav.getByRole('button', { name: '历史' })).toHaveAttribute('aria-current', 'page');
   await expect(
-    page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '收益', exact: true }),
+    page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '走势', exact: true }),
   ).toHaveAttribute('aria-current', 'page');
 });
 
@@ -197,7 +197,7 @@ test('market metadata has balanced spacing and a stable loading slot', async ({ 
     await page.goto(path);
     await expect(page.getByText(/北京时间/)).toBeVisible();
     const selector = path === '/' ? '[class*="_sectionToggle_"]'
-      : path === '/funds' ? '[class*="_fundToolbar_"]' : '[aria-label="收益分析视图"]';
+      : path === '/funds' ? '[class*="_fundToolbar_"]' : '[aria-label="走势分析视图"]';
     await expect(page.locator(selector).first()).toBeVisible();
     const geometry = await page.evaluate(selector => {
       const header = document.querySelector('header')!.getBoundingClientRect();
@@ -225,7 +225,7 @@ test('mobile navigation keeps the active style after client-side navigation', as
 
   await page.goto('/');
   const primaryNavigation = page.getByRole('navigation', { name: '页面切换' });
-  const performanceButton = primaryNavigation.getByRole('button', { name: '收益', exact: true });
+  const performanceButton = primaryNavigation.getByRole('button', { name: '走势', exact: true });
   await performanceButton.click();
   await expect(page).toHaveURL(/\/returns$/);
   await expect(performanceButton).toHaveAttribute('aria-current', 'page');
@@ -236,7 +236,7 @@ test('mobile navigation keeps the active style after client-side navigation', as
   await page.reload();
   const reloadedButton = page
     .getByRole('navigation', { name: '页面切换' })
-    .getByRole('button', { name: '收益', exact: true });
+    .getByRole('button', { name: '走势', exact: true });
   await expect(reloadedButton).toHaveAttribute('aria-current', 'page');
   const backgroundAfterReload = await reloadedButton.evaluate(
     (element) => getComputedStyle(element).backgroundColor,
@@ -381,7 +381,7 @@ test('old risk links open recent performance with return and value before risk m
   expect(headers.map((header) => header.trim().replace(/[↑↓]/g, '').trim())).toEqual([
     '排名',
     '名称',
-    '收益',
+    '涨跌幅',
     '现值',
     '回撤',
     '收益回撤比',
@@ -432,8 +432,8 @@ test('legacy risk links preserve largest drawdown sorting and reset it for lates
     .map((value) => Math.abs(Number.parseFloat(value)))
     .filter(Number.isFinite);
   expect(drawdowns).toEqual([12, 8, 5]);
-  await page.getByLabel('收益区间').getByRole('button', { name: '最新', exact: true }).click();
-  await expect(page.getByRole('button', { name: '收益 ↓', exact: true })).toBeVisible();
+  await page.getByLabel('表现区间').getByRole('button', { name: '最新', exact: true }).click();
+  await expect(page.getByRole('button', { name: '涨跌幅 ↓', exact: true })).toBeVisible();
   await expect(page.getByRole('columnheader')).toHaveCount(7);
   await expect(page).toHaveURL(/\/returns$/);
 });
@@ -461,14 +461,14 @@ test('return and risk filters survive direct navigation and reload', async ({ pa
   await page.goto('/returns?category=etf&etf=sector&range=1y&sort=value&order=asc');
   await expect(page.getByLabel('分类筛选').getByRole('button', { name: 'ETF', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('ETF类型筛选').getByRole('button', { name: '行业ETF' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByLabel('收益区间').getByRole('button', { name: '近1年' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('表现区间').getByRole('button', { name: '近1年' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page).toHaveURL(/sort=value&order=asc/);
   await page.reload();
   await expect(page.getByLabel('ETF类型筛选').getByRole('button', { name: '行业ETF' })).toHaveAttribute('aria-pressed', 'true');
 
   await page.goto('/risk?category=asset&range=1m&sort=winRate&order=asc');
   await expect(page.getByLabel('分类筛选').getByRole('button', { name: '资产' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByLabel('收益区间').getByRole('button', { name: '近1月' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('表现区间').getByRole('button', { name: '近1月' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page).toHaveURL(/\/returns\?/);
   await expect(page).toHaveURL(/sort=winRate&order=asc/);
   await page.reload();

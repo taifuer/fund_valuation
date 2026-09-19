@@ -94,8 +94,8 @@ test('historical route keeps navigation, year returns and exact chart pointer po
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(String(error)));
   await page.goto('/history?asset=INX&scale=linear');
-  await expect(page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '收益', exact: true })).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByRole('navigation', { name: '收益分析视图' }).getByRole('button', { name: '历史' })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '走势', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('navigation', { name: '走势分析视图' }).getByRole('button', { name: '历史' })).toHaveAttribute('aria-current', 'page');
   const chart = page.getByRole('img', { name: '标普500长期走势' });
   await expect(chart).toBeVisible();
   await expect(page.getByRole('table', { name: '标普500年度收益' })).toContainText('+20.00%');

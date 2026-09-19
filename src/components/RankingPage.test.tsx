@@ -223,7 +223,7 @@ describe('combined recent returns and risk', () => {
     expect(rows()[0]).toHaveTextContent('沪深300');
     fireEvent.click(screen.getByRole('button', { name: '最新' }));
     expect(screen.getAllByRole('columnheader')).toHaveLength(7);
-    expect(screen.getByRole('columnheader', { name: '收益 ↓' })).toHaveAttribute('aria-sort', 'descending');
+    expect(screen.getByRole('columnheader', { name: '涨跌幅 ↓' })).toHaveAttribute('aria-sort', 'descending');
     expect(window.location.search).toBe('');
   });
 
@@ -231,7 +231,7 @@ describe('combined recent returns and risk', () => {
     window.history.replaceState({}, '', '/returns?sort=winRate&order=asc');
     render(<RankingPage funds={[]} quotes={new Map()} marketLoading={false} />);
     await screen.findByText('上证指数');
-    expect(screen.getByRole('columnheader', { name: '收益 ↓' })).toHaveAttribute('aria-sort', 'descending');
+    expect(screen.getByRole('columnheader', { name: '涨跌幅 ↓' })).toHaveAttribute('aria-sort', 'descending');
     expect(window.location.search).toBe('');
   });
 

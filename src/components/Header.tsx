@@ -86,7 +86,7 @@ export default function Header({
               className={`${styles.navButton} ${['ranking', 'history'].includes(activePage) ? styles.navButtonActive : ''}`}
               onClick={() => onPageChange('ranking')}
             >
-              收益
+              走势
             </button>
             <button
               type="button"

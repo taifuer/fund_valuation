@@ -29,7 +29,7 @@ export default function PerformancePage({
   return (
     <>
       <div className={styles.viewHeader}>
-        <nav className={styles.viewNav} aria-label="收益分析视图">
+        <nav className={styles.viewNav} aria-label="走势分析视图">
           <button
             type="button"
             aria-current={mode === 'ranking' ? 'page' : undefined}

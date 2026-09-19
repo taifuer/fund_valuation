@@ -92,10 +92,10 @@ test('switching recent ranges shares history data and never loads fund estimates
   await expect(table).toContainText('123,456.78');
   await expect(table.getByRole('columnheader')).toHaveCount(10);
   await table.getByRole('button', { name: '胜率', exact: true }).click();
-  await page.getByLabel('收益区间').getByRole('button', { name: '最新', exact: true }).click();
+  await page.getByLabel('表现区间').getByRole('button', { name: '最新', exact: true }).click();
   await expect(table.getByRole('columnheader')).toHaveCount(7);
-  await expect(table.getByRole('columnheader', { name: '收益 ↓' })).toHaveAttribute('aria-sort', 'descending');
-  await page.getByLabel('收益区间').getByRole('button', { name: '近1月', exact: true }).click();
+  await expect(table.getByRole('columnheader', { name: '涨跌幅 ↓' })).toHaveAttribute('aria-sort', 'descending');
+  await page.getByLabel('表现区间').getByRole('button', { name: '近1月', exact: true }).click();
   await expect(table.getByRole('columnheader')).toHaveCount(10);
   expect(apiRequests.filter(path => path === '/api/marketreturns')).toHaveLength(1);
   expect(apiRequests.some(path => /^\/api\/fund/.test(path))).toBe(false);

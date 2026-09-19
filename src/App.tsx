@@ -643,7 +643,7 @@ export default function App() {
           <CompaniesPage onStatusMessageChange={setPageStatusMessage} />
         </Suspense>
       ) : activePage === 'ranking' || activePage === 'history' ? (
-        <Suspense fallback={activePage === 'history' ? null : <div className={styles.pageFallback}>收益页面加载中...</div>}>
+        <Suspense fallback={activePage === 'history' ? null : <div className={styles.pageFallback}>走势页面加载中...</div>}>
           <PerformancePage
             mode={activePage}
             quotes={marketPageData.quotes}

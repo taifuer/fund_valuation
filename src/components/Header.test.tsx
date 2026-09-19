@@ -39,12 +39,12 @@ describe('Header', () => {
     render(<Header fxRates={new Map()} activePage="overview" onPageChange={onPageChange} />);
     const navigation = within(screen.getByRole('navigation', { name: '页面切换' }));
     expect(navigation.getAllByRole('button').map(button => button.textContent?.trim()))
-      .toEqual(['概览', '收益', '基金', '公司', '关于']);
+      .toEqual(['概览', '走势', '基金', '公司', '关于']);
     fireEvent.click(screen.getByRole('button', { name: '关于' }));
     expect(onPageChange).toHaveBeenCalledWith('about');
     fireEvent.click(screen.getByRole('button', { name: '公司' }));
     expect(onPageChange).toHaveBeenCalledWith('companies');
-    fireEvent.click(screen.getByRole('button', { name: '收益' }));
+    fireEvent.click(screen.getByRole('button', { name: '走势' }));
     expect(onPageChange).toHaveBeenCalledWith('ranking');
     fireEvent.click(screen.getByRole('button', { name: '基金' }));
     expect(onPageChange).toHaveBeenCalledWith('funds');
@@ -54,10 +54,10 @@ describe('Header', () => {
     const { rerender } = render(
       <Header fxRates={new Map()} activePage="ranking" onPageChange={vi.fn()} />,
     );
-    expect(screen.getByRole('button', { name: '收益' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '走势' })).toHaveAttribute('aria-current', 'page');
 
     rerender(<Header fxRates={new Map()} activePage="history" onPageChange={vi.fn()} />);
-    expect(screen.getByRole('button', { name: '收益' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: '走势' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('button', { name: '风险' })).not.toBeInTheDocument();
   });
 
