@@ -33,7 +33,6 @@ export default function PerformancePage({
           <button
             type="button"
             aria-current={mode === 'ranking' ? 'page' : undefined}
-            className={mode === 'ranking' ? styles.viewButtonActive : ''}
             onClick={() => onModeChange('ranking')}
           >
             近期
@@ -41,10 +40,9 @@ export default function PerformancePage({
           <button
             type="button"
             aria-current={mode === 'history' ? 'page' : undefined}
-            className={mode === 'history' ? styles.viewButtonActive : ''}
             onClick={() => onModeChange('history')}
           >
-            历史
+            长期
           </button>
         </nav>
       </div>

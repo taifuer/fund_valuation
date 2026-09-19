@@ -79,6 +79,9 @@ def historical_data_coverage(*, years: int = 3, as_of: date | None = None) -> di
         market_rows = conn.execute(
             "SELECT source, symbol, MIN(date), MAX(date), COUNT(*) FROM market_history GROUP BY source, symbol"
         ).fetchall()
+        archive_rows = conn.execute(
+            'SELECT source,symbol,status,oldest_date,checked_at,error FROM market_history_backfill'
+        ).fetchall()
 
     nav_by_code = {
         str(code): {"startDate": str(start), "endDate": str(end), "count": int(count)}
@@ -109,8 +112,12 @@ def historical_data_coverage(*, years: int = 3, as_of: date | None = None) -> di
             "missingHoldingPeriods": missing_periods,
         })
 
+    archives = {f'{source}:{symbol}': {'status': status, 'oldestDate': oldest,
+                'checkedAt': checked, 'error': error}
+                for source, symbol, status, oldest, checked, error in archive_rows}
     markets = [
-        {"item": item, **market_by_item.get(item, {"startDate": "", "endDate": "", "count": 0})}
+        {"item": item, **market_by_item.get(item, {"startDate": "", "endDate": "", "count": 0}),
+         'archive': archives.get(item)}
         for item in market_items
     ]
     fx = fx_history_summary()

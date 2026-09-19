@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { intervalMetrics, formatReturn } from '../historyMetrics';
+import { intervalMetrics, formatReturn, historyCutoff as cutoffDate, dailyHistoryCovered } from '../historyMetrics';
 import { nextChartIndex } from '../chartKeyboard';
 import { fetchMarketHistory } from '../api';
 import { useChartWidth } from '../hooks/useChartWidth';
@@ -33,12 +33,6 @@ const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
 
 const historyCache = new Map<string, MarketHistoryPoint[]>();
 const historyLoadedAt = new Map<string, number>();
-
-function cutoffDate(latestDate: string, days: number): string {
-  const date = new Date(`${latestDate}T12:00:00+08:00`);
-  date.setDate(date.getDate() - days);
-  return date.toISOString().slice(0, 10);
-}
 
 function selectRange(points: MarketHistoryPoint[], days: number | null): MarketHistoryPoint[] {
   if (points.length <= 2 || days === null) return points;
@@ -266,7 +260,8 @@ export function MarketHistoryChart({ item, initialRange = '3m', asOf }: Omit<Pro
     if (visible.length < 2) return null;
     const first = visible[0];
     const last = visible[visible.length - 1];
-    const performance = intervalMetrics(visible, point => point.close);
+    const performance = range === '5y' && !dailyHistoryCovered(visible, cutoffDate(last.date, 365 * 5))
+      ? { returnPct: null, drawdown: null } : intervalMetrics(visible, point => point.close);
     const high = Math.max(...visible.map((point) => point.close));
     const low = Math.min(...visible.map((point) => point.close));
     return {
@@ -276,7 +271,7 @@ export function MarketHistoryChart({ item, initialRange = '3m', asOf }: Omit<Pro
       high,
       low,
     };
-  }, [visible]);
+  }, [visible, range]);
 
   const chart = useMemo(() => makeChart(visible, chartWidth), [visible, chartWidth]);
   const xTicks = useMemo(
@@ -375,7 +370,7 @@ export function MarketHistoryChart({ item, initialRange = '3m', asOf }: Omit<Pro
                     <line className={styles.gridLine} x1={chart.xStart} y1={tick.y} x2={chart.xEnd} y2={tick.y} />
                   </g>
                 ))}
-                <path className={`${styles.line} ${up ? styles.lineUp : styles.lineDown}`} d={chart.path} />
+                <path className={styles.line} d={chart.path} />
                 {activePoint && activePosition && (
                   <g>
                     <line className={styles.crosshair} x1={activePosition.x} y1="14" x2={activePosition.x} y2="176" />
@@ -401,7 +396,7 @@ export function MarketHistoryChart({ item, initialRange = '3m', asOf }: Omit<Pro
                 ))}
               </svg>
             </div>
-          <p className={styles.note}>{incompleteRange ? '所选区间历史不足，以下为实际可用区间：' : ''}{metrics.first.date} 至 {metrics.last.date} · 历史收盘数据，不含盘中行情。{metrics.returnPct === null ? '区间存在待核实除权断点，暂不计算收益与回撤。' : history.some(point => point.adjusted) ? '走势与区间指标按分红、拆分数据调整；最新价格为未复权收盘价。' : ''}</p>
+          <p className={styles.note}>{incompleteRange ? '所选区间历史不足，以下为实际可用区间：' : ''}{metrics.first.date} 至 {metrics.last.date} · 历史收盘数据，不含盘中行情。{metrics.returnPct === null ? '历史覆盖不足或存在待核实除权断点，暂不计算收益与回撤。' : history.some(point => point.adjusted) ? '走势与区间指标按分红、拆分数据调整；最新价格为未复权收盘价。' : ''}</p>
           </>
         )}
     </>

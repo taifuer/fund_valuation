@@ -6,30 +6,7 @@
 }
 
 .viewNav {
-  border-bottom: 1px solid #e2e8f0;
-  display: flex;
-  gap: 24px;
-}
-
-.viewNav button {
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  color: #64748b;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 34px;
-  padding: 0 2px;
-}
-
-.viewNav button:hover {
-  color: #334155;
-}
-
-.viewNav .viewButtonActive {
-  border-bottom-color: #167d8d;
-  color: #0f172a;
+  composes: viewNav from './AnalysisBase.module.css';
 }
 
 @media (max-width: 720px) {

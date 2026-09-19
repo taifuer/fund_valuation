@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { chooseRecentRange, expectRecentRange } from './controls';
 
 function dashboardPayload(price: number, generatedAt: number) {
   return {
@@ -130,20 +131,18 @@ test('company disclosure shows revenue in the initial mobile viewport', async ({
 
 test('overview market groups have a consistent visible separation', async ({ page }) => {
   await page.goto('/');
-  const titles = ['A股', '美股', '亚太', '资产', 'ETF'];
-  let previousBottom = 0;
-  for (const title of titles) {
-    const toggle = page.getByRole('button', { name: new RegExp(`^[+-]\\s*${title}\\s*·`) });
-    await expect(toggle).toBeVisible();
-    const geometry = await toggle.evaluate(button => ({
-      top: button.getBoundingClientRect().top,
-      bottom: button.parentElement!.getBoundingClientRect().bottom,
-    }));
-    if (previousBottom) expect(geometry.top - previousBottom).toBeGreaterThanOrEqual(20);
-    previousBottom = geometry.bottom;
-  }
-  const footerTop = await page.getByRole('contentinfo').evaluate(element => element.getBoundingClientRect().top);
-  expect(footerTop - previousBottom).toBeGreaterThanOrEqual(32);
+  const toggles = page.getByRole('button', { name: /^[+-]\s*(A股|美股|亚太|资产|ETF)\s*·/ });
+  await expect(toggles).toHaveCount(5);
+  // Read all geometry in one frame; quote/font loading can move the page.
+  const geometry = await toggles.evaluateAll(buttons => ({
+    groups: buttons.map(button => ({ top: button.getBoundingClientRect().top,
+      bottom: button.parentElement!.getBoundingClientRect().bottom })),
+    footer: document.querySelector('footer')!.getBoundingClientRect().top,
+  }));
+  geometry.groups.slice(1).forEach((group, index) => {
+    expect(group.top - geometry.groups[index].bottom).toBeGreaterThanOrEqual(20);
+  });
+  expect(geometry.footer - geometry.groups.at(-1)!.bottom).toBeGreaterThanOrEqual(32);
 });
 
 test('company choices wrap on narrow screens without horizontal scrolling', async ({ page }) => {
@@ -170,13 +169,13 @@ test('performance subpages keep their routes while sharing one primary entry', a
   const viewNav = page.getByRole('navigation', { name: '走势分析视图' });
   await expect(viewNav.getByRole('button', { name: '近期' })).toHaveAttribute('aria-current', 'page');
   await expect(viewNav.getByRole('button')).toHaveCount(2);
-  await viewNav.getByRole('button', { name: '历史' }).click();
+  await viewNav.getByRole('button', { name: '长期' }).click();
   await expect(page).toHaveURL(/\/history$/);
-  await expect(viewNav.getByRole('button', { name: '历史' })).toHaveAttribute('aria-current', 'page');
+  await expect(viewNav.getByRole('button', { name: '长期' })).toHaveAttribute('aria-current', 'page');
   await page.goBack();
   await expect(viewNav.getByRole('button', { name: '近期' })).toHaveAttribute('aria-current', 'page');
   await page.goForward();
-  await expect(viewNav.getByRole('button', { name: '历史' })).toHaveAttribute('aria-current', 'page');
+  await expect(viewNav.getByRole('button', { name: '长期' })).toHaveAttribute('aria-current', 'page');
   await expect(
     page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '走势', exact: true }),
   ).toHaveAttribute('aria-current', 'page');
@@ -432,7 +431,7 @@ test('legacy risk links preserve largest drawdown sorting and reset it for lates
     .map((value) => Math.abs(Number.parseFloat(value)))
     .filter(Number.isFinite);
   expect(drawdowns).toEqual([12, 8, 5]);
-  await page.getByLabel('表现区间').getByRole('button', { name: '最新', exact: true }).click();
+  await chooseRecentRange(page, 'today', '最新');
   await expect(page.getByRole('button', { name: '涨跌幅 ↓', exact: true })).toBeVisible();
   await expect(page.getByRole('columnheader')).toHaveCount(7);
   await expect(page).toHaveURL(/\/returns$/);
@@ -461,14 +460,14 @@ test('return and risk filters survive direct navigation and reload', async ({ pa
   await page.goto('/returns?category=etf&etf=sector&range=1y&sort=value&order=asc');
   await expect(page.getByLabel('分类筛选').getByRole('button', { name: 'ETF', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByLabel('ETF类型筛选').getByRole('button', { name: '行业ETF' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByLabel('表现区间').getByRole('button', { name: '近1年' })).toHaveAttribute('aria-pressed', 'true');
+  await expectRecentRange(page, '1y', '近1年');
   await expect(page).toHaveURL(/sort=value&order=asc/);
   await page.reload();
   await expect(page.getByLabel('ETF类型筛选').getByRole('button', { name: '行业ETF' })).toHaveAttribute('aria-pressed', 'true');
 
   await page.goto('/risk?category=asset&range=1m&sort=winRate&order=asc');
   await expect(page.getByLabel('分类筛选').getByRole('button', { name: '资产' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByLabel('表现区间').getByRole('button', { name: '近1月' })).toHaveAttribute('aria-pressed', 'true');
+  await expectRecentRange(page, '1m', '近1月');
   await expect(page).toHaveURL(/\/returns\?/);
   await expect(page).toHaveURL(/sort=winRate&order=asc/);
   await page.reload();

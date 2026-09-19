@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { intervalMetrics, formatReturn } from '../historyMetrics';
+import { intervalMetrics, formatReturn, historyCutoff as cutoffDate, dailyHistoryCovered } from '../historyMetrics';
 import { nextChartIndex } from '../chartKeyboard';
 import type { FundHistoryPoint, HistoryRangeKey } from '../types';
 import { useFundHistory } from '../hooks/useFundHistory';
@@ -55,12 +55,6 @@ function evenlySpacedIndices(length: number, count: number): number[] {
   if (length <= count) return Array.from({ length }, (_, index) => index);
   return Array.from({ length: count }, (_, index) => Math.round((index / (count - 1)) * (length - 1)))
     .filter((value, index, values) => values.indexOf(value) === index);
-}
-
-function cutoffDate(latestDate: string, days: number): string {
-  const date = new Date(`${latestDate}T12:00:00+08:00`);
-  date.setDate(date.getDate() - days);
-  return date.toISOString().slice(0, 10);
 }
 
 function selectRange(points: FundHistoryPoint[], days: number | null): FundHistoryPoint[] {
@@ -193,7 +187,8 @@ export default function FundHistoryChart({ fundCode, initialRange = '3m', asOf }
     if (visible.length < 2) return null;
     const first = visible[0];
     const last = visible[visible.length - 1];
-    const performance = intervalMetrics(visible, point => point.returnValue ?? point.nav);
+    const performance = range === '5y' && !dailyHistoryCovered(visible, cutoffDate(last.date, 365 * 5))
+      ? { returnPct: null, drawdown: null } : intervalMetrics(visible, point => point.returnValue ?? point.nav);
     const high = Math.max(...visible.map((point) => point.nav));
     const low = Math.min(...visible.map((point) => point.nav));
     return {
@@ -203,7 +198,7 @@ export default function FundHistoryChart({ fundCode, initialRange = '3m', asOf }
       first,
       last,
     };
-  }, [visible]);
+  }, [visible, range]);
 
   const chart = useMemo(() => makeChart(visible, chartWidth), [visible, chartWidth]);
   const xTicks = useMemo(
@@ -297,7 +292,7 @@ export default function FundHistoryChart({ fundCode, initialRange = '3m', asOf }
                   <line className={styles.gridLine} x1={chart.xStart} y1={tick.y} x2={chart.xEnd} y2={tick.y} />
                 </g>
               ))}
-              <path className={`${styles.line} ${up ? styles.lineUp : styles.lineDown}`} d={chart.path} />
+              <path className={styles.line} d={chart.path} />
               {activePoint && activePosition && (
                 <g>
                   <line className={styles.crosshair} x1={activePosition.x} y1="14" x2={activePosition.x} y2="166" />
@@ -323,7 +318,7 @@ export default function FundHistoryChart({ fundCode, initialRange = '3m', asOf }
               ))}
             </svg>
           </div>
-        <p className={styles.note}>{incompleteRange ? '所选区间历史不足，以下为实际可用区间：' : ''}{metrics.first.date} 至 {metrics.last.date} · 折线为官方单位净值；区间收益与回撤按可获取的分红、拆分数据调整。{metrics.returnPct === null ? '区间存在待核实断点，暂不计算收益。' : ''}</p>
+        <p className={styles.note}>{incompleteRange ? '所选区间历史不足，以下为实际可用区间：' : ''}{metrics.first.date} 至 {metrics.last.date} · 折线为官方单位净值；区间收益与回撤按可获取的分红、拆分数据调整。{metrics.returnPct === null ? '历史覆盖不足或存在待核实断点，暂不计算收益与回撤。' : ''}</p>
         </>
       )}
     </div>

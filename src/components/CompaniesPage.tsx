@@ -596,10 +596,9 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
             ? '聚焦营业收入、利润、研发投入与员工人数的长期变化'
             : '集中查看已披露报告与官方确认的财报日期'}</p>
         </div>
-        <div className={styles.segmented} aria-label="公司页面视图">
+        <nav className={styles.viewNav} aria-label="公司页面视图">
           <button
             type="button"
-            className={`${styles.segmentButton} ${pageMode === 'trend' ? styles.segmentButtonActive : ''}`}
             aria-pressed={pageMode === 'trend'}
             onClick={() => setPageMode('trend')}
           >
@@ -607,13 +606,12 @@ export default function CompaniesPage({ onStatusMessageChange }: Props) {
           </button>
           <button
             type="button"
-            className={`${styles.segmentButton} ${pageMode === 'calendar' ? styles.segmentButtonActive : ''}`}
             aria-pressed={pageMode === 'calendar'}
             onClick={() => setPageMode('calendar')}
           >
             财报日历
           </button>
-        </div>
+        </nav>
       </header>
 
       {pageMode === 'calendar' ? <CompanyReportCalendar /> : <>

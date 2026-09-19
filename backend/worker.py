@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .long_history import refresh as refresh_long_history
+from .daily_archive import refresh as refresh_daily_archive
 
 import argparse
 import math
@@ -133,6 +134,7 @@ def main() -> None:
         "fund_purchase": 0.0,
         "market_history": 0.0,
         "long_history": 0.0,
+        "daily_archive": 0.0,
         "fx_history": 0.0,
         "valuation_history": 0.0,
         "backup": 0.0,
@@ -190,6 +192,13 @@ def main() -> None:
                     tasks.append(f"long-history:{result['checked']}")
                 except Exception as exc:
                     errors.append(f"long-history: {exc}")
+            if "daily_archive" in flags:
+                try:
+                    result = run_task("daily_archive", refresh_daily_archive)
+                    errors.extend(result["errors"])
+                    tasks.append(f"daily-archive:{result['inserted']}")
+                except Exception as exc:
+                    errors.append(f"daily-archive: {exc}")
             if "fx_history" in flags:
                 try:
                     rows = run_task("fx_history", refresh_configured_fx_history)
@@ -338,6 +347,7 @@ def main() -> None:
                         "fund_profiles": 7 * 24 * 60 * 60,
                         "fund_purchase": 6 * 60 * 60,
                         "market_history": max(maintenance_interval, 30 * 60),
+                        "daily_archive": 30 * 60,
                         "long_history": 30 * 60,
                         "fx_history": 24 * 60 * 60,
                         "valuation_history": 24 * 60 * 60,

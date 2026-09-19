@@ -47,7 +47,7 @@ from .holding_identity import classify_holding_symbol
 from .holding_prices import history_basis, holding_price_return
 from .performance import (
     adjusted_market_rows, finite_number, fund_performance_rows,
-    history_risk_metrics, parse_sina_adjustments,
+    history_risk_metrics, parse_sina_adjustments, history_cutoff, daily_range_covered,
 )
 from .quotes import normalize_quote_text
 from .contracts import API_SCHEMA_VERSION, DASHBOARD_SCHEMA_VERSION, validate_dashboard_payload
@@ -4647,6 +4647,7 @@ FUND_RETURN_RANGES: dict[str, tuple[str, int | None]] = {
     "6m": ("近半年", 182),
     "1y": ("近1年", 365),
     "3y": ("近3年", 365 * 3),
+    "5y": ("近5年", 365 * 5),
     "ytd": ("今年", None),
 }
 
@@ -4657,6 +4658,7 @@ MARKET_RETURN_RANGES: dict[str, tuple[str, int | None]] = {
     "6m": ("近半年", 182),
     "1y": ("近1年", 365),
     "3y": ("近3年", 365 * 3),
+    "5y": ("近5年", 365 * 5),
     "ytd": ("今年", None),
 }
 
@@ -4711,12 +4713,14 @@ def read_fund_return_summary_from_db(code: str) -> dict[str, Any] | None:
             if start is None or start[0] == latest_date:
                 start = first_point_on_or_after(year_start)
         else:
-            target = (latest_day - timedelta(days=days)).isoformat()
+            target = history_cutoff(latest_day, days).isoformat()
             start = point_on_or_before(target)
 
         if start is None:
             continue
         start_date, start_nav = start
+        if key == '5y' and not daily_range_covered(points, start_date, target):
+            continue
         if start_date == latest_date or start_nav <= 0:
             continue
         if by_date[start_date]["returnSegment"] != by_date[latest_date]["returnSegment"]:
@@ -4984,12 +4988,14 @@ def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, An
             if start is None or start[0] == latest_date:
                 start = first_point_on_or_after(year_start)
         else:
-            target = (latest_day - timedelta(days=days)).isoformat()
+            target = history_cutoff(latest_day, days).isoformat()
             start = point_on_or_before(target)
 
         if start is None:
             continue
         start_date, start_close = start
+        if key == '5y' and not daily_range_covered(points, start_date, target):
+            continue
         if start_date == latest_date or start_close <= 0:
             continue
         if segments[start_date] != segments[latest_date]:

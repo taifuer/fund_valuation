@@ -13,7 +13,7 @@ import type { FundEstimate } from '../hooks/useQuotes';
 import type { Fund, FundReturnRangeKey, HistoryRangeKey, IndexConfig, MarketReturnSummary, MarketStateData, QuoteData } from '../types';
 import styles from './RankingPage.module.css';
 
-type RankingRangeKey = 'today' | '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | 'ytd';
+type RankingRangeKey = 'today' | FundReturnRangeKey;
 type CategoryKey = 'all' | 'index' | 'asset' | 'etf' | 'fund';
 type EtfFilterKey = 'all' | 'index' | 'sector';
 type SortDirection = 'desc' | 'asc';
@@ -53,6 +53,7 @@ const RANGES: Array<{ key: RankingRangeKey; label: string }> = [
   { key: '6m', label: '近半年' },
   { key: '1y', label: '近1年' },
   { key: '3y', label: '近3年' },
+  { key: '5y', label: '近5年' },
 ];
 
 const CATEGORIES: Array<{ key: CategoryKey; label: string }> = [
@@ -433,7 +434,7 @@ export default function RankingPage({
           </div>
         )}
         <div className={`${styles.controlBlock} ${styles.rangeControl}`} aria-label="表现区间">
-          <div className={styles.segmented}>
+          <div className={`${styles.segmented} ${styles.desktopRanges}`}>
             {RANGES.map((item) => (
               <button
                 key={item.key}
@@ -445,6 +446,15 @@ export default function RankingPage({
                 {item.label}
               </button>
             ))}
+          </div>
+          <div className={styles.mobileRange}>
+            <select className={styles.rangeSelect} aria-label="近期时间区间" value={range}
+              onPointerDown={event => { event.currentTarget.dataset.pointerFocus = 'true'; }}
+              onKeyDown={event => { if (event.key !== 'Escape') delete event.currentTarget.dataset.pointerFocus; }}
+              onBlur={event => { delete event.currentTarget.dataset.pointerFocus; }}
+              onChange={event => updateRange(event.target.value as RankingRangeKey)}>
+              {RANGES.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}
+            </select>
           </div>
         </div>
       </section>
@@ -482,7 +492,7 @@ export default function RankingPage({
                   <button
                     type="button"
                     title={column.title}
-                    className={`${styles.sortHeaderButton} ${sortKey === column.key ? styles.sortHeaderButtonActive : ''}`}
+                    className={styles.sortHeaderButton}
                     onClick={() => updateSort(column.key)}
                   >
                     {sortLabel(column.label, column.key)}

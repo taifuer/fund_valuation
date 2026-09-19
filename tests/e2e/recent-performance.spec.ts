@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { chooseRecentRange, expectRecentRange } from './controls';
 import { readFileSync } from 'node:fs';
 
 const universe = JSON.parse(readFileSync(new URL('../../config/universe.json', import.meta.url), 'utf8')) as {
@@ -92,13 +93,95 @@ test('switching recent ranges shares history data and never loads fund estimates
   await expect(table).toContainText('123,456.78');
   await expect(table.getByRole('columnheader')).toHaveCount(10);
   await table.getByRole('button', { name: '胜率', exact: true }).click();
-  await page.getByLabel('表现区间').getByRole('button', { name: '最新', exact: true }).click();
+  await chooseRecentRange(page, 'today', '最新');
   await expect(table.getByRole('columnheader')).toHaveCount(7);
   await expect(table.getByRole('columnheader', { name: '涨跌幅 ↓' })).toHaveAttribute('aria-sort', 'descending');
-  await page.getByLabel('表现区间').getByRole('button', { name: '近1月', exact: true }).click();
+  await chooseRecentRange(page, '1m', '近1月');
   await expect(table.getByRole('columnheader')).toHaveCount(10);
   expect(apiRequests.filter(path => path === '/api/marketreturns')).toHaveLength(1);
   expect(apiRequests.some(path => /^\/api\/fund/.test(path))).toBe(false);
+});
+
+test('recent subcategories share a row with the right-aligned mobile range', async ({ page, isMobile }, testInfo) => {
+  await page.goto('/returns?range=5y&category=etf');
+  for (const width of isMobile ? [320, 390, 720] : [1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const [label, subLabel] of [['ETF', 'ETF类型筛选'], ['基金', '基金类型筛选'], ['指数', ''], ['资产', ''], ['全部', '']]) {
+      await page.getByLabel('分类筛选', { exact: true }).getByRole('button', { name: label, exact: true }).click();
+      await expectRecentRange(page, '5y', '近5年');
+      const geometry = await page.evaluate(subLabel => {
+        const category = document.querySelector('[aria-label="分类筛选"]')!;
+        const toolbar = category.parentElement!.getBoundingClientRect();
+        const primary = category.firstElementChild!.getBoundingClientRect();
+        const sub = subLabel ? document.querySelector(`[aria-label="${subLabel}"]`)!.firstElementChild!.getBoundingClientRect() : null;
+        const select = document.querySelector('[aria-label="近期时间区间"]')!.getBoundingClientRect();
+        const range = document.querySelector('[aria-label="表现区间"]')!.getBoundingClientRect();
+        return { toolbarRight: toolbar.right, primary: primary.toJSON(), sub: sub?.toJSON(),
+          select: select.toJSON(), range: range.toJSON(), overflow: document.documentElement.scrollWidth - innerWidth };
+      }, subLabel);
+      expect(geometry.overflow).toBeLessThanOrEqual(1);
+      if (isMobile) {
+        expect(geometry.select.top).toBeGreaterThanOrEqual(geometry.primary.bottom + 8);
+        expect(geometry.select.right).toBeCloseTo(geometry.toolbarRight, 0);
+        if (geometry.sub) {
+          expect(geometry.sub.top).toBeGreaterThanOrEqual(geometry.primary.bottom + 8);
+          expect(geometry.sub.top).toBeCloseTo(geometry.select.top, 0);
+          expect(geometry.sub.height).toBeCloseTo(geometry.select.height, 0);
+          expect(geometry.sub.left).toBeCloseTo(geometry.primary.left, 0);
+          expect(geometry.select.left - geometry.sub.right).toBeGreaterThanOrEqual(8);
+        }
+        if (width === 390 && subLabel) await page.screenshot({ path: testInfo.outputPath(`filters-${subLabel}.png`) });
+      } else {
+        expect(geometry.range.top).toBeCloseTo(geometry.primary.top, 0);
+        if (geometry.sub) expect(geometry.sub.top).toBeGreaterThan(geometry.range.bottom);
+      }
+    }
+  }
+});
+
+test('enlarged mobile filter text wraps the range without squeezing or clipping labels', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'Mobile filter wrapping');
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto('/returns?range=5y&category=etf');
+  await page.getByRole('combobox', { name: '近期时间区间' }).waitFor();
+  await page.addStyleTag({ content: '[aria-label="ETF类型筛选"] button { font-size: 18px; }' });
+  const geometry = await page.evaluate(() => {
+    const sub = document.querySelector('[aria-label="ETF类型筛选"]')!;
+    const select = document.querySelector('[aria-label="近期时间区间"]')!.getBoundingClientRect();
+    return { bottom: sub.getBoundingClientRect().bottom, top: select.top, right: select.right,
+      toolbarRight: sub.parentElement!.getBoundingClientRect().right,
+      clipped: [...sub.querySelectorAll('button')].some(button => button.scrollWidth > button.clientWidth + 1),
+      overflow: document.documentElement.scrollWidth - innerWidth };
+  });
+  expect(geometry.top).toBeGreaterThanOrEqual(geometry.bottom + 8);
+  expect(geometry.right).toBeCloseTo(geometry.toolbarRight, 0);
+  expect(geometry.clipped).toBe(false);
+  expect(geometry.overflow).toBeLessThanOrEqual(1);
+});
+
+test('five-year controls persist and the selected header shares the long-term style', async ({ page, isMobile }) => {
+  await page.goto('/returns?range=5y');
+  await expectRecentRange(page, '5y', '近5年');
+  await chooseRecentRange(page, '1m', '近1月');
+  await expect(page.getByRole('table', { name: '近期表现' })).toContainText('+123.45%');
+  const sort = page.getByRole('button', { name: '涨跌幅 ↓', exact: true });
+  await expect(sort).toHaveCSS('background-color', 'rgb(241, 245, 249)');
+  await expect(sort).toHaveCSS('border-color', 'rgb(226, 232, 240)');
+  await chooseRecentRange(page, '5y', '近5年');
+  await page.reload();
+  await expectRecentRange(page, '5y', '近5年');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+  if (isMobile) {
+    await expect(page.getByLabel('表现区间').getByRole('button', { name: '近5年', exact: true })).toHaveCount(0);
+    const select = page.getByRole('combobox', { name: '近期时间区间' });
+    await expect(select).toHaveCSS('font-size', '12px');
+    await expect(select).toHaveCSS('height', '40px');
+    await select.tap();
+    await expect(select).toHaveCSS('outline-style', 'none');
+    await page.keyboard.press('Escape');
+  }
+  await page.getByRole('navigation', { name: '走势分析视图' }).getByRole('button', { name: '长期' }).click();
+  await expect(page).toHaveURL(/\/history$/);
 });
 
 test('recent rows open lazy charts and preserve sorting, focus and scrolling', async ({ page }, testInfo) => {

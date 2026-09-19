@@ -20,6 +20,8 @@ const backendURL = `http://127.0.0.1:${backendPort}`;
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // Playwright clears outputDir on reruns; keep the reused backend DB outside it.
+  outputDir: 'test-results/artifacts',
   timeout: 30_000,
   workers: 1,
   use: {

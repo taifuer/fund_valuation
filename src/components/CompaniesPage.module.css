@@ -10,6 +10,8 @@
   composes: title from './PageBase.module.css';
 }
 
+.viewNav { composes: viewNav from './AnalysisBase.module.css'; border-bottom: 0; }
+
 .pageHeader p {
   color: #6b7585;
   font-size: 13px;
@@ -23,17 +25,6 @@
 
 .segmentButton {
   composes: segmentButton from './AnalysisBase.module.css';
-  min-width: 54px;
-  white-space: nowrap;
-}
-
-.segmentButton:hover:not(:disabled):not(.segmentButtonActive) {
-  color: #1c2738;
-}
-
-.segmentButton:disabled {
-  color: #bbc1ca;
-  cursor: not-allowed;
 }
 
 .segmentButtonActive {
@@ -60,17 +51,12 @@
 }
 
 .detailTable {
-  border-collapse: collapse;
-  table-layout: fixed;
-  width: 100%;
+  composes: table from './AnalysisBase.module.css';
 }
 
 .detailTable th,
 .detailTable td {
-  box-sizing: border-box;
-  padding: 11px 14px;
   text-align: right;
-  vertical-align: middle;
 }
 
 .detailTable th:first-child,
@@ -78,22 +64,6 @@
 .detailTable th:nth-child(2),
 .detailTable td:nth-child(2) {
   text-align: left;
-}
-
-.detailTable thead {
-  background: #f7f9fb;
-  border-bottom: 1px solid #e2e7ed;
-  color: #667284;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.detailTable tbody tr {
-  border-bottom: 1px solid #edf0f4;
-}
-
-.detailTable tbody tr:last-child {
-  border-bottom: 0;
 }
 
 .positive {
@@ -126,13 +96,8 @@
 }
 
 .regionSwitcher {
-  background: #f3f5f7;
-  border: 1px solid #e1e5ea;
-  border-radius: 7px;
-  display: inline-flex;
+  composes: segmented from './AnalysisBase.module.css';
   flex: 0 0 auto;
-  gap: 2px;
-  padding: 2px;
 }
 
 .regionSwitcher button {
@@ -143,7 +108,7 @@
   color: #6f7a89;
   cursor: pointer;
   display: inline-flex;
-  font-size: 11px;
+  font-size: var(--font-small);
   font-weight: 700;
   gap: 5px;
   height: 29px;
@@ -165,13 +130,12 @@
 }
 
 .regionSwitcher .regionButtonActive {
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(28, 39, 56, 0.11);
-  color: #172033;
+  background: #0f172a;
+  color: var(--surface);
 }
 
 .regionSwitcher .regionButtonActive small {
-  color: #657282;
+  color: var(--line);
 }
 
 .regionSwitcher button:focus-visible {
@@ -644,14 +608,9 @@
   min-width: 880px;
 }
 
-.detailTable th,
 .detailTable td {
-  padding: 9px 11px;
-}
-
-.detailTable td {
-  color: #556173;
-  font-size: 11px;
+  color: var(--ink-muted);
+  font-size: var(--font-small);
   font-variant-numeric: tabular-nums;
 }
 

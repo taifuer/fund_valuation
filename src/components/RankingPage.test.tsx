@@ -31,6 +31,28 @@ describe('recent row history dialogs', () => {
     ['sina-cn:sh000001', marketSummary('sh000001')],
   ])));
 
+  it('restores five-year selection and opens the same range without loading every history', async () => {
+    window.history.replaceState({}, '', '/returns?range=5y');
+    const summary = marketSummary('sh000016');
+    summary.ranges = { '5y': { key: '5y', label: '近5年', returnPercent: 80, startDate: '2021-09-15',
+      endDate: '2026-09-15', startClose: 100, endClose: 180, maxDrawdownPercent: -20, winRatePercent: 55 } };
+    vi.mocked(fetchMarketReturnSummaries).mockResolvedValue(new Map([['sina-cn:sh000016', summary]]));
+    render(<RankingPage funds={[]} quotes={new Map()} marketLoading={false} />);
+    await screen.findByText('+80.00%');
+    expect(screen.getByRole('button', { name: '近5年' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('近期时间区间')).toHaveValue('5y');
+    expect(fetchMarketHistory).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '上证50走势' }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByRole('img');
+    expect(within(dialog).getByRole('button', { name: '5年' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }));
+    fireEvent.change(screen.getByLabelText('近期时间区间'), { target: { value: '3y' } });
+    expect(screen.getByRole('button', { name: '近3年' })).toHaveAttribute('aria-pressed', 'true');
+    const row = screen.getByRole('button', { name: '上证50走势' }).closest('tr')!;
+    expect(within(row).getAllByRole('cell')[2]).toHaveTextContent('--');
+  });
+
   it('loads only the clicked history, defaults latest to one month, and reuses the cache', async () => {
     render(<RankingPage funds={[]} quotes={new Map()} marketLoading={false} />);
     const button = await screen.findByRole('button', { name: '上证指数走势' });

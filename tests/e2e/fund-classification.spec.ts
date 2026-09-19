@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { chooseRecentRange } from './controls';
 import { readFileSync } from 'node:fs';
 
 const funds = (JSON.parse(readFileSync(new URL('../../config/universe.json', import.meta.url), 'utf8')) as {
@@ -156,7 +157,7 @@ test('index funds participate in confirmed returns and risk without estimate req
   await expect(rows.first()).toContainText('-3.00%');
   await expect(rows.first()).toContainText('60.00%');
   await expect(rows.first()).toContainText('指数基金');
-  await page.getByLabel('表现区间').getByRole('button', { name: '最新', exact: true }).click();
+  await chooseRecentRange(page, 'today', '最新');
   await expect(rows.first()).toContainText('2.1234');
   await expect(page.getByRole('columnheader', { name: /回撤/ })).toHaveCount(0);
   expect(requests).not.toContain('/api/fundestimates');

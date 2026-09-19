@@ -68,32 +68,18 @@
 }
 
 .rangeGroup {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 2px;
+  composes: segmented from './AnalysisBase.module.css';
   margin-bottom: 12px;
-  padding: 2px;
 }
 
 .rangeButton {
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-  color: #64748b;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 24px;
+  composes: segmentButton from './AnalysisBase.module.css';
   min-width: 38px;
   padding: 0 7px;
 }
 
 .rangeButtonActive {
-  background: #0f172a;
-  color: #fff;
+  composes: segmentButtonActive from './AnalysisBase.module.css';
 }
 
 .metrics {
@@ -157,21 +143,12 @@
   composes: line from './ChartBase.module.css';
 }
 
-.lineUp {
-  stroke: var(--color-up);
-}
-
-.lineDown {
-  stroke: var(--color-down);
-}
-
 .crosshair {
   composes: crosshair from './ChartBase.module.css';
 }
 
 .focusPoint {
   composes: point from './ChartBase.module.css';
-  stroke: var(--ink);
 }
 
 .tooltipBox {

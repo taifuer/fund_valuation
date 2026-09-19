@@ -27,6 +27,21 @@ from backend.storage import (
 
 
 class StorageMigrationTests(unittest.TestCase):
+    def test_schema_fifteen_preserves_history_and_adds_resumable_archive_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'archive-migration.db'
+            with sqlite3.connect(path) as conn:
+                conn.executescript("""
+                    CREATE TABLE market_history(source TEXT,symbol TEXT,date TEXT,close REAL,fetched_at INTEGER);
+                    INSERT INTO market_history VALUES('sina-us','.INX','2025-12-31',6000,1);
+                    PRAGMA user_version=14;
+                """)
+            migrate_database(path)
+            migrate_database(path)
+            with sqlite3.connect(path) as conn:
+                self.assertEqual(conn.execute('SELECT close FROM market_history').fetchone()[0], 6000)
+                self.assertEqual(conn.execute('SELECT COUNT(*) FROM market_history_backfill').fetchone()[0], 0)
+
     def test_schema_fourteen_adds_monthly_history_without_changing_daily_rows(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'legacy.db'

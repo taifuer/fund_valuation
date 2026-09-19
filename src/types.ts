@@ -186,7 +186,7 @@ export interface FundHistoryPoint {
   adjusted?: boolean;
 }
 
-export type FundReturnRangeKey = '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | 'ytd';
+export type FundReturnRangeKey = '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | '5y' | 'ytd';
 
 export interface FundRangeReturn {
   key: FundReturnRangeKey;

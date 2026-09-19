@@ -27,6 +27,7 @@
   line-height: 26px;
   min-width: 58px;
   padding: 0 8px;
+  white-space: nowrap;
 }
 
 .segmentButtonActive {
@@ -51,10 +52,34 @@
   overflow-x: auto;
 }
 
+.viewNav { border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 24px; }
+.viewNav button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--ink-muted); cursor: pointer; font-size: var(--font-body); font-weight: 700; line-height: 34px; padding: 0 2px; }
+.viewNav button[aria-current=page], .viewNav button[aria-pressed=true] { border-bottom-color: var(--chart-line); color: var(--ink); }
+.viewNav button:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 2px; }
+
+.selectWrap { position: relative; }
+.selectWrap::after { content: ''; position: absolute; right: 14px; top: 15px; width: 6px; height: 6px; border: solid var(--ink-muted); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); pointer-events: none; }
+.select { appearance: none; width: 124px; height: 40px; border: 1px solid var(--line); border-radius: 6px; padding: 0 32px 0 12px; background: var(--surface); color: var(--ink); font: inherit; font-size: var(--font-small); text-align: left; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
+.select:not([data-pointer-focus]):focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 2px; }
+
+.sortButton { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: inherit; cursor: pointer; display: inline-flex; font: inherit; font-weight: 800; line-height: 20px; min-height: 24px; max-width: 100%; padding: 0 5px; white-space: nowrap; }
+.table th[aria-sort=ascending] .sortButton, .table th[aria-sort=descending] .sortButton { background: var(--surface-sunken); border-color: var(--line); color: var(--ink); }
+.sortButton:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 2px; }
+.notes { color: var(--ink-muted); font-size: var(--font-small); line-height: 1.7; margin-top: 12px; }
+.notes p + p { margin-top: 4px; }
+
+@media (hover: hover) and (pointer: fine) {
+  .segmentButton:hover:not(:disabled):not(.segmentButtonActive), .viewNav button:hover { color: var(--ink); }
+  .sortButton:hover { background: var(--surface-sunken); color: var(--ink); }
+  .select:not([data-pointer-focus]):hover { border-color: var(--ink-muted); }
+}
+
 .table {
   border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .table thead {

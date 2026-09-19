@@ -98,38 +98,12 @@
 }
 
 .sortHeaderButton {
-  align-items: center;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  color: inherit;
-  cursor: pointer;
-  display: inline-flex;
-  font: inherit;
-  font-weight: 800;
+  composes: sortButton from './AnalysisBase.module.css';
   justify-content: inherit;
-  line-height: 20px;
-  max-width: 100%;
-  padding: 0 6px;
-  white-space: nowrap;
 }
 
-.sortHeaderButton:hover {
-  background: #eef2f7;
-  color: #0f172a;
-}
-
-.sortHeaderButtonActive {
-  background: #f1f5f9;
-  border-color: #dbe4f0;
-  color: #1e293b;
-  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
-}
-
-.sortHeaderButton:focus-visible {
-  outline: 2px solid #0f172a;
-  outline-offset: 2px;
-}
+.mobileRange { composes: selectWrap from './AnalysisBase.module.css'; display: none; }
+.rangeSelect { composes: select from './AnalysisBase.module.css'; }
 
 
 .rank {
@@ -281,25 +255,43 @@
 }
 
 @media (max-width: 720px) {
+  .rangeControl .desktopRanges { display: none; }
+  .mobileRange { display: block; }
   .controlBlock {
-    align-items: flex-start;
-    flex-direction: column;
-    width: 100%;
+    flex-basis: auto;
+    max-width: 100%;
+    order: 0;
+    width: auto;
+  }
+
+  .rangeControl {
+    margin-left: auto;
   }
 
   .toolbar {
-    display: flex;
-    flex-direction: column;
+    align-items: center;
     justify-content: flex-start;
   }
 
-  .segmented {
+  .categoryControl,
+  .categoryControl .segmented {
     width: 100%;
   }
 
-  .categoryControl .segmented,
   .subControl .segmented {
-    width: 100%;
+    max-width: 100%;
+    width: auto;
+  }
+
+  .subControl .segmentButton {
+    flex: 0 0 auto;
+    min-height: 34px;
+  }
+
+  .rangeControl .rangeSelect {
+    width: 104px;
+    padding-left: 10px;
+    padding-right: 26px;
   }
 
   .table {

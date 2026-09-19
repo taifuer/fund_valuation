@@ -1,10 +1,26 @@
 """Historical performance math, separate from fetching and Flask responses."""
 from __future__ import annotations
 
+import calendar
 import json
 import math
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
+
+
+def history_cutoff(latest: date, days: int) -> date:
+    if days == 365 * 5:
+        year = latest.year - 5
+        return latest.replace(year=year, day=min(latest.day, calendar.monthrange(year, latest.month)[1]))
+    return latest - timedelta(days=days)
+
+
+def daily_range_covered(points: list[tuple[str, float]], start: str, target: str) -> bool:
+    """Reject truncated windows and obvious outages, not ordinary holiday gaps."""
+    days = [date.fromisoformat(day) for day, _ in points if day >= start]
+    if len(days) < 2 or not 0 <= (date.fromisoformat(target) - days[0]).days <= 20:
+        return False
+    return all((right - left).days <= 20 for left, right in zip(days, days[1:]))
 
 
 def finite_number(value: Any) -> float | None:
