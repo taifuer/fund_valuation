@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import Header from './Header';
 
@@ -37,12 +37,17 @@ describe('Header', () => {
   it('navigates through the primary page tabs', () => {
     const onPageChange = vi.fn();
     render(<Header fxRates={new Map()} activePage="overview" onPageChange={onPageChange} />);
+    const navigation = within(screen.getByRole('navigation', { name: '页面切换' }));
+    expect(navigation.getAllByRole('button').map(button => button.textContent?.trim()))
+      .toEqual(['概览', '收益', '基金', '公司', '关于']);
     fireEvent.click(screen.getByRole('button', { name: '关于' }));
     expect(onPageChange).toHaveBeenCalledWith('about');
     fireEvent.click(screen.getByRole('button', { name: '公司' }));
     expect(onPageChange).toHaveBeenCalledWith('companies');
     fireEvent.click(screen.getByRole('button', { name: '收益' }));
     expect(onPageChange).toHaveBeenCalledWith('ranking');
+    fireEvent.click(screen.getByRole('button', { name: '基金' }));
+    expect(onPageChange).toHaveBeenCalledWith('funds');
   });
 
   it('keeps the combined performance entry active for both subpages', () => {
@@ -51,7 +56,7 @@ describe('Header', () => {
     );
     expect(screen.getByRole('button', { name: '收益' })).toHaveAttribute('aria-current', 'page');
 
-    rerender(<Header fxRates={new Map()} activePage="risk" onPageChange={vi.fn()} />);
+    rerender(<Header fxRates={new Map()} activePage="history" onPageChange={vi.fn()} />);
     expect(screen.getByRole('button', { name: '收益' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('button', { name: '风险' })).not.toBeInTheDocument();
   });

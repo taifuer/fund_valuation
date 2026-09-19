@@ -1,11 +1,10 @@
-export type PageKey = 'overview' | 'funds' | 'companies' | 'ranking' | 'risk' | 'history' | 'about' | 'diagnostics';
+export type PageKey = 'overview' | 'funds' | 'companies' | 'ranking' | 'history' | 'about' | 'diagnostics';
 
 export const PAGE_PATHS: Record<PageKey, string> = {
   overview: '/',
   funds: '/funds',
   companies: '/companies',
   ranking: '/returns',
-  risk: '/risk',
   history: '/history',
   about: '/about',
   diagnostics: '/diagnostics',
@@ -14,8 +13,7 @@ export const PAGE_PATHS: Record<PageKey, string> = {
 export function pageFromPathname(pathname: string): PageKey {
   if (pathname === '/funds' || pathname === '/fund' || pathname.startsWith('/funds/')) return 'funds';
   if (pathname === '/companies' || pathname === '/company') return 'companies';
-  if (pathname === '/returns' || pathname === '/ranking') return 'ranking';
-  if (pathname === '/risk') return 'risk';
+  if (pathname === '/returns' || pathname === '/ranking' || pathname === '/risk') return 'ranking';
   if (pathname === '/history') return 'history';
   if (pathname === '/about') return 'about';
   if (pathname === '/diagnostics') return 'diagnostics';
@@ -29,6 +27,24 @@ export function expandedFundCodeFromPathname(pathname: string): string | null {
 
 export function canonicalPathForPage(page: PageKey): string {
   return PAGE_PATHS[page];
+}
+
+export function canonicalizePageLocation(): PageKey {
+  const { pathname, search, hash } = window.location;
+  const page = pageFromPathname(pathname);
+  const params = new URLSearchParams(search);
+  // Old risk links omitted their default range and sort, unlike recent returns.
+  if (pathname === '/risk') {
+    if (!params.has('range')) params.set('range', 'ytd');
+    if (!params.has('sort')) params.set('sort', 'drawdown');
+  }
+  const canonical = page === 'funds' && expandedFundCodeFromPathname(pathname)
+    ? pathname : canonicalPathForPage(page);
+  if (pathname !== canonical) {
+    const query = params.toString();
+    window.history.replaceState({}, '', `${canonical}${query ? `?${query}` : ''}${hash}`);
+  }
+  return page;
 }
 
 const pageSearch = new Map<PageKey, string>();

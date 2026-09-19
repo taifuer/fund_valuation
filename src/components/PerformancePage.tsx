@@ -2,10 +2,9 @@ import type { Fund } from '../types';
 import { lazy, Suspense } from 'react';
 import type { MarketStateData, QuoteData } from '../types';
 import RankingPage from './RankingPage';
-import RiskPage from './RiskPage';
 import styles from './PerformancePage.module.css';
 
-type PerformanceMode = 'ranking' | 'risk' | 'history';
+type PerformanceMode = 'ranking' | 'history';
 const LongHistoryPage = lazy(() => import('./LongHistoryPage'));
 
 interface Props {
@@ -37,15 +36,7 @@ export default function PerformancePage({
             className={mode === 'ranking' ? styles.viewButtonActive : ''}
             onClick={() => onModeChange('ranking')}
           >
-            收益
-          </button>
-          <button
-            type="button"
-            aria-current={mode === 'risk' ? 'page' : undefined}
-            className={mode === 'risk' ? styles.viewButtonActive : ''}
-            onClick={() => onModeChange('risk')}
-          >
-            风险
+            近期
           </button>
           <button
             type="button"
@@ -61,19 +52,12 @@ export default function PerformancePage({
         <Suspense fallback={null}>
           <LongHistoryPage />
         </Suspense>
-      ) : mode === 'ranking' ? (
+      ) : (
         <RankingPage
           quotes={quotes}
           funds={funds}
           marketStates={marketStates}
           marketLoading={marketLoading}
-          onStatusMessageChange={onStatusMessageChange}
-        />
-      ) : (
-        <RiskPage
-          funds={funds}
-          marketStates={new Map()}
-          marketLoading={false}
           onStatusMessageChange={onStatusMessageChange}
         />
       )}

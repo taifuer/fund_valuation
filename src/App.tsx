@@ -17,7 +17,7 @@ import {
 import {
   rememberPageSearch,
   restoredPagePath,
-  canonicalPathForPage,
+  canonicalizePageLocation,
   expandedFundCodeFromPathname,
   fundExpansionPath,
   pageFromPathname,
@@ -215,7 +215,7 @@ export default function App() {
   const [fundManagementToken, setFundManagementToken] = useState(readFundManagementToken);
   const [fundManagementAuthLoading, setFundManagementAuthLoading] = useState(false);
   const [fundManagementAuthError, setFundManagementAuthError] = useState('');
-  const [activePage, setActivePage] = useState<PageKey>(() => pageFromPathname(window.location.pathname));
+  const [activePage, setActivePage] = useState<PageKey>(canonicalizePageLocation);
   // The URL is the single source of truth for the expanded fund card.
   const [expandedCode, setExpandedCode] = useState<string | null>(() => {
     if (pageFromPathname(window.location.pathname) !== 'funds') return null;
@@ -366,15 +366,7 @@ export default function App() {
 
   useEffect(() => {
     function handlePopState() {
-      const page = pageFromPathname(window.location.pathname);
-      // Canonicalize alias URLs (/fund, /ranking) but preserve deep links
-      // (/funds/:code) so browser back/forward keeps the expanded card.
-      const canonical = page === 'funds' && expandedFundCodeFromPathname(window.location.pathname)
-        ? window.location.pathname
-        : canonicalPathForPage(page);
-      if (window.location.pathname !== canonical) {
-        window.history.replaceState({}, '', canonical);
-      }
+      const page = canonicalizePageLocation();
       setActivePage(page);
       setExpandedCode(page === 'funds' ? expandedFundCodeFromPathname(window.location.pathname) : null);
     }
@@ -788,7 +780,7 @@ export default function App() {
         <Suspense fallback={<div className={styles.pageFallback}>公司页面加载中...</div>}>
           <CompaniesPage onStatusMessageChange={setPageStatusMessage} />
         </Suspense>
-      ) : activePage === 'ranking' || activePage === 'risk' || activePage === 'history' ? (
+      ) : activePage === 'ranking' || activePage === 'history' ? (
         <Suspense fallback={activePage === 'history' ? null : <div className={styles.pageFallback}>收益页面加载中...</div>}>
           <PerformancePage
             mode={activePage}

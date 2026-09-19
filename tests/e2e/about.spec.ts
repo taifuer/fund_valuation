@@ -43,14 +43,14 @@ test('about text and links stay readable across narrow and intermediate widths',
     await page.goto('/about');
     const main = page.getByRole('main', { name: '关于本站' });
     await expect(main).toBeVisible();
-    for (const selector of ['section > p', 'dd', 'li p']) {
+    for (const selector of ['section > p', 'li p']) {
       await expect(main.locator(selector).first()).toHaveCSS('font-size', '14px');
       await expect(main.locator(selector).first()).toHaveCSS('color', 'rgb(30, 41, 59)');
     }
     await expect(main.locator('time').first()).toHaveCSS('font-size', '12px');
     const layout = await main.evaluate(element => ({
       overflow: document.documentElement.scrollWidth - innerWidth,
-      textOverflow: [...element.querySelectorAll('p, dd, h2, h3, h4')]
+      textOverflow: [...element.querySelectorAll('p, h2, h3, h4')]
         .filter(node => node.scrollWidth > node.clientWidth + 1).map(node => node.textContent),
       contentWidth: element.querySelector('section > p')!.getBoundingClientRect().width,
       innerWidth: element.clientWidth - parseFloat(getComputedStyle(element).paddingLeft) - parseFloat(getComputedStyle(element).paddingRight),
@@ -58,11 +58,11 @@ test('about text and links stay readable across narrow and intermediate widths',
     expect(layout.overflow).toBe(0);
     expect(layout.textOverflow).toEqual([]);
     expect(layout.contentWidth).toBe(layout.innerWidth);
-    const source = main.getByRole('link', { name: 'GitHub · fund_valuation' });
-    await source.focus();
-    await expect(source).toHaveCSS('outline-style', 'solid');
-    await expect(source).toHaveAttribute('rel', 'noreferrer');
-    await expect(main.getByRole('link', { name: 'taifu@taifua.com' })).toHaveAttribute('href', 'mailto:taifu@taifua.com');
+    const feedback = main.getByRole('link', { name: 'taifu@taifua.com' });
+    await feedback.focus();
+    await expect(feedback).toHaveCSS('outline-style', 'solid');
+    await expect(feedback).toHaveAttribute('href', 'mailto:taifu@taifua.com');
+    await expect(main.locator('dl')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath(`about-${width}.png`), fullPage: true });
   }
 });

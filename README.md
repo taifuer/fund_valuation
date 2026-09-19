@@ -9,7 +9,7 @@
 ## 核心能力
 
 - **全球市场**：覆盖 A 股、美股、港股及日韩台主要指数，现货闭市时可按规则展示活跃期货参考行情
-- **收益与风险**：按区间查看收益、回撤与胜率，支持表头排序；另提供主要指数和资产的长期走势与年度收益
+- **收益分析**：近期视图整合收益与现值，历史区间同时展示回撤、收益回撤比和胜率，支持表头排序；历史视图提供主要指数和资产的长期走势与年度收益
 - **QDII 基金**：展示官方净值、待公布估值和实时参考，支持持仓穿透、净值明细与历史走势
 - **公司趋势**：以版本化离线数据呈现 52 家代表企业的营收、利润、研发投入和员工人数变化，并收录逐期来源与官方财报日程
 - **本地数据层**：Flask API 只读取 SQLite 快照，独立 worker 负责抓取、校验、持久化与定期维护
@@ -59,7 +59,7 @@ npm run dev
 
 ![公司](./demo/company.png)
 
-更多界面：[基金](./demo/fund.png) · [风险](./demo/risk.png) · [长期历史](./demo/history.png) · [区间涨幅](./demo/history_returns.png) · [股票走势](./demo/stock_history.png) · [基金详情](./demo/fund_detail.png) · [基金走势](./demo/fund_history.png) · [基金净值](./demo/fund_value.png)
+更多界面：[基金](./demo/fund.png) · [长期历史](./demo/history.png) · [区间涨幅](./demo/history_returns.png) · [股票走势](./demo/stock_history.png) · [基金详情](./demo/fund_detail.png) · [基金走势](./demo/fund_history.png) · [基金净值](./demo/fund_value.png)
 
 ## 文档
 

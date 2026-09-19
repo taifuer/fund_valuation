@@ -38,6 +38,8 @@ for (const [path, activeLabel] of [['/', '概览'], ['/funds', '基金'], ['/ret
   test(`${path} survives direct navigation`, async ({ page }) => {
     await page.goto(path);
     await expect(page.getByRole('heading', { name: '全球资产看板' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: '页面切换' }).getByRole('button'))
+      .toHaveText(['概览', '收益', '基金', '公司', '关于']);
     await expect(
       page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: activeLabel, exact: true }),
     ).toBeVisible();
@@ -170,10 +172,15 @@ test('company choices wrap on narrow screens without horizontal scrolling', asyn
 test('performance subpages keep their routes while sharing one primary entry', async ({ page }) => {
   await page.goto('/returns');
   const viewNav = page.getByRole('navigation', { name: '收益分析视图' });
-  await expect(viewNav.getByRole('button', { name: '收益' })).toHaveAttribute('aria-current', 'page');
-  await viewNav.getByRole('button', { name: '风险' }).click();
-  await expect(page).toHaveURL(/\/risk$/);
-  await expect(viewNav.getByRole('button', { name: '风险' })).toHaveAttribute('aria-current', 'page');
+  await expect(viewNav.getByRole('button', { name: '近期' })).toHaveAttribute('aria-current', 'page');
+  await expect(viewNav.getByRole('button')).toHaveCount(2);
+  await viewNav.getByRole('button', { name: '历史' }).click();
+  await expect(page).toHaveURL(/\/history$/);
+  await expect(viewNav.getByRole('button', { name: '历史' })).toHaveAttribute('aria-current', 'page');
+  await page.goBack();
+  await expect(viewNav.getByRole('button', { name: '近期' })).toHaveAttribute('aria-current', 'page');
+  await page.goForward();
+  await expect(viewNav.getByRole('button', { name: '历史' })).toHaveAttribute('aria-current', 'page');
   await expect(
     page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '收益', exact: true }),
   ).toHaveAttribute('aria-current', 'page');
@@ -313,7 +320,7 @@ test('fund page keeps one complete ranking without a strategy filter', async ({ 
 test('mobile return and risk tables keep every column in a horizontal scroller', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile-chromium', 'Mobile table behavior');
 
-  for (const width of [390, 320]) {
+  for (const width of [320, 360, 375, 390, 430]) {
     await page.setViewportSize({ width, height: 844 });
     for (const path of ['/returns', '/risk']) {
       await page.goto(path);
@@ -332,14 +339,14 @@ test('mobile return and risk tables keep every column in a horizontal scroller',
       expect(before.scrollWidth).toBeGreaterThan(before.clientWidth);
       const primaryViewport = await fourthHeader.evaluate((element) => {
         const scrollerRect = element.closest('section')?.getBoundingClientRect();
-        const thirdRect = element.previousElementSibling?.getBoundingClientRect();
+        const fifthRect = element.nextElementSibling?.getBoundingClientRect();
         return {
-          fourthStartsOutside: Boolean(scrollerRect && element.getBoundingClientRect().left >= scrollerRect.right - 1),
-          thirdFits: Boolean(scrollerRect && thirdRect && thirdRect.right <= scrollerRect.right + 1),
+          fifthStartsOutside: Boolean(scrollerRect && fifthRect && fifthRect.left >= scrollerRect.right - 1),
+          fourthFits: Boolean(scrollerRect && element.getBoundingClientRect().right <= scrollerRect.right + 1),
         };
       });
       await expect(thirdHeader).toBeVisible();
-      expect(primaryViewport).toEqual({ fourthStartsOutside: true, thirdFits: true });
+      expect(primaryViewport).toEqual({ fifthStartsOutside: true, fourthFits: true });
 
       const stickyLeftBefore = await nameHeader.evaluate(
         (element) => element.getBoundingClientRect().left,
@@ -354,20 +361,27 @@ test('mobile return and risk tables keep every column in a horizontal scroller',
   }
 });
 
-test('risk table places drawdown before return', async ({ page }) => {
+test('old risk links open recent performance with return and value before risk metrics', async ({ page }) => {
   await page.goto('/risk');
   const headerCells = page.locator('table thead th');
-  await expect(headerCells).toHaveCount(8);
+  await expect(page).toHaveURL(/\/returns\?range=ytd&sort=drawdown$/);
+  await expect(headerCells).toHaveCount(10);
   const headers = await headerCells.allTextContents();
-  expect(headers.map((header) => header.trim().replace(/[↑↓]/g, '').trim()).slice(0, 4)).toEqual([
+  expect(headers.map((header) => header.trim().replace(/[↑↓]/g, '').trim())).toEqual([
     '排名',
     '名称',
-    '回撤',
     '收益',
+    '现值',
+    '回撤',
+    '收益回撤比',
+    '胜率',
+    '状态',
+    '分类',
+    '截至',
   ]);
 });
 
-test('risk table defaults to the largest drawdown first', async ({ page }) => {
+test('legacy risk links preserve largest drawdown sorting and reset it for latest quotes', async ({ page }) => {
   await page.route('**/api/marketreturns?*', async (route) => {
     const range = (returnPercent: number, maxDrawdownPercent: number) => ({
       label: '今年',
@@ -401,12 +415,16 @@ test('risk table defaults to the largest drawdown first', async ({ page }) => {
   });
   await page.goto('/risk');
   await expect(page.getByRole('button', { name: '回撤 ↓' })).toBeVisible();
-  const drawdownCells = page.locator('table tbody tr td:nth-child(3)');
+  const drawdownCells = page.locator('table tbody tr td:nth-child(5)');
   await expect(drawdownCells.first()).toBeVisible();
   const drawdowns = (await drawdownCells.allTextContents())
     .map((value) => Math.abs(Number.parseFloat(value)))
     .filter(Number.isFinite);
   expect(drawdowns).toEqual([12, 8, 5]);
+  await page.getByLabel('收益区间').getByRole('button', { name: '最新', exact: true }).click();
+  await expect(page.getByRole('button', { name: '收益 ↓', exact: true })).toBeVisible();
+  await expect(page.getByRole('columnheader')).toHaveCount(7);
+  await expect(page).toHaveURL(/\/returns$/);
 });
 
 test('return and risk tables keep the name column compact', async ({ page }, testInfo) => {
@@ -421,7 +439,7 @@ test('return and risk tables keep the name column compact', async ({ page }, tes
     }));
     expect(widths.name).toBeGreaterThan(0);
     if (testInfo.project.name === 'mobile-chromium') {
-      expect(widths.name).toBeLessThanOrEqual(113);
+      expect(widths.name).toBeLessThanOrEqual(141);
     } else {
       expect(widths.name / widths.table).toBeLessThanOrEqual(0.205);
     }
@@ -439,8 +457,11 @@ test('return and risk filters survive direct navigation and reload', async ({ pa
 
   await page.goto('/risk?category=asset&range=1m&sort=winRate&order=asc');
   await expect(page.getByLabel('分类筛选').getByRole('button', { name: '资产' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByLabel('风险区间').getByRole('button', { name: '近1月' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('收益区间').getByRole('button', { name: '近1月' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page).toHaveURL(/\/returns\?/);
   await expect(page).toHaveURL(/sort=winRate&order=asc/);
+  await page.reload();
+  await expect(page.getByRole('columnheader', { name: /胜率/ })).toHaveAttribute('aria-sort', 'ascending');
 });
 
 test('diagnostics route stays hidden from primary navigation and requires a token', async ({ page }) => {

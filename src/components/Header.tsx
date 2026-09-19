@@ -82,19 +82,19 @@ export default function Header({
             </button>
             <button
               type="button"
+              aria-current={['ranking', 'history'].includes(activePage) ? 'page' : undefined}
+              className={`${styles.navButton} ${['ranking', 'history'].includes(activePage) ? styles.navButtonActive : ''}`}
+              onClick={() => onPageChange('ranking')}
+            >
+              收益
+            </button>
+            <button
+              type="button"
               aria-current={activePage === 'funds' ? 'page' : undefined}
               className={`${styles.navButton} ${activePage === 'funds' ? styles.navButtonActive : ''}`}
               onClick={() => onPageChange('funds')}
             >
               基金
-            </button>
-            <button
-              type="button"
-              aria-current={['ranking', 'risk', 'history'].includes(activePage) ? 'page' : undefined}
-              className={`${styles.navButton} ${['ranking', 'risk', 'history'].includes(activePage) ? styles.navButtonActive : ''}`}
-              onClick={() => onPageChange('ranking')}
-            >
-              收益
             </button>
             <button
               type="button"

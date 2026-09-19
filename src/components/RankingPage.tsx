@@ -15,7 +15,7 @@ type RankingRangeKey = 'today' | '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | 'ytd'
 type CategoryKey = 'all' | 'index' | 'asset' | 'etf' | 'fund';
 type EtfFilterKey = 'all' | 'index' | 'sector';
 type SortDirection = 'desc' | 'asc';
-type SortKey = 'return' | 'value';
+type SortKey = 'return' | 'value' | 'drawdown' | 'ratio' | 'winRate';
 
 interface Props {
   quotes: Map<string, QuoteData>;
@@ -33,6 +33,8 @@ interface RankingItem {
   categoryLabel: string;
   returnPercent: number | null;
   currentValue: number | null;
+  maxDrawdownPercent: number | null;
+  winRatePercent: number | null;
   startDate?: string;
   endDate?: string;
   sourceLabel: string;
@@ -66,8 +68,20 @@ const ETF_FILTERS: Array<{ key: EtfFilterKey; label: string }> = [
 const CATEGORY_KEYS = CATEGORIES.map((item) => item.key);
 const RANGE_KEYS = RANGES.map((item) => item.key);
 const ETF_FILTER_KEYS = ETF_FILTERS.map((item) => item.key);
-const SORT_KEYS: SortKey[] = ['return', 'value'];
+const RISK_SORT_KEYS: SortKey[] = ['drawdown', 'ratio', 'winRate'];
+const SORT_KEYS: SortKey[] = ['return', 'value', ...RISK_SORT_KEYS];
 const SORT_DIRECTIONS: SortDirection[] = ['desc', 'asc'];
+const VALUE_COLUMNS: Array<{ key: SortKey; label: string; title?: string }> = [
+  { key: 'return', label: '收益' },
+  { key: 'value', label: '现值' },
+  { key: 'drawdown', label: '回撤', title: '区间最大回撤，按幅度大小排序' },
+  { key: 'ratio', label: '收益回撤比', title: '区间收益 / 最大回撤绝对值；回撤为零时不计算' },
+  { key: 'winRate', label: '胜率', title: '区间内上涨交易日占比，平盘日计入分母' },
+];
+
+function finiteOrNull(value: number | null | undefined): number | null {
+  return value != null && Number.isFinite(value) ? value : null;
+}
 
 function historyConfigs(configs: IndexConfig[]) {
   return configs
@@ -134,6 +148,8 @@ function makeMarketItems(
       currentValue: range === 'today'
         ? (useLatestCloseReturn ? latestReturn.endClose : quote?.price ?? latestReturn?.endClose ?? null)
         : rangeReturn?.endClose ?? summary?.endClose ?? null,
+      maxDrawdownPercent: finiteOrNull(rangeReturn?.maxDrawdownPercent),
+      winRatePercent: finiteOrNull(rangeReturn?.winRatePercent),
       startDate: range === 'today'
         ? (useLatestCloseReturn ? latestReturn.startDate : quoteDate ?? latestReturn?.startDate)
         : rangeReturn?.startDate,
@@ -164,6 +180,8 @@ function makeFundItems(
       categoryLabel: '基金',
       returnPercent: range === 'today' ? officialNAV?.officialChange ?? null : rangeReturn?.returnPercent ?? null,
       currentValue: range === 'today' ? officialNAV?.nav ?? null : rangeReturn?.endNav ?? officialNAV?.nav ?? null,
+      maxDrawdownPercent: finiteOrNull(rangeReturn?.maxDrawdownPercent),
+      winRatePercent: finiteOrNull(rangeReturn?.winRatePercent),
       startDate: range === 'today' ? officialNAV?.navDate : rangeReturn?.startDate,
       endDate: range === 'today' ? officialNAV?.navDate : rangeReturn?.endDate,
       sourceLabel: '确认净值',
@@ -195,7 +213,18 @@ function rankStyle(index: number) {
 }
 
 function sortableValue(item: RankingItem, sortKey: SortKey) {
-  return sortKey === 'value' ? item.currentValue : item.returnPercent;
+  if (sortKey === 'winRate') return item.winRatePercent;
+  if (sortKey === 'drawdown') return item.maxDrawdownPercent == null ? null : Math.abs(item.maxDrawdownPercent);
+  if (sortKey === 'ratio') {
+    if (item.returnPercent == null || !item.maxDrawdownPercent) return null;
+    return finiteOrNull(item.returnPercent / Math.abs(item.maxDrawdownPercent));
+  }
+  return finiteOrNull(sortKey === 'value' ? item.currentValue : item.returnPercent);
+}
+
+function formatRiskMetric(value: number | null, suffix = '%') {
+  if (value == null || !Number.isFinite(value)) return '--';
+  return `${value.toFixed(2)}${suffix}`;
 }
 
 function nextDirection(currentKey: SortKey, currentDirection: SortDirection, nextKey: SortKey): SortDirection {
@@ -222,10 +251,15 @@ export default function RankingPage({
   onStatusMessageChange,
 }: Props) {
   const [range, setRange] = useState<RankingRangeKey>(() => choiceFromSearch(window.location.search, 'range', RANGE_KEYS, 'today'));
+  const showRisk = range !== 'today';
   const [category, setCategory] = useState<CategoryKey>(() => choiceFromSearch(window.location.search, 'category', CATEGORY_KEYS, 'index'));
   const [etfFilter, setEtfFilter] = useState<EtfFilterKey>(() => choiceFromSearch(window.location.search, 'etf', ETF_FILTER_KEYS, 'all'));
-  const [sortKey, setSortKey] = useState<SortKey>(() => choiceFromSearch(window.location.search, 'sort', SORT_KEYS, 'return'));
-  const [sortDirection, setSortDirection] = useState<SortDirection>(() => choiceFromSearch(window.location.search, 'order', SORT_DIRECTIONS, 'desc'));
+  const [sortKey, setSortKey] = useState<SortKey>(() => choiceFromSearch(window.location.search, 'sort', showRisk ? SORT_KEYS : ['return', 'value'], 'return'));
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => {
+    const requestedSort = choiceFromSearch(window.location.search, 'sort', SORT_KEYS, 'return');
+    if (!showRisk && RISK_SORT_KEYS.includes(requestedSort)) return 'desc';
+    return choiceFromSearch(window.location.search, 'order', SORT_DIRECTIONS, 'desc');
+  });
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
   const [returnsLoading, setReturnsLoading] = useState(true);
   const refreshTick = useMarketReturnRefreshTick();
@@ -310,6 +344,14 @@ export default function RankingPage({
     setSortKey(nextKey);
   }
 
+  function updateRange(nextRange: RankingRangeKey) {
+    if (nextRange === 'today' && RISK_SORT_KEYS.includes(sortKey)) {
+      setSortKey('return');
+      setSortDirection('desc');
+    }
+    setRange(nextRange);
+  }
+
   function sortLabel(label: string, key: SortKey) {
     if (sortKey !== key) return label;
     return `${label} ${sortDirection === 'desc' ? '↓' : '↑'}`;
@@ -358,7 +400,7 @@ export default function RankingPage({
                 type="button"
                 aria-pressed={range === item.key}
                 className={`${styles.segmentButton} ${range === item.key ? styles.segmentButtonActive : ''}`}
-                onClick={() => setRange(item.key)}
+                onClick={() => updateRange(item.key)}
               >
                 {item.label}
               </button>
@@ -367,49 +409,48 @@ export default function RankingPage({
         </div>
       </section>
 
-      <section className={styles.tableWrap}>
-        <table className={`${styles.table} ${styles.rankingTable}`}>
+      <section className={styles.tableWrap} aria-label="近期表现表格" tabIndex={0}>
+        <table className={`${styles.table} ${showRisk ? styles.withRisk : ''}`} aria-label="近期表现">
           <colgroup>
             <col className={styles.rankCol} />
             <col className={styles.nameCol} />
             <col className={styles.returnCol} />
             <col className={styles.valueCol} />
+            {showRisk && <>
+              <col className={styles.riskCol} />
+              <col className={styles.ratioCol} />
+              <col className={styles.winRateCol} />
+            </>}
             <col className={styles.statusCol} />
             <col className={styles.categoryCol} />
             <col className={styles.dateCol} />
           </colgroup>
           <thead>
             <tr>
-              <th>排名</th>
-              <th>名称</th>
-              <th aria-sort={sortKey === 'return' ? (sortDirection === 'desc' ? 'descending' : 'ascending') : 'none'}>
-                <button
-                  type="button"
-                  className={`${styles.sortHeaderButton} ${sortKey === 'return' ? styles.sortHeaderButtonActive : ''}`}
-                  onClick={() => updateSort('return')}
-                >
-                  {sortLabel('收益', 'return')}
-                </button>
-              </th>
-              <th aria-sort={sortKey === 'value' ? (sortDirection === 'desc' ? 'descending' : 'ascending') : 'none'}>
-                <button
-                  type="button"
-                  className={`${styles.sortHeaderButton} ${sortKey === 'value' ? styles.sortHeaderButtonActive : ''}`}
-                  onClick={() => updateSort('value')}
-                >
-                  {sortLabel('现值', 'value')}
-                </button>
-              </th>
-              <th>状态</th>
-              <th>分类</th>
-              <th>截至</th>
+              <th scope="col">排名</th>
+              <th scope="col">名称</th>
+              {VALUE_COLUMNS.filter(column => showRisk || !RISK_SORT_KEYS.includes(column.key)).map(column => (
+                <th key={column.key} scope="col" className={styles.numericCell} aria-sort={sortKey === column.key ? (sortDirection === 'desc' ? 'descending' : 'ascending') : 'none'}>
+                  <button
+                    type="button"
+                    title={column.title}
+                    className={`${styles.sortHeaderButton} ${sortKey === column.key ? styles.sortHeaderButtonActive : ''}`}
+                    onClick={() => updateSort(column.key)}
+                  >
+                    {sortLabel(column.label, column.key)}
+                  </button>
+                </th>
+              ))}
+              <th scope="col" className={styles.numericCell}>状态</th>
+              <th scope="col" className={styles.categoryCell}>分类</th>
+              <th scope="col" className={styles.numericCell}>截至</th>
             </tr>
           </thead>
           <tbody aria-busy={showSkeleton}>
-            {showSkeleton && <TableSkeleton rows={items.length || 10} columns={7} />}
+            {showSkeleton && <TableSkeleton rows={items.length || 10} columns={showRisk ? 10 : 7} />}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={7} className={styles.empty}>暂无收益数据</td>
+                <td colSpan={showRisk ? 10 : 7} className={styles.empty}>暂无收益数据</td>
               </tr>
             )}
             {!showSkeleton && items.map((item, index) => {
@@ -418,14 +459,19 @@ export default function RankingPage({
                 <tr key={item.id}>
                   <td><span className={`${styles.rank} ${rankStyle(index)}`}>#{index + 1}</span></td>
                   <td className={styles.nameCell}>
-                    <strong>{item.name}</strong>
+                    <strong title={item.name}>{item.name}</strong>
                     <span>{item.symbol}</span>
                   </td>
-                  <td className={`${styles.percent} ${up ? styles.up : styles.down}`}>{formatPercent(item.returnPercent)}</td>
-                  <td className={styles.value}>{formatValue(item.currentValue)}</td>
-                  <td className={styles.source}>{item.sourceLabel}</td>
-                  <td><span className={styles.category}>{item.categoryLabel}</span></td>
-                  <td className={styles.dateRange}>{formatAsOf(item)}</td>
+                  <td className={`${styles.numericCell} ${styles.percent} ${up ? styles.up : styles.down}`}>{formatPercent(item.returnPercent)}</td>
+                  <td className={`${styles.numericCell} ${styles.value}`}>{formatValue(item.currentValue)}</td>
+                  {showRisk && <>
+                    <td className={`${styles.numericCell} ${styles.risk}`}>{formatRiskMetric(item.maxDrawdownPercent)}</td>
+                    <td className={`${styles.numericCell} ${styles.ratio}`}>{formatRiskMetric(sortableValue(item, 'ratio'), '')}</td>
+                    <td className={`${styles.numericCell} ${styles.winRate}`}>{formatRiskMetric(item.winRatePercent)}</td>
+                  </>}
+                  <td className={`${styles.numericCell} ${styles.source}`}>{item.sourceLabel}</td>
+                  <td className={styles.categoryCell}><span className={styles.category}>{item.categoryLabel}</span></td>
+                  <td className={`${styles.numericCell} ${styles.dateRange}`}>{formatAsOf(item)}</td>
                 </tr>
               );
             })}
@@ -433,7 +479,9 @@ export default function RankingPage({
         </table>
       </section>
       <p className={styles.note}>
-        * 最新收益可能包含盘中行情；基金收益使用已披露官方净值。数据可能存在延迟或误差，以官方披露为准。
+        {showRisk
+          ? '* 收益与风险指标使用同区间历史收盘价或官方净值；缺失数据以 -- 显示，数据以官方披露为准。'
+          : '* 最新收益可能包含盘中行情；基金收益使用已披露官方净值。数据可能存在延迟或误差，以官方披露为准。'}
       </p>
     </main>
   );

@@ -53,6 +53,12 @@
 
 .tableWrap {
   composes: tableWrap from './AnalysisBase.module.css';
+  container-type: inline-size;
+}
+
+.tableWrap:focus-visible {
+  outline: 2px solid var(--ink-muted);
+  outline-offset: 2px;
 }
 
 .table {
@@ -63,48 +69,31 @@
 .rankCol { width: 7%; }
 .nameCol { width: 20%; }
 .returnCol { width: 13%; }
-.riskCol { width: 13%; }
-.ratioCol { width: 13%; }
-.winRateCol { width: 11%; }
 .valueCol { width: 13%; }
 .categoryCol { width: 12%; }
 .statusCol { width: 13%; }
 .dateCol { width: 22%; }
 
-.riskTable .rankCol { width: 7%; }
-.riskTable .nameCol { width: 20%; }
-.riskTable .returnCol { width: 11%; }
-.riskTable .riskCol { width: 12%; }
-.riskTable .ratioCol { width: 13%; }
-.riskTable .winRateCol { width: 10%; }
-.riskTable .categoryCol { width: 11%; }
-.riskTable .dateCol { width: 16%; }
+.withRisk {
+  min-width: 1000px;
+}
 
-.rankingTable th:nth-child(3),
-.rankingTable td:nth-child(3),
-.rankingTable th:nth-child(4),
-.rankingTable td:nth-child(4),
-.rankingTable th:nth-child(5),
-.rankingTable td:nth-child(5),
-.rankingTable th:nth-child(7),
-.rankingTable td:nth-child(7),
-.riskTable th:nth-child(3),
-.riskTable td:nth-child(3),
-.riskTable th:nth-child(4),
-.riskTable td:nth-child(4),
-.riskTable th:nth-child(5),
-.riskTable td:nth-child(5),
-.riskTable th:nth-child(6),
-.riskTable td:nth-child(6),
-.riskTable th:nth-child(8),
-.riskTable td:nth-child(8) {
+.withRisk .rankCol { width: 6%; }
+.withRisk .nameCol { width: 16%; }
+.withRisk .returnCol { width: 10%; }
+.withRisk .valueCol { width: 10%; }
+.withRisk .riskCol { width: 9%; }
+.withRisk .ratioCol { width: 12%; }
+.withRisk .winRateCol { width: 8%; }
+.withRisk .statusCol { width: 9%; }
+.withRisk .categoryCol { width: 9%; }
+.withRisk .dateCol { width: 11%; }
+
+.table .numericCell {
   text-align: right;
 }
 
-.rankingTable th:nth-child(6),
-.rankingTable td:nth-child(6),
-.riskTable th:nth-child(7),
-.riskTable td:nth-child(7) {
+.table .categoryCell {
   text-align: center;
 }
 
@@ -200,8 +189,7 @@
 .value,
 .risk,
 .ratio,
-.winRate,
-.riskReturn {
+.winRate {
   color: #94a3b8;
   font-size: 12px;
 }
@@ -211,17 +199,9 @@
 .value,
 .risk,
 .ratio,
-.winRate,
-.riskReturn,
-.drawdown {
+.winRate {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-.drawdown {
-  color: #334155;
-  font-size: 14px;
-  font-weight: 800;
 }
 
 .category {
@@ -240,6 +220,7 @@
   font-size: 14px;
   font-variant-numeric: tabular-nums;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .up {
@@ -262,6 +243,13 @@
   font-size: 12px;
   line-height: 1.7;
   margin: 10px 2px 0;
+}
+
+@media (min-width: 721px) {
+  .withRisk th,
+  .withRisk td {
+    padding-inline: 10px;
+  }
 }
 
 @media (max-width: 720px) {
@@ -287,18 +275,36 @@
   }
 
   .table {
-    --mobile-name-width: clamp(90px, calc(100vw - 230px), 112px);
-    --mobile-primary-width: calc(100vw - 82px - var(--mobile-name-width));
-    min-width: calc(100vw + 387px);
+    /* The first four columns fill the scroller, not the full table. */
+    --mobile-name-width: clamp(64px, calc(100cqw - 224px), 140px);
+    --mobile-return-width: calc(100cqw - 138px - var(--mobile-name-width));
+    width: calc(100cqw + 288px);
+    min-width: calc(100cqw + 288px);
   }
 
-  .riskTable {
-    min-width: calc(100vw + 467px);
+  .withRisk {
+    width: calc(100cqw + 578px);
+    min-width: calc(100cqw + 578px);
   }
 
   .rank {
     min-width: 28px;
-    padding: 0 5px;
+    padding: 0 3px;
+  }
+
+  .nameCell strong {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-height: 18px;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .nameCell span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .table th:first-child,
@@ -324,23 +330,19 @@
   .table th:nth-child(2),
   .table td:nth-child(2) {
     box-shadow: 1px 0 0 #e2e8f0;
-    left: 56px;
+    left: 44px;
   }
 
-  .table .rankCol { width: 56px; }
+  .table .rankCol { width: 44px; }
   .table .nameCol { width: var(--mobile-name-width); }
-  .table .returnCol { width: 75px; }
-  .table .valueCol { width: 75px; }
+  .table .returnCol { width: var(--mobile-return-width); }
+  .table .valueCol { width: 94px; }
   .table .statusCol { width: 90px; }
   .table .categoryCol { width: 80px; }
-  .table .dateCol { width: 168px; }
-
-  .rankingTable .returnCol { width: var(--mobile-primary-width); }
-  .riskTable .returnCol { width: 75px; }
-  .riskTable .riskCol { width: var(--mobile-primary-width); }
-  .riskTable .ratioCol { width: 110px; }
-  .riskTable .winRateCol { width: 80px; }
-  .riskTable .dateCol { width: 148px; }
+  .table .dateCol { width: 118px; }
+  .table .riskCol { width: 90px; }
+  .table .ratioCol { width: 120px; }
+  .table .winRateCol { width: 80px; }
 }
 .skeletonCell {
   display: block;

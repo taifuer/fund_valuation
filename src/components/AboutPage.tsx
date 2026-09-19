@@ -4,7 +4,7 @@ const UPDATES = [
   {
     date: '2026年9月',
     title: '增加长期市场历史与年度收益',
-    description: '新增主要指数与资产的月度长期走势、年度收益及多年区间涨幅，支持复合年化、完整自然年比较和各自全部历史；公司财报增加逐期来源追溯与财报日历。',
+    description: '新增主要指数与资产的月度长期走势、年度收益及多年区间涨幅，支持复合年化、完整自然年比较和各自全部历史。',
   },
   {
     date: '2026年8月',
@@ -44,20 +44,7 @@ export default function AboutPage() {
           <p>
             行情主要来自新浪财经、腾讯财经、台湾证券交易所、Naver Finance 和 Coin Metrics，历史参考汇率来自欧洲中央银行；基金净值、资料及持仓主要来自天天基金、东方财富等公开接口。公司经营数据根据官方披露离线整理，并使用监管机构、交易所或证券行情结构化公开数据交叉校验，不在访问时实时抓取。不同数据源可能存在延迟、缺失或误差；基金估算基于已披露持仓、行情与汇率计算，不代表基金公司正式净值。基金净值以基金管理人正式披露为准，所有数据仅供参考，不构成投资建议。
           </p>
-          <dl className={styles.details}>
-            <div>
-              <dt>项目源码</dt>
-              <dd><a href="https://github.com/taifuer/fund_valuation" target="_blank" rel="noreferrer">GitHub · fund_valuation</a></dd>
-            </div>
-            <div>
-              <dt>问题反馈</dt>
-              <dd><a href="mailto:taifu@taifua.com">taifu@taifua.com</a></dd>
-            </div>
-            <div>
-              <dt>隐私说明</dt>
-              <dd>本站不提供账户体系；部署时可能启用访问统计，仅用于了解站点运行和使用情况。</dd>
-            </div>
-          </dl>
+          <p>交流与问题反馈请联系邮箱：<a href="mailto:taifu@taifua.com">taifu@taifua.com</a>。</p>
         </section>
 
         <section className={styles.section} aria-labelledby="update-history">
