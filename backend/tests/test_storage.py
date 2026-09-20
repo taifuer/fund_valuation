@@ -27,6 +27,23 @@ from backend.storage import (
 
 
 class StorageMigrationTests(unittest.TestCase):
+    def test_schema_sixteen_preserves_history_and_adds_sync_and_provenance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'sync-migration.db'
+            self.assertTrue(path.is_relative_to(Path(tempfile.gettempdir())))
+            with sqlite3.connect(path) as conn:
+                conn.executescript("""
+                    CREATE TABLE market_history(source TEXT,symbol TEXT,date TEXT,close REAL,fetched_at INTEGER);
+                    INSERT INTO market_history VALUES('yahoo-index','SOX','2026-09-15',11175.55,1);
+                    PRAGMA user_version=15;
+                """)
+            migrate_database(path)
+            migrate_database(path)
+            with sqlite3.connect(path) as conn:
+                self.assertEqual(conn.execute('SELECT close FROM market_history').fetchone()[0], 11175.55)
+                self.assertEqual(conn.execute('SELECT COUNT(*) FROM market_history_sync').fetchone()[0], 0)
+                self.assertEqual(conn.execute('SELECT COUNT(*) FROM index_history_provenance').fetchone()[0], 0)
+
     def test_schema_fifteen_preserves_history_and_adds_resumable_archive_state(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'archive-migration.db'

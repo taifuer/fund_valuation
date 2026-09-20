@@ -10,6 +10,56 @@ from zoneinfo import ZoneInfo
 
 INDEX_SYMBOLS = {'RUT': '^RUT', 'SOX': '^SOX', 'OEX': '^OEX'}
 INDEX_START_DATES = {'RUT': '1987-09-10', 'SOX': '1994-05-04', 'OEX': '1982-08-02'}
+SOX_SINA_URL = 'https://stock.finance.sina.com.cn/usstock/api/jsonp.php/var%20_=/US_MinKService.getDailyK?symbol=.SOX'
+
+
+def parse_sina_index_envelope(data: dict, symbol: str, cutoff: str) -> list[dict]:
+    from .server import latest_completed_trading_day
+    if symbol != 'SOX' or data.get('symbol') != symbol or data.get('provider') != 'sina' or data.get('sourceUrl') != SOX_SINA_URL:
+        raise ValueError('Unsupported alternate cash-index identity')
+    observed = data.get('observedAt')
+    if isinstance(observed, bool) or not isinstance(observed, (int, float)) or not math.isfinite(observed) or observed <= 0:
+        raise ValueError('Missing alternate index observation time')
+    observed_cutoff = latest_completed_trading_day('gb_sox', datetime.fromtimestamp(observed / 1000, ZoneInfo('America/New_York')))
+    if not observed_cutoff:
+        raise ValueError('Missing completed index session')
+    cutoff = min(cutoff, observed_cutoff)
+    points = []
+    seen = set()
+    for row in data.get('rows', []):
+        day = row['date']
+        date.fromisoformat(day)
+        close = row['close']
+        if day in seen or isinstance(close, bool) or not isinstance(close, (float, int)) or not math.isfinite(close) or close <= 0:
+            raise ValueError('Invalid or duplicate alternate index close')
+        seen.add(day)
+        if INDEX_START_DATES[symbol] <= day <= cutoff:
+            points.append({'date': day, 'close': float(close)})
+    if not points:
+        raise ValueError('No completed alternate index sessions')
+    return sorted(points, key=lambda row: row['date'])
+
+
+def fetch_sina_sox(*, ttl_seconds: int, force_refresh: bool) -> tuple[int, str, bytes]:
+    from . import server
+    from .storage import get_conn
+    key = 'markethistory:sina-index:SOX'
+    status, _, body = server.fetch_upstream(
+        SOX_SINA_URL, referer='https://finance.sina.com.cn/stock/usstock/',
+        content_type='text/plain; charset=utf-8', cache_key=key, kind='markethistory',
+        ttl_seconds=ttl_seconds, force_refresh=force_refresh,
+    )
+    if status >= 400:
+        raise ValueError(f'Sina SOX history HTTP {status}')
+    with get_conn() as conn:
+        cached = conn.execute('SELECT fetched_at FROM response_cache WHERE cache_key=?', (key,)).fetchone()
+    rows = server.parse_sina_array_jsonp(server.decode_body(body))
+    if any(isinstance(row.get('c'), bool) for row in rows):
+        raise ValueError('Invalid alternate index close')
+    envelope = {'provider': 'sina', 'symbol': 'SOX', 'sourceUrl': SOX_SINA_URL,
+                'observedAt': int(cached[0]) if cached else server.now_ms(),
+                'rows': [{'date': row['d'], 'close': float(row['c'])} for row in rows]}
+    return 200, 'application/json; charset=utf-8', json.dumps(envelope).encode()
 
 
 def index_history_url(symbol: str, latest: str | None = None, now: datetime | None = None) -> str:
@@ -28,7 +78,10 @@ def parse_index_history(text: str, symbol: str, cutoff: str) -> list[dict]:
     if symbol not in INDEX_SYMBOLS:
         raise ValueError('Unsupported US index')
     date.fromisoformat(cutoff)
-    chart = json.loads(text).get('chart', {})
+    data = json.loads(text)
+    if data.get('provider'):
+        return parse_sina_index_envelope(data, symbol, cutoff)
+    chart = data.get('chart', {})
     result = chart.get('result')
     if chart.get('error') or not isinstance(result, list) or len(result) != 1:
         raise ValueError('Missing cash index archive')

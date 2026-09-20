@@ -51,6 +51,9 @@ export default function DiagnosticsPage() {
   const coverageFunds = Array.isArray(historyCoverage?.funds)
     ? historyCoverage.funds as Array<Record<string, unknown>>
     : [];
+  const coverageMarkets = Array.isArray(historyCoverage?.markets)
+    ? historyCoverage.markets as Array<Record<string, unknown>>
+    : [];
   const issues = Array.isArray(payload?.issues) ? payload.issues as Array<Record<string, unknown>> : [];
 
   return (
@@ -88,6 +91,8 @@ export default function DiagnosticsPage() {
             <div><span>缺净值基金</span><strong>{numberValue(coverageSummary ?? null, 'fundsWithoutNav')}</strong></div>
             <div><span>持仓缺口</span><strong>{numberValue(coverageSummary ?? null, 'missingHoldingPeriods')}</strong></div>
             <div><span>缺历史标的</span><strong>{numberValue(coverageSummary ?? null, 'marketsWithoutHistory')}</strong></div>
+            <div><span>历史未追平</span><strong>{numberValue(coverageSummary ?? null, 'marketsStale')}</strong></div>
+            <div><span>历史更新失败</span><strong>{numberValue(coverageSummary ?? null, 'marketRefreshErrors')}</strong></div>
             <div><span>汇率缺失</span><strong>{numberValue(coverageSummary ?? null, 'fxCurrenciesMissing')}</strong></div>
           </section>
           <section className={styles.panel}>
@@ -129,6 +134,26 @@ export default function DiagnosticsPage() {
                   ))}</tbody>
                 </table>
               </div>
+            )}
+          </section>
+          <section className={styles.panel}>
+            <h3>行情历史更新</h3>
+            {coverageMarkets.length === 0 ? <div className={styles.empty}>暂无历史更新记录</div> : (
+              <div className={styles.tableWrap}><table>
+                <thead><tr><th>名称</th><th>数据截止</th><th>应到交易日</th><th>状态</th><th>最近成功 · 北京时间</th><th>最近检查结果</th></tr></thead>
+                <tbody>{coverageMarkets.map(market => {
+                  const refresh = market.refresh as Record<string, unknown> | undefined;
+                  const status = !Number(market.count) ? '缺数据' : market.stale ? '未追平' : '已追平';
+                  return <tr key={String(market.item)}>
+                    <td>{String(market.name || market.item)}</td>
+                    <td>{String(market.endDate || '--')}</td>
+                    <td>{String(market.expectedDate || '--')}</td>
+                    <td>{status}</td>
+                    <td>{refresh?.lastSuccessAt ? new Date(Number(refresh.lastSuccessAt)).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '--'}</td>
+                    <td>{String(refresh?.error || (refresh ? '完成' : '尚未检查'))}</td>
+                  </tr>;
+                })}</tbody>
+              </table></div>
             )}
           </section>
           <section className={styles.panel}>

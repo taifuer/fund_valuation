@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 from backend import config, server, storage
-from backend.index_archives import INDEX_SYMBOLS, index_history_url, parse_index_history, sync_indices
+from backend.index_archives import INDEX_SYMBOLS, SOX_SINA_URL, index_history_url, parse_index_history, sync_indices
 from backend.long_history import assets, fetch_rows, read_points, stored_daily_points
 
 
@@ -143,3 +143,75 @@ class IndexArchiveTests(unittest.TestCase):
         self.assertTrue(result['indices'][0]['retainedExisting'])
         self.assertEqual(len(server.read_market_history_from_db('yahoo-index', 'RUT')), 2)
         self.assertEqual(read_points('RUT'), [])
+
+    def alternate(self, closes=None):
+        days = ['2026-09-09', '2026-09-10', '2026-09-11', '2026-09-14', '2026-09-15', '2026-09-16']
+        return {'provider': 'sina', 'symbol': 'SOX', 'sourceUrl': SOX_SINA_URL,
+                'observedAt': int(datetime.fromisoformat('2026-09-16T18:00:00-04:00').timestamp() * 1000),
+                'rows': [{'date': day, 'close': close} for day, close in zip(days, closes or [100, 101, 102, 103, 104, 105])]}
+
+    def seed_sox(self):
+        with storage.get_conn() as conn:
+            conn.executemany('INSERT INTO market_history VALUES (?,?,?,?,?)',
+                             [('yahoo-index', 'SOX', row['date'], row['close'], 1) for row in self.alternate()['rows'][:5]])
+
+    def test_sina_sox_only_appends_after_overlap_verification_and_keeps_provenance(self):
+        self.seed_sox()
+        with patch.object(server, 'latest_completed_trading_day', return_value='2026-09-16'):
+            count = server.store_market_history('yahoo-index', 'SOX', json.dumps(self.alternate()))
+        self.assertEqual(count, 1)
+        with storage.get_conn() as conn:
+            self.assertEqual(conn.execute("SELECT provider,source_url FROM index_history_provenance").fetchall(), [('sina', SOX_SINA_URL)])
+            self.assertEqual(conn.execute("SELECT fetched_at FROM market_history WHERE date='2026-09-15'").fetchone()[0], 1)
+        self.assertEqual(server.read_market_history_from_db('yahoo-index', 'SOX')[-1]['close'], 105)
+
+    def test_alternate_source_rejects_wrong_identity_missing_overlap_and_conflicting_closes(self):
+        with self.assertRaisesRegex(ValueError, 'five overlapping'):
+            server.store_market_history('yahoo-index', 'SOX', json.dumps(self.alternate()))
+        self.seed_sox()
+        with self.assertRaisesRegex(ValueError, 'revision requires review'):
+            server.store_market_history('yahoo-index', 'SOX', json.dumps(self.alternate([100, 101, 102, 103, 120, 121])))
+        for symbol in ['OEX', 'RUT']:
+            with self.assertRaisesRegex(ValueError, 'identity'):
+                server.store_market_history('yahoo-index', symbol, json.dumps(self.alternate()))
+        with storage.get_conn() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM index_history_provenance').fetchone()[0], 0)
+        self.assertEqual(len(server.read_market_history_from_db('yahoo-index', 'SOX')), 5)
+
+    def test_sox_refresh_uses_sina_without_repeating_rate_limited_yahoo_requests(self):
+        self.seed_sox()
+        body = 'var _=(' + json.dumps([{'d': row['date'], 'c': str(row['close'])} for row in self.alternate()['rows']]) + ');'
+        with patch.object(server, 'fetch_upstream', return_value=(200, 'text/plain', body.encode())) as fetch:
+            status, _, body = server.fetch_market_history_payload('yahoo-index', 'SOX', ttl_seconds=300, force_refresh=True)
+        self.assertEqual(status, 200)
+        fetch.assert_called_once()
+        self.assertEqual(fetch.call_args.args[0], SOX_SINA_URL)
+        self.assertEqual(json.loads(body)['provider'], 'sina')
+
+    def test_cached_alternate_intraday_bar_cannot_become_a_close(self):
+        data = self.alternate()
+        data['observedAt'] = int(datetime.fromisoformat('2026-09-16T10:00:00-04:00').timestamp() * 1000)
+        rows = parse_index_history(json.dumps(data), 'SOX', '2026-09-18')
+        self.assertEqual(rows[-1]['date'], '2026-09-15')
+        for field, value in [('symbol', 'OEX'), ('sourceUrl', 'https://example.com'), ('observedAt', 0)]:
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                parse_index_history(json.dumps({**data, field: value}), 'SOX', '2026-09-18')
+
+    def test_month_end_inherits_the_actual_alternate_source(self):
+        with storage.get_conn() as conn:
+            conn.executemany('INSERT INTO market_history VALUES (?,?,?,?,?)',
+                             [('yahoo-index', 'SOX', '2026-08-31', 100, 1), ('yahoo-index', 'SOX', '2026-09-01', 101, 1)])
+            conn.execute('INSERT INTO index_history_provenance VALUES (?,?,?,?)', ('SOX', '2026-08-31', 'sina', SOX_SINA_URL))
+        asset = next(asset for asset in assets() if asset['id'] == 'SOX')
+        rows = stored_daily_points(asset, datetime.fromisoformat('2026-09-20T12:00:00+08:00'))
+        self.assertEqual(rows[0]['source'], 'sina')
+        self.assertEqual(rows[0]['sourceUrl'], SOX_SINA_URL)
+
+    def test_original_provider_is_available_when_sox_alternate_fails(self):
+        self.seed_sox()
+        raw = json.dumps(payload('SOX')).encode()
+        with patch('backend.index_archives.fetch_sina_sox', side_effect=TimeoutError('timeout')), \
+                patch.object(server, 'fetch_upstream', return_value=(200, 'application/json', raw)) as fetch:
+            result = server.fetch_market_history_payload('yahoo-index', 'SOX', ttl_seconds=300, force_refresh=True)
+        self.assertIn('query1.finance.yahoo.com', fetch.call_args.args[0])
+        self.assertEqual(result[2], raw)

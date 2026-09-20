@@ -206,9 +206,17 @@ def stored_daily_points(asset: dict[str, Any], now: datetime) -> list[dict[str, 
     url, _ = market_history_url(history["source"], history["symbol"])
     source = {"tencent-hk": "tencent", "twse-official": "twse", "naver-korea": "naver",
               "coinmetrics-crypto": "coinmetrics", "yahoo-index": "yahoo"}.get(history["source"], "sina")
+    provenance = {}
+    if history['source'] == 'yahoo-index':
+        with get_conn() as conn:
+            provenance = {day: (provider, source_url) for day, provider, source_url in conn.execute(
+                'SELECT date,provider,source_url FROM index_history_provenance WHERE symbol=?', (history['symbol'],),
+            )}
     rows = [point for row in read_market_history_from_db(history["source"], history["symbol"])
             if str(row["date"]) <= now.date().isoformat()
-            if (point := valid_point(str(row["date"]), row["close"], source=source, url=url))]
+            if (point := valid_point(str(row["date"]), row["close"],
+                                     source=provenance.get(row['date'], (source, url))[0],
+                                     url=provenance.get(row['date'], (source, url))[1]))]
     return daily_month_ends(rows, asset, now)
 
 

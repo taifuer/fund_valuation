@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from .config import configured_fund_codes, configured_market_return_items, fund_estimate_enabled, load_universe
 from .fx_history import ECB_CURRENCIES, fx_history_summary
+from .history_refresh import expected_history_date, read_sync_states
 from .storage import get_conn
 
 
@@ -115,11 +116,25 @@ def historical_data_coverage(*, years: int = 3, as_of: date | None = None) -> di
     archives = {f'{source}:{symbol}': {'status': status, 'oldestDate': oldest,
                 'checkedAt': checked, 'error': error}
                 for source, symbol, status, oldest, checked, error in archive_rows}
-    markets = [
-        {"item": item, **market_by_item.get(item, {"startDate": "", "endDate": "", "count": 0}),
-         'archive': archives.get(item)}
-        for item in market_items
-    ]
+    sync_states = read_sync_states()
+    names = {}
+    for entries in load_universe().values():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            history = entry.get('history', {}) if isinstance(entry, dict) else {}
+            if history.get('source') and history.get('symbol'):
+                names[f"{history['source']}:{history['symbol']}"] = entry.get('name', '')
+    current = datetime.combine(as_of, datetime.min.time(), ZoneInfo('Asia/Shanghai')) if as_of else None
+    markets = []
+    for item in market_items:
+        source, symbol = item.split(':', 1)
+        history = market_by_item.get(item, {"startDate": "", "endDate": "", "count": 0})
+        expected = expected_history_date(source, symbol, current)
+        stale = bool(history['count'] and expected and history['endDate'] < expected)
+        markets.append({"item": item, 'name': names.get(item, symbol), **history,
+                        'expectedDate': expected, 'stale': stale,
+                        'refresh': sync_states.get(item), 'archive': archives.get(item)})
     fx = fx_history_summary()
     summary = {
         "fundCount": len(funds),
@@ -129,11 +144,13 @@ def historical_data_coverage(*, years: int = 3, as_of: date | None = None) -> di
         "missingHoldingPeriods": sum(len(item["missingHoldingPeriods"]) for item in funds),
         "marketCount": len(markets),
         "marketsWithoutHistory": sum(1 for item in markets if int(item["count"]) == 0),
+        "marketsStale": sum(1 for item in markets if item['stale']),
+        "marketRefreshErrors": sum(1 for item in markets if (item['refresh'] or {}).get('status') == 'error'),
         "fxCurrenciesMissing": sum(1 for currency in ECB_CURRENCIES if currency not in fx),
     }
     return {
         "status": "ok" if all(summary[key] == 0 for key in (
-            "fundsWithoutNav", "fundsWithHoldingGaps", "marketsWithoutHistory", "fxCurrenciesMissing"
+            "fundsWithoutNav", "fundsWithHoldingGaps", "marketsWithoutHistory", "marketsStale", "marketRefreshErrors", "fxCurrenciesMissing"
         )) else "incomplete",
         "years": years,
         "summary": summary,

@@ -11,7 +11,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("FUND_VALUATION_DATA_DIR", ROOT_DIR / "data"))
 DB_PATH = DATA_DIR / "fund_valuation.db"
 RAW_DIR = DATA_DIR / "raw"
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 CACHE_BODY_COMPRESSION_MAGIC = b"\x00FVCZ1"
 CACHE_BODY_COMPRESSION_MIN_BYTES = 16 * 1024
 
@@ -225,6 +225,20 @@ MIGRATIONS: dict[int, str] = {
           source_url TEXT NOT NULL DEFAULT '', checked_at INTEGER NOT NULL,
           next_check_at INTEGER NOT NULL, error TEXT NOT NULL DEFAULT '',
           PRIMARY KEY(source, symbol)
+        );
+    """,
+    16: """
+        CREATE TABLE IF NOT EXISTS market_history_sync (
+          source TEXT NOT NULL, symbol TEXT NOT NULL,
+          checked_at INTEGER NOT NULL, success_at INTEGER NOT NULL DEFAULT 0,
+          next_check_at INTEGER NOT NULL, failures INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL, latest_date TEXT NOT NULL, expected_date TEXT NOT NULL,
+          rows_written INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '',
+          PRIMARY KEY (source, symbol)
+        );
+        CREATE TABLE IF NOT EXISTS index_history_provenance (
+          symbol TEXT NOT NULL, date TEXT NOT NULL, provider TEXT NOT NULL, source_url TEXT NOT NULL,
+          PRIMARY KEY (symbol, date)
         );
     """,
 }

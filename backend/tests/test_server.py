@@ -58,6 +58,8 @@ class ServerDataRefreshTests(unittest.TestCase):
                 DELETE FROM fund_purchase_status;
                 DELETE FROM fund_profiles;
                 DELETE FROM market_history;
+                DELETE FROM market_history_sync;
+                DELETE FROM index_history_provenance;
                 DELETE FROM market_calendar;
                 DELETE FROM stock_daily_history;
                 DELETE FROM stock_price_basis;
@@ -73,10 +75,6 @@ class ServerDataRefreshTests(unittest.TestCase):
             server._RATE_LIMIT_BUCKETS.clear()
         with server._RESPONSE_CACHE_GUARD:
             server._RESPONSE_CACHE.clear()
-        with server._MARKET_HISTORY_REFRESH_GUARD:
-            server._MARKET_HISTORY_REFRESHING.clear()
-        with server._FUND_NAV_REFRESH_GUARD:
-            server._FUND_NAV_REFRESHING.clear()
         with server._FUND_PROFILE_REFRESH_GUARD:
             server._FUND_PROFILE_REFRESHING.clear()
         with server._FUND_HISTORY_REFRESH_GUARD:
@@ -831,9 +829,9 @@ class ServerDataRefreshTests(unittest.TestCase):
             ) as fund_refresh,
             patch.object(server, "configured_market_return_items_from_constants", return_value=["sina-cn:sh000001"]),
             patch.object(server, "market_history_should_refresh_for_returns", return_value=True),
-            patch.object(server, "schedule_market_history_refresh") as market_refresh,
+            patch.object(server, "ensure_market_history_for_returns") as market_refresh,
             patch.object(server, "prewarm_response_cache") as prewarm,
-            patch.object(server, "prewarm_fund_nav_cache_async") as nav_prewarm,
+            patch.object(server, "prewarm_fund_nav_cache") as nav_prewarm,
             patch.object(
                 server,
                 "refresh_latest_fund_holdings",
@@ -1476,7 +1474,7 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         with (
             patch.object(server, "fetch_upstream", side_effect=AssertionError("unexpected upstream fetch")),
-            patch.object(server, "schedule_fund_nav_refresh") as schedule_refresh,
+            patch.object(server, "fetch_fund_nav_payload") as schedule_refresh,
         ):
             response = server.app.test_client().get("/api/fundnav?codes=016664")
 
@@ -1497,7 +1495,7 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         with (
             patch.object(server, "fetch_fund_nav_payload", side_effect=AssertionError("unexpected blocking fetch")),
-            patch.object(server, "schedule_fund_nav_refresh") as schedule_refresh,
+            patch.object(server, "fetch_fund_nav_one") as schedule_refresh,
         ):
             response = server.app.test_client().get("/api/fundnav?codes=016664,118001")
 
@@ -1519,7 +1517,7 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         with (
             patch.object(server, "fetch_fund_nav_payload", side_effect=AssertionError("unexpected blocking fetch")),
-            patch.object(server, "schedule_fund_nav_refresh") as schedule_refresh,
+            patch.object(server, "fetch_fund_nav_one") as schedule_refresh,
         ):
             response = server.app.test_client().get("/api/fundnav?codes=016664")
 
@@ -1548,21 +1546,47 @@ class ServerDataRefreshTests(unittest.TestCase):
                 ],
             )
 
-        with patch.object(server, "schedule_fund_nav_refresh") as schedule_refresh:
+        with patch.object(server, "fetch_fund_nav_payload") as schedule_refresh:
             response = server.app.test_client().get("/api/fundnav?codes=016664")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["016664"]["dwjz"], "1.2345")
         schedule_refresh.assert_not_called()
 
-    def test_prewarm_fund_nav_cache_async_schedules_default_funds(self) -> None:
+    def test_prewarm_fund_nav_uses_official_history_without_network(self) -> None:
+        server.store_fund_history('016664', [{'FSRQ': '2026-09-17', 'DWJZ': '1.23', 'JZZZL': '1'}])
         with (
             patch.object(server, "configured_fund_codes_from_constants", return_value=["016664", "118001"]),
-            patch.object(server, "schedule_fund_nav_refresh") as schedule_refresh,
+            patch.object(server, "fetch_fund_nav_payload", side_effect=AssertionError('Unexpected fundgz fetch')),
         ):
-            server.prewarm_fund_nav_cache_async()
+            server.prewarm_fund_nav_cache()
+        with server.app.test_request_context():
+            cached = server.response_cache_get(server.fund_nav_api_cache_key(['016664', '118001']), 60)
+            self.assertEqual(cached.get_json()['016664']['jzrq'], '2026-09-17')
+        with sqlite3.connect(server.DB_PATH) as conn:
+            row = conn.execute("SELECT success_at,error FROM worker_task_status WHERE name='fund_nav'").fetchone()
+        self.assertEqual(row[0], 0)
+        self.assertIn('118001', row[1])
 
-        schedule_refresh.assert_called_once_with(["016664", "118001"])
+    def test_persisted_official_nav_wins_over_fresh_legacy_cache_and_refresh_avoids_network(self):
+        server.store_fund_history('016664', [{'FSRQ': '2026-09-17', 'DWJZ': '1.23', 'JZZZL': '1'}])
+        server.cache_put('fundnav:016664', 'https://fundgz.1234567.com.cn/js/016664.js', 200, 'text/plain',
+                         b'jsonpgz({"fundcode":"016664","dwjz":"1.0","jzrq":"2026-09-15","gsz":"1.1"});')
+        with patch.object(server, 'fetch_fund_nav_payload', side_effect=AssertionError('Unexpected network')):
+            client = server.app.test_client()
+            for query in ('', '&refresh=1'):
+                nav = client.get('/api/fundnav?codes=016664' + query).get_json()['016664']
+                self.assertEqual(nav['jzrq'], '2026-09-17')
+                self.assertEqual(nav['dwjz'], '1.2300')
+                self.assertEqual(nav['gsz'], '')
+                self.assertTrue(nav['name'])
+
+    def test_explicit_fund_nav_refresh_only_fetches_missing_funds(self):
+        server.store_fund_history('016664', [{'FSRQ': '2026-09-17', 'DWJZ': '1.23', 'JZZZL': '1'}])
+        with patch.object(server, 'fetch_fund_nav_payload', return_value={'118001': {'fundcode': '118001'}}) as fetch:
+            result = server.app.test_client().get('/api/fundnav?codes=016664,118001&refresh=1')
+        fetch.assert_called_once_with(['118001'])
+        self.assertEqual(set(result.get_json()), {'016664', '118001'})
 
     def test_fund_purchase_returns_partial_stale_cache_without_request_refresh(self) -> None:
         with sqlite3.connect(server.DB_PATH) as conn:
@@ -2914,7 +2938,7 @@ class ServerDataRefreshTests(unittest.TestCase):
                 (server.now_ms() - server.HISTORY_AUTO_REFRESH_TTL_MS - 1, "sina-us", ".INX"),
             )
         scheduled: list[tuple[str, str]] = []
-        with patch.object(server, "schedule_market_history_refresh", side_effect=lambda source, symbol: scheduled.append((source, symbol))):
+        with patch.object(server, "ensure_market_history_for_returns", side_effect=lambda source, symbol: scheduled.append((source, symbol))):
             response = server.app.test_client().get("/api/marketreturns?items=sina-us:.INX")
 
         self.assertEqual(response.status_code, 200)
@@ -2930,7 +2954,7 @@ class ServerDataRefreshTests(unittest.TestCase):
 
     def test_market_returns_does_not_refresh_missing_rows_on_request(self) -> None:
         scheduled: list[tuple[str, str]] = []
-        with patch.object(server, "schedule_market_history_refresh", side_effect=lambda source, symbol: scheduled.append((source, symbol))):
+        with patch.object(server, "ensure_market_history_for_returns", side_effect=lambda source, symbol: scheduled.append((source, symbol))):
             response = server.app.test_client().get("/api/marketreturns?items=sina-cn:sh000688")
 
         self.assertEqual(response.status_code, 200)
@@ -3327,7 +3351,8 @@ class ServerDataRefreshTests(unittest.TestCase):
             self.assertIs(kwargs.get("force_refresh"), True)
             return 200, "application/json; charset=utf-8", upstream_body
 
-        with patch.object(server, "fetch_upstream", side_effect=fake_fetch_upstream):
+        with patch.object(server, "fetch_upstream", side_effect=fake_fetch_upstream), \
+                patch('backend.history_refresh.expected_history_date', return_value='2026-06-11'):
             server.ensure_market_history_for_returns("tencent-hk", "hkHSTECH")
 
         summary = server.read_market_return_summary_from_db("tencent-hk", "hkHSTECH")

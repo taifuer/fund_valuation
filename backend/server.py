@@ -79,10 +79,6 @@ _RATE_LIMIT_BUCKETS: dict[str, deque[float]] = {}
 _RATE_LIMIT_GUARD = threading.Lock()
 _RESPONSE_CACHE: dict[str, tuple[float, int, str, bytes]] = {}
 _RESPONSE_CACHE_GUARD = threading.Lock()
-_MARKET_HISTORY_REFRESHING: set[str] = set()
-_MARKET_HISTORY_REFRESH_GUARD = threading.Lock()
-_FUND_NAV_REFRESHING: set[str] = set()
-_FUND_NAV_REFRESH_GUARD = threading.Lock()
 _FUND_HISTORY_REFRESHING: set[str] = set()
 _FUND_HISTORY_REFRESH_GUARD = threading.Lock()
 _FUND_PURCHASE_REFRESHING = False
@@ -3890,6 +3886,15 @@ def read_cached_fund_nav_payload(codes: list[str], max_age_seconds: int) -> dict
 
 def read_fund_nav_fallback_payload(codes: list[str]) -> dict[str, Any]:
     """Represent the latest persisted official NAV in the fundnav wire format."""
+    from .config import load_universe
+    if not codes:
+        return {}
+    names = {fund['code']: fund.get('name', '') for fund in load_universe()['funds']}
+    with get_conn() as conn:
+        names.update({code: name for code, name in conn.execute(
+            f"SELECT code,name FROM fund_purchase_status WHERE code IN ({','.join('?' for _ in codes)})",
+            codes,
+        ) if name})
     results: dict[str, Any] = {}
     for code in codes:
         summary = read_fund_overview_summary_from_db(code)
@@ -3897,7 +3902,7 @@ def read_fund_nav_fallback_payload(codes: list[str]) -> dict[str, Any]:
             continue
         results[code] = {
             "fundcode": code,
-            "name": "",
+            "name": names.get(code, ""),
             "jzrq": str(summary["navDate"]),
             "dwjz": f'{float(summary["nav"]):.4f}',
             "gsz": "",
@@ -3907,21 +3912,20 @@ def read_fund_nav_fallback_payload(codes: list[str]) -> dict[str, Any]:
 
 
 def available_fund_nav_payload(codes: list[str]) -> tuple[dict[str, Any], list[str]]:
-    fresh = read_cached_fund_nav_payload(codes, FUND_NAV_CACHE_TTL_SECONDS)
-    stale = read_cached_fund_nav_payload(codes, 0)
     fallback = read_fund_nav_fallback_payload(codes)
+    missing = [code for code in codes if code not in fallback]
+    fresh = read_cached_fund_nav_payload(missing, FUND_NAV_CACHE_TTL_SECONDS)
+    stale = read_cached_fund_nav_payload(missing, 0)
     payload = {
-        code: fresh.get(code) or stale.get(code) or fallback.get(code)
+        code: fallback.get(code) or fresh.get(code) or stale.get(code)
         for code in codes
         if fresh.get(code) or stale.get(code) or fallback.get(code)
     }
-    # Successful stale values should refresh promptly. If the latest upstream
-    # response was valid HTTP but contained no estimate, retry at worker cadence
-    # instead of once per page request/cache expiry.
+    # This is a cache-status hint only. Ordinary reads never schedule fundgz requests.
     needs_refresh = [
         code
         for code in codes
-        if code not in fresh
+        if code not in fallback and code not in fresh
         and (code in stale or cache_get(fund_nav_upstream_cache_key(code), 15 * 60) is None)
     ]
     return payload, needs_refresh
@@ -3969,49 +3973,17 @@ def fetch_fund_nav_payload(codes: list[str], *, force_refresh: bool = False) -> 
     return results
 
 
-def schedule_fund_nav_refresh(codes: list[str]) -> None:
-    normalized_codes = sorted(dict.fromkeys(codes))
-    if not normalized_codes:
-        return
-    refresh_key = ",".join(normalized_codes)
-    with _FUND_NAV_REFRESH_GUARD:
-        if refresh_key in _FUND_NAV_REFRESHING:
-            return
-        _FUND_NAV_REFRESHING.add(refresh_key)
-
-    def refresh() -> None:
-        try:
-            with app.app_context(), task_run("fund_nav") as task:
-                fetched = fetch_fund_nav_payload(normalized_codes, force_refresh=True)
-                if len(fetched) < len(normalized_codes):
-                    task["error"] = f"upstream unavailable: {len(normalized_codes) - len(fetched)}/{len(normalized_codes)}"
-                fallback = read_fund_nav_fallback_payload(normalized_codes)
-                payload = {
-                    code: fetched.get(code) or fallback.get(code)
-                    for code in normalized_codes
-                    if fetched.get(code) or fallback.get(code)
-                }
-                if payload:
-                    response_cache_set(
-                        fund_nav_api_cache_key(normalized_codes),
-                        json_response(payload),
-                        FUND_NAV_CACHE_TTL_SECONDS,
-                    )
-        except Exception as exc:
-            print(f"[fundnav-refresh] failed for {refresh_key}: {exc}", flush=True)
-        finally:
-            with _FUND_NAV_REFRESH_GUARD:
-                _FUND_NAV_REFRESHING.discard(refresh_key)
-
-    thread = threading.Thread(target=refresh, name=f"fundnav-refresh-{hashlib.sha1(refresh_key.encode()).hexdigest()[:8]}", daemon=True)
-    thread.start()
-
-
-def prewarm_fund_nav_cache_async() -> None:
+def prewarm_fund_nav_cache() -> None:
+    """Warm the compatibility API from official NAV storage, without fundgz polling."""
     fund_codes = configured_fund_codes_from_constants()
     if not fund_codes:
         return
-    schedule_fund_nav_refresh(fund_codes)
+    with app.app_context(), task_run("fund_nav") as task:
+        payload = read_fund_nav_fallback_payload(fund_codes)
+        missing = [code for code in fund_codes if code not in payload]
+        if missing:
+            task["error"] = f"official NAV missing: {','.join(missing)}"
+        response_cache_set(fund_nav_api_cache_key(fund_codes), json_response(payload), FUND_NAV_CACHE_TTL_SECONDS)
 
 
 def fetch_and_store_purchase_status(*, force_refresh: bool = False) -> None:
@@ -4264,9 +4236,25 @@ def store_market_history(source: str, symbol: str, text: str) -> int:
     with get_conn() as conn:
         if source == "yahoo-index":
             existing = dict(conn.execute("SELECT date,close FROM market_history WHERE source=? AND symbol=?", (source, symbol)))
-            for _, _, day, close, _ in points:
+            alternate = json.loads(text).get("provider") == "sina"
+            if alternate:
+                overlap = [point for point in points if point[2] in existing][-10:]
+                if len(overlap) < 5:
+                    raise ValueError("At least five overlapping sessions are required for an alternate index source")
+            for _, _, day, close, _ in (overlap if alternate else points):
                 if day in existing and (existing[day] <= 0 or abs(close / existing[day] - 1) > .001):
                     raise ValueError(f"Index closing-price revision requires review: {symbol} {day}")
+            if alternate:
+                # Only extend the verified series; do not rewrite its original archive or provenance.
+                points = [point for point in points if point[2] > max(existing)]
+            provider = "sina" if alternate else "yahoo"
+            from .index_archives import SOX_SINA_URL, index_history_url
+            source_url = SOX_SINA_URL if alternate else index_history_url(symbol)
+            conn.executemany(
+                """INSERT INTO index_history_provenance(symbol,date,provider,source_url) VALUES (?,?,?,?)
+                   ON CONFLICT(symbol,date) DO UPDATE SET provider=excluded.provider,source_url=excluded.source_url""",
+                [(symbol, point[2], provider, source_url) for point in points],
+            )
         conn.executemany(
             """
             INSERT INTO market_history(source, symbol, date, close, fetched_at)
@@ -4858,74 +4846,10 @@ def latest_market_history_meta(source: str, symbol: str) -> tuple[str | None, in
     return (str(row[0]) if row and row[0] else None, int(row[1] if row and row[1] else 0))
 
 
-def auto_refresh_market_history_if_stale(
-    source: str,
-    symbol: str,
-    *,
-    current: datetime | None = None,
-) -> bool:
-    latest_date, fetched_at = latest_market_history_meta(source, symbol)
-    if not market_history_is_stale(source, symbol, latest_date, current):
-        return False
-    if fetched_at and now_ms() - fetched_at <= HISTORY_AUTO_REFRESH_TTL_MS:
-        return False
-
-    try:
-        status, _, body = fetch_market_history_payload(
-            source,
-            symbol,
-            ttl_seconds=300,
-            force_refresh=True,
-        )
-        if status >= 400:
-            return False
-        return store_market_history(source, symbol, decode_body(body)) > 0
-    except Exception:
-        return False
-
-
 def ensure_market_history_for_returns(source: str, symbol: str, *, current: datetime | None = None) -> None:
-    latest_date, fetched_at = latest_market_history_meta(source, symbol)
-    if latest_date:
-        auto_refresh_market_history_if_stale(source, symbol, current=current)
-        return
-
-    try:
-        status, _, body = fetch_market_history_payload(
-            source,
-            symbol,
-            ttl_seconds=300,
-            force_refresh=now_ms() - fetched_at > HISTORY_AUTO_REFRESH_TTL_MS,
-        )
-        if status < 400:
-            store_market_history(source, symbol, decode_body(body))
-    except Exception:
-        pass
-
-
-def refresh_market_history_background(source: str, symbol: str) -> None:
-    key = f"{source}:{symbol}"
-    try:
-        ensure_market_history_for_returns(source, symbol)
-        response_cache_clear_marketreturns_item(f"{source}:{symbol}")
-    finally:
-        with _MARKET_HISTORY_REFRESH_GUARD:
-            _MARKET_HISTORY_REFRESHING.discard(key)
-
-
-def schedule_market_history_refresh(source: str, symbol: str) -> None:
-    key = f"{source}:{symbol}"
-    with _MARKET_HISTORY_REFRESH_GUARD:
-        if key in _MARKET_HISTORY_REFRESHING:
-            return
-        _MARKET_HISTORY_REFRESHING.add(key)
-    worker = threading.Thread(
-        target=refresh_market_history_background,
-        args=(source, symbol),
-        daemon=True,
-        name=f"market-history-refresh:{key}",
-    )
-    worker.start()
+    from .history_refresh import refresh_history_item
+    if market_history_should_refresh_for_returns(source, symbol, current=current):
+        refresh_history_item(source, symbol, current=current)
 
 
 def market_history_should_refresh_for_returns(
@@ -4934,6 +4858,9 @@ def market_history_should_refresh_for_returns(
     *,
     current: datetime | None = None,
 ) -> bool:
+    from .history_refresh import retry_is_due
+    if not retry_is_due(source, symbol, now_ms()):
+        return False
     latest_date, fetched_at = latest_market_history_meta(source, symbol)
     if not latest_date:
         return not fetched_at or now_ms() - fetched_at > HISTORY_AUTO_REFRESH_TTL_MS
@@ -5556,8 +5483,11 @@ def refresh_configured_fund_history() -> list[str]:
 
 
 def refresh_configured_market_history() -> list[str]:
+    from .history_refresh import read_sync_states
     errors: list[str] = []
-    for item in configured_market_return_items_from_constants():
+    items = configured_market_return_items_from_constants()
+    failed_items: set[str] = set()
+    for item in items:
         try:
             source, symbol = item.split(":", 1)
             if cn_etf_history_needs_adjustment(source, symbol):
@@ -5565,20 +5495,20 @@ def refresh_configured_market_history() -> list[str]:
                     refresh_market_adjustment_factors(symbol)
                 except Exception as exc:
                     errors.append(f"adjustment {symbol}: {exc}")
-            if source == "twse-official" and symbol == "TWII":
-                if not market_history_should_refresh_for_returns(source, symbol):
-                    continue
-                with get_conn() as conn:
-                    row_count = int(conn.execute(
-                        "SELECT COUNT(*) FROM market_history WHERE source = ? AND symbol = ?",
-                        (source, symbol),
-                    ).fetchone()[0])
-                refresh_twse_history(60 if row_count < 500 else 1, force_refresh=False)
-                continue
-            if market_history_should_refresh_for_returns(source, symbol):
-                schedule_market_history_refresh(source, symbol)
+            ensure_market_history_for_returns(source, symbol)
         except Exception as exc:
+            failed_items.add(item)
             errors.append(f"market {item}: {exc}")
+    # Backoff is not recovery. Keep unresolved failures visible on skipped cycles.
+    states = read_sync_states()
+    for item in items:
+        state = states.get(item)
+        if item in failed_items or not state or not state['error']:
+            continue
+        source, symbol = item.split(':', 1)
+        latest, _ = latest_market_history_meta(source, symbol)
+        if market_history_is_stale(source, symbol, latest):
+            errors.append(f"market {item}: {state['error']}")
     return errors
 
 
@@ -5604,7 +5534,7 @@ def run_background_refresh_once(owner: str = "manual") -> bool:
     except Exception as exc:
         errors.append(f"prewarm: {exc}")
     try:
-        prewarm_fund_nav_cache_async()
+        prewarm_fund_nav_cache()
     except Exception as exc:
         errors.append(f"fundnav: {exc}")
     try:
@@ -6147,7 +6077,10 @@ def fund_nav() -> Response:
     codes = require_fund_codes()
     refresh = should_refresh()
     if refresh:
-        payload = fetch_fund_nav_payload(codes)
+        payload = read_fund_nav_fallback_payload(codes)
+        missing = [code for code in codes if code not in payload]
+        if missing:
+            payload.update(fetch_fund_nav_payload(missing))
         return response_cache_set(
             fund_nav_api_cache_key(codes),
             json_response(payload),
@@ -6540,6 +6473,18 @@ def fetch_market_history_payload(
     ttl_seconds: int,
     force_refresh: bool = False,
 ) -> tuple[int, str, bytes]:
+    if source == "yahoo-index" and symbol == "SOX":
+        from .index_archives import fetch_sina_sox
+        # The full Yahoo archive remains the identity anchor; Sina extends it after overlap validation.
+        with get_conn() as conn:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM market_history WHERE source=? AND symbol=?", (source, symbol),
+            ).fetchone()[0]
+        if count >= 5:
+            try:
+                return fetch_sina_sox(ttl_seconds=ttl_seconds, force_refresh=force_refresh)
+            except Exception:
+                pass  # Retain the original source when Sina cannot be reached or parsed.
     url, referer = market_history_url(source, symbol)
     try:
         status, content_type, body = fetch_upstream(
@@ -6741,7 +6686,7 @@ def main() -> None:
     if os.environ.get("FUND_VALUATION_PREWARM", "1") != "0":
         with app.app_context():
             prewarm_response_cache()
-            prewarm_fund_nav_cache_async()
+            prewarm_fund_nav_cache()
     if not args.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         start_background_refresh_scheduler()
     print(f"Flask backend listening on http://{args.host}:{args.port}")

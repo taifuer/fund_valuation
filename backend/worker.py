@@ -31,7 +31,7 @@ from .server import (
     ensure_storage,
     mark_background_refresh,
     now_ms,
-    prewarm_fund_nav_cache_async,
+    prewarm_fund_nav_cache,
     prewarm_purchase_status_cache,
     prewarm_response_cache,
     publish_dashboard_snapshot,
@@ -175,7 +175,7 @@ def main() -> None:
                     errors.append(f"fund-history-latest: {exc}")
             if "fund_nav" in flags:
                 try:
-                    prewarm_fund_nav_cache_async()
+                    prewarm_fund_nav_cache()
                     tasks.append("fund-nav")
                 except Exception as exc:
                     errors.append(f"fund-nav: {exc}")
