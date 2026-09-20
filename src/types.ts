@@ -219,6 +219,11 @@ export interface MarketReturnSummary {
   source: MarketHistoryConfig['source'];
   symbol: string;
   asOf?: string;
+  freshness?: {
+    latestDate: string;
+    expectedDate: string;
+    stale: boolean;
+  };
   latest?: MarketLatestReturn;
   ranges?: Partial<Record<FundReturnRangeKey, MarketRangeReturn>>;
   label: string;

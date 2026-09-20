@@ -16,6 +16,18 @@ def expected_history_date(source: str, symbol: str, current: datetime | None = N
     return (server.latest_completed_trading_day(quote_symbol, current) if quote_symbol else None) or ''
 
 
+def history_freshness(source: str, symbol: str, latest_date: str, current: datetime | None = None) -> dict:
+    current = current or datetime.now(ZoneInfo('Asia/Shanghai'))
+    # Public rankings allow publishers two hours after close; worker checks stay strict.
+    cutoff = current.astimezone(ZoneInfo('UTC')) - timedelta(hours=2)
+    expected = expected_history_date(source, symbol, cutoff)
+    return {
+        'latestDate': latest_date,
+        'expectedDate': expected,
+        'stale': bool(expected and latest_date < expected),
+    }
+
+
 def read_sync_states() -> dict[str, dict]:
     with get_conn() as conn:
         rows = conn.execute('''

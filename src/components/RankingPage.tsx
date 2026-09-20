@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { fetchMarketReturnSummaries } from '../api';
 import { MARKET_ASSETS, RANKING_ETFS, RANKING_INDEX_ETFS, RANKING_INDICES, RANKING_SECTOR_ETFS } from '../constants';
 import { getMarketState, marketLocalDate } from '../marketHours';
@@ -42,6 +42,7 @@ interface RankingItem {
   startDate?: string;
   endDate?: string;
   sourceLabel: string;
+  freshness?: MarketReturnSummary['freshness'];
   historyTarget: RecentHistoryTarget;
 }
 
@@ -142,12 +143,20 @@ function makeMarketItems(
       && latestReturn != null
       && shouldUseLatestCloseReturn(item, quote, state);
     const quoteDate = quote ? marketLocalDate(item.sinaSymbol, quote.regularTime ?? quote.time) ?? quote.time?.slice(0, 10) : undefined;
+    // A live quote can still rank even if its separate daily-history feed is behind.
+    const usesHistory = range !== 'today' || useLatestCloseReturn || !quote;
+    const freshness = usesHistory ? summary?.freshness : quoteDate && summary?.freshness ? {
+      latestDate: quoteDate,
+      expectedDate: summary.freshness.expectedDate,
+      stale: Boolean(summary.freshness.expectedDate && quoteDate < summary.freshness.expectedDate),
+    } : undefined;
     return {
       id: `${category}:${item.sinaSymbol}`,
       name: item.name,
       symbol: item.symbol,
       category,
       categoryLabel,
+      freshness,
       historyTarget: { kind: 'market', item },
       returnPercent: range === 'today'
         ? (useLatestCloseReturn ? latestReturn.returnPercent : quote?.changePercent ?? latestReturn?.returnPercent ?? null)
@@ -163,7 +172,7 @@ function makeMarketItems(
       endDate: range === 'today'
         ? (useLatestCloseReturn ? latestReturn.endDate : quoteDate ?? latestReturn?.endDate)
         : rangeReturn?.endDate,
-      sourceLabel: range === 'today' && (useLatestCloseReturn || item.quoteMode === 'close')
+      sourceLabel: freshness?.stale ? '待更新' : range === 'today' && (useLatestCloseReturn || item.quoteMode === 'close')
         ? '最新收盘'
         : range === 'today'
           ? latestSourceLabel(state)
@@ -231,6 +240,10 @@ function sortableValue(item: RankingItem, sortKey: SortKey) {
   return finiteOrNull(sortKey === 'value' ? item.currentValue : item.returnPercent);
 }
 
+function rankingValue(item: RankingItem, sortKey: SortKey) {
+  return item.freshness?.stale ? null : finiteOrNull(sortableValue(item, sortKey));
+}
+
 function formatRiskMetric(value: number | null, suffix = '%') {
   if (value == null || !Number.isFinite(value)) return '--';
   return `${value.toFixed(2)}${suffix}`;
@@ -272,6 +285,8 @@ export default function RankingPage({
   });
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
   const [returnsLoading, setReturnsLoading] = useState(true);
+  const [expandedFreshness, setExpandedFreshness] = useState<string | null>(null);
+  const freshnessNoteId = useId();
   const [selectedHistory, setSelectedHistory] = useState<{
     target: RecentHistoryTarget; initialRange: HistoryRangeKey; asOf?: string;
   } | null>(null);
@@ -337,8 +352,8 @@ export default function RankingPage({
         (etfFilter === 'index' ? item.categoryLabel === '指数ETF' : item.categoryLabel === '行业ETF')
       ))
       .sort((a, b) => {
-        const aValue = sortableValue(a, sortKey);
-        const bValue = sortableValue(b, sortKey);
+        const aValue = rankingValue(a, sortKey);
+        const bValue = rankingValue(b, sortKey);
         if (aValue == null && bValue == null) return a.name.localeCompare(b.name);
         if (aValue == null) return 1;
         if (bValue == null) return -1;
@@ -510,14 +525,28 @@ export default function RankingPage({
             )}
             {!showSkeleton && items.map((item, index) => {
               const up = (item.returnPercent ?? 0) >= 0;
+              const ranked = rankingValue(item, sortKey) != null;
+              const stale = item.freshness?.stale;
+              const expanded = stale && expandedFreshness === item.id;
               return (
-                <tr key={item.id} className={styles.historyRow} onClick={event => openHistory(event, item)}>
-                  <td><span className={`${styles.rank} ${rankStyle(index)}`}>#{index + 1}</span></td>
+                <Fragment key={item.id}>
+                <tr className={styles.historyRow} onClick={event => openHistory(event, item)}>
+                  <td><span className={`${styles.rank} ${ranked ? rankStyle(index) : ''}`}>{ranked ? `#${index + 1}` : '--'}</span></td>
                   <td className={styles.nameCell}>
-                    <button type="button" className={styles.nameButton} aria-label={`${item.name}走势`} aria-haspopup="dialog" title={item.name}>
-                      <strong>{item.name}</strong>
-                      <span>{item.symbol}</span>
-                    </button>
+                    <div className={styles.nameContent}>
+                      <button type="button" className={styles.nameButton} aria-label={`${item.name}走势`} aria-haspopup="dialog" title={item.name}>
+                        <strong>{item.name}</strong>
+                      </button>
+                      {stale && <button type="button" className={styles.freshnessMark}
+                        aria-label={`${item.name}数据待更新说明`} aria-expanded={expanded}
+                        aria-controls={expanded ? freshnessNoteId : undefined}
+                        title="数据待更新，不参与排名"
+                        onClick={event => {
+                          event.stopPropagation();
+                          setExpandedFreshness(expanded ? null : item.id);
+                        }}>*</button>}
+                    </div>
+                    <span>{item.symbol}</span>
                   </td>
                   <td className={`${styles.numericCell} ${styles.percent} ${up ? styles.up : styles.down}`}>{formatPercent(item.returnPercent)}</td>
                   <td className={`${styles.numericCell} ${styles.value}`}>{formatValue(item.currentValue)}</td>
@@ -530,6 +559,15 @@ export default function RankingPage({
                   <td className={styles.categoryCell}><span className={styles.category}>{item.categoryLabel}</span></td>
                   <td className={`${styles.numericCell} ${styles.dateRange}`}>{formatAsOf(item)}</td>
                 </tr>
+                {expanded && <tr className={styles.freshnessRow}>
+                  <td colSpan={showRisk ? 10 : 7}>
+                    <div id={freshnessNoteId} role="note" className={styles.freshnessNote}>
+                      {item.name}数据截至 {item.freshness!.latestDate}，应更新至 {item.freshness!.expectedDate}（市场当地交易日）。
+                      已排除休市日并预留收盘后两小时；当前数值仅供参考，不参与排名，更新后自动恢复。
+                    </div>
+                  </td>
+                </tr>}
+                </Fragment>
               );
             })}
           </tbody>
@@ -540,6 +578,7 @@ export default function RankingPage({
           ? '* 涨跌幅与风险指标使用同区间历史收盘价或官方净值；缺失数据以 -- 显示，数据以官方披露为准。'
           : '* 最新涨跌幅可能包含盘中行情；基金涨跌幅使用已披露官方净值。数据可能存在延迟或误差，以官方披露为准。'}
       </p>
+      {items.some(item => item.freshness?.stale) && <p className={styles.note}>* 待更新数据保留实际数值和日期，不参与排名。</p>}
       {selectedHistory && <RecentHistoryModal {...selectedHistory} onClose={() => setSelectedHistory(null)} />}
     </main>
   );

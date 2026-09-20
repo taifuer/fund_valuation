@@ -102,6 +102,93 @@ test('switching recent ranges shares history data and never loads fund estimates
   expect(apiRequests.some(path => /^\/api\/fund/.test(path))).toBe(false);
 });
 
+test('stale histories remain readable but unranked with an accessible mobile disclosure', async ({ page, isMobile }, testInfo) => {
+  const errors: string[] = [];
+  const historyRequests: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('request', request => {
+    if (request.url().includes('/api/markethistory')) historyRequests.push(request.url());
+  });
+  await page.route('**/api/marketreturns*', async route => {
+    const items = new URL(route.request().url()).searchParams.get('items')!.split(',');
+    const range = { key: '1m', label: '近1月', returnPercent: 123.45,
+      startDate: '2026-08-15', endDate: '2026-09-15', startClose: 100, endClose: 223.45,
+      maxDrawdownPercent: -12.34, winRatePercent: 65 };
+    await route.fulfill({ json: Object.fromEntries(items.map(key => {
+      const [source, symbol] = key.split(':');
+      const stale = ['RUT', 'OEX'].includes(symbol);
+      const endDate = stale ? '2026-09-15' : '2026-09-18';
+      return [key, { ...range, source, symbol, endDate,
+        freshness: { latestDate: endDate, expectedDate: '2026-09-18', stale },
+        latest: { ...range, endDate, key: 'latest' }, ranges: { '1m': { ...range, endDate } },
+      }];
+    })) });
+  });
+  for (const width of isMobile ? [320, 390] : [1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/returns?range=1m');
+    const table = page.getByRole('table', { name: '近期表现' });
+    for (const name of ['罗素2000', '标普100']) {
+      const row = table.getByRole('row').filter({ has: page.getByRole('button', { name: `${name}走势`, exact: true }) });
+      await expect(row.getByRole('cell').first()).toHaveText('--');
+      await expect(row).toContainText('+123.45%');
+      await expect(row).toContainText('2026-09-15');
+      await expect(row).toContainText('待更新');
+      const titleGeometry = await row.evaluate(element => {
+        const title = element.querySelector('strong')!;
+        const name = title.closest('button')!;
+        const mark = name.nextElementSibling!;
+        const symbol = name.parentElement!.nextElementSibling!;
+        const range = document.createRange();
+        range.selectNodeContents(title);
+        return {
+          gap: mark.getBoundingClientRect().left - name.getBoundingClientRect().right,
+          textGap: mark.getBoundingClientRect().left - range.getBoundingClientRect().right,
+          markTop: mark.getBoundingClientRect().top,
+          titleTop: title.getBoundingClientRect().top,
+          symbolTop: symbol.getBoundingClientRect().top,
+          titleBottom: title.getBoundingClientRect().bottom,
+          width: mark.getBoundingClientRect().width,
+          height: mark.getBoundingClientRect().height,
+          titleHeight: title.clientHeight,
+          fullTitleHeight: title.scrollHeight,
+        };
+      });
+      expect(titleGeometry.gap).toBeGreaterThanOrEqual(0);
+      expect(titleGeometry.gap).toBeLessThanOrEqual(3);
+      if (width >= 390) expect(titleGeometry.textGap).toBeLessThanOrEqual(3);
+      expect(titleGeometry.markTop).toBeLessThanOrEqual(titleGeometry.titleTop);
+      expect(titleGeometry.symbolTop).toBeGreaterThanOrEqual(titleGeometry.titleBottom);
+      expect(titleGeometry.width).toBeGreaterThanOrEqual(24);
+      expect(titleGeometry.height).toBeGreaterThanOrEqual(24);
+      expect(titleGeometry.fullTitleHeight).toBeLessThanOrEqual(titleGeometry.titleHeight);
+    }
+    const mark = table.getByRole('button', { name: '罗素2000数据待更新说明' });
+    if (isMobile) await mark.tap(); else { await mark.focus(); await page.keyboard.press('Enter'); }
+    await expect(mark).toHaveAttribute('aria-expanded', 'true');
+    const note = page.getByRole('note');
+    await expect(note).toContainText('数据截至 2026-09-15，应更新至 2026-09-18');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(historyRequests).toEqual([]);
+    const geometry = await note.evaluate(element => ({
+      noteLeft: element.getBoundingClientRect().left,
+      noteRight: element.getBoundingClientRect().right,
+      viewport: innerWidth,
+      overflow: document.documentElement.scrollWidth - innerWidth,
+    }));
+    expect(geometry.noteLeft).toBeGreaterThanOrEqual(0);
+    expect(geometry.noteRight).toBeLessThanOrEqual(geometry.viewport);
+    expect(geometry.overflow).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath(`pending-history-${width}.png`), fullPage: true });
+    if (isMobile) await mark.tap(); else await page.keyboard.press('Enter');
+    await expect(note).toHaveCount(0);
+    await expect(mark).toHaveAttribute('aria-expanded', 'false');
+    await table.getByRole('button', { name: '涨跌幅 ↓' }).click();
+    await expect(table.locator('tbody tr').first()).not.toContainText('待更新');
+  }
+  expect(errors).toEqual([]);
+});
+
 test('slow recent loading stays in the content area without requesting global FX', async ({ page }) => {
   let release = () => {};
   const gate = new Promise<void>(resolve => { release = resolve; });

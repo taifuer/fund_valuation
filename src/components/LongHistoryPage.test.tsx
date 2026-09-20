@@ -35,6 +35,22 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('long-term history page', () => {
+  it('ranks a complete monthly interval even when its recent source refresh has failed', () => {
+    const rut = { ...asset('RUT', '罗素2000'), refreshFailed: true };
+    const oex = { ...asset('OEX', '标普100'), refreshFailed: true };
+    render(<HistoryComparisonTable assets={[rut, oex]} onSelect={() => undefined}
+      comparison={{ ...comparison, rows: [
+        { ...comparison.rows[0], id: 'RUT' },
+        { ...comparison.rows[1], id: 'OEX' },
+      ] }} />);
+    const row = screen.getByRole('button', { name: '罗素2000' }).closest('tr')!;
+    expect(row).toHaveTextContent('#1');
+    expect(row).toHaveTextContent('+60.00%');
+    expect(row).not.toHaveTextContent('待更新');
+    const missing = screen.getByRole('button', { name: '标普100' }).closest('tr')!;
+    expect(within(missing).getAllByRole('cell')[0]).toHaveTextContent('--');
+  });
+
   it('uses superscript footnotes with a separate explanation for each metric in both views', async () => {
     render(<LongHistoryPage />);
     await screen.findByRole('table');

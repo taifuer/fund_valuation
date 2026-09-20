@@ -4871,6 +4871,8 @@ def market_history_should_refresh_for_returns(
 
 
 def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, Any] | None:
+    from .history_refresh import history_freshness
+
     rows = read_market_history_from_db(source, symbol, adjust_corporate_actions=True)
     raw_rows = [{"date": row["date"], "close": row.get("rawClose", row["close"])} for row in rows]
     segments = {str(row["date"]): row.get("returnSegment", 0) for row in rows}
@@ -4958,6 +4960,7 @@ def read_market_return_summary_from_db(source: str, symbol: str) -> dict[str, An
         "source": source,
         "symbol": symbol,
         "asOf": latest_date,
+        "freshness": history_freshness(source, symbol, latest_date),
         "latest": latest_return,
         "ranges": ranges,
         "label": ytd["label"] if ytd else "",
