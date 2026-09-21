@@ -765,6 +765,11 @@ export async function fetchSystemStatus(): Promise<SystemStatus> {
       quoteIssueCount: Number(raw.quoteIssueCount) || 0,
       quoteTotal: Number(raw.quoteTotal) || 0,
       workerLastSuccessAt: Number(raw.workerLastSuccessAt) || 0,
+      marketQuoteIssueCount: Number(raw.marketQuoteIssueCount) || 0,
+      holdingQuoteIssueCount: Number(raw.holdingQuoteIssueCount) || 0,
+      reasons: Array.isArray(raw.reasons)
+        ? raw.reasons.filter((reason: unknown) => ['worker-stale', 'market-quotes', 'holding-quotes'].includes(String(reason)))
+        : [],
     };
   } catch {
     return {

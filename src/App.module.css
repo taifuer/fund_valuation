@@ -77,6 +77,7 @@
   display: inline-flex;
   flex: 0 0 auto;
   gap: 6px;
+  margin-left: auto;
 }
 
 .sortToggle {
@@ -224,7 +225,7 @@
   font-weight: 700;
   height: 30px;
   justify-content: center;
-  min-width: 80px;
+  min-width: 56px;
   padding: 0 10px;
 }
 
@@ -390,11 +391,11 @@
 
   .fundToolbar .sortControls {
     align-items: center;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     max-width: 100%;
-    overflow-x: auto;
-    padding-bottom: 2px;
-    scrollbar-width: none;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-width: 0;
     width: 100%;
   }
 
@@ -404,30 +405,49 @@
   }
 
   .fundToolbar .managerTrigger {
-    height: 36px;
-    margin-left: auto;
-    min-width: 86px;
+    grid-column: 2;
+    grid-row: 1;
+    height: 40px;
+    min-width: 56px;
     padding: 0 12px;
   }
 
   .fundToolbar .sortButton {
-    line-height: 28px;
+    line-height: 26px;
+    min-height: 34px;
+  }
+
+  .fundControls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .fundControls > .sortToggle {
+    justify-self: start;
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+
+  .sortControls .sortToggle {
+    flex-shrink: 1;
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+
+  .sortControls .sortButton {
+    min-width: 0;
   }
 
   .fundToolbar .sortDirectionButton {
     flex-basis: 36px;
-    height: 36px;
-    line-height: 34px;
+    height: 40px;
+    line-height: 38px;
     width: 36px;
   }
 
-  .fundToolbar .sortControls::-webkit-scrollbar {
-    display: none;
-  }
-
   .fundControlsOfficial {
-    column-gap: 8px;
-    flex-wrap: nowrap;
+    grid-template-columns: minmax(0, 1fr) 36px auto;
   }
 
   .fundControlsOfficial > .sortToggle .sortButton {
@@ -435,15 +455,13 @@
   }
 
   .fundControlsOfficial .sortControls {
-    flex: 1 0 auto;
-    justify-content: flex-end;
-    overflow: visible;
-    padding-bottom: 0;
+    grid-column: 2;
+    grid-row: 1;
     width: auto;
   }
 
   .fundControlsOfficial .managerTrigger {
-    margin-left: 0;
+    grid-column: 3;
   }
 
   .fundManager {

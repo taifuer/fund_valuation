@@ -9,7 +9,7 @@
 .segmented {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 6px;
   display: inline-flex;
   flex-wrap: wrap;
   gap: 2px;
@@ -23,7 +23,7 @@
   color: var(--ink-muted);
   cursor: pointer;
   font-size: var(--font-small);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 26px;
   min-width: 58px;
   padding: 0 8px;
@@ -52,14 +52,14 @@
   overflow-x: auto;
 }
 
-.viewNav { border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 24px; }
+.viewNav { display: flex; flex-wrap: wrap; gap: 24px; }
 .viewNav button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--ink-muted); cursor: pointer; font-size: var(--font-body); font-weight: 700; line-height: 34px; padding: 0 2px; }
 .viewNav button[aria-current=page], .viewNav button[aria-pressed=true] { border-bottom-color: var(--chart-line); color: var(--ink); }
 .viewNav button:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 2px; }
 
 .selectWrap { position: relative; }
 .selectWrap::after { content: ''; position: absolute; right: 14px; top: 15px; width: 6px; height: 6px; border: solid var(--ink-muted); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); pointer-events: none; }
-.select { appearance: none; width: 124px; height: 40px; border: 1px solid var(--line); border-radius: 6px; padding: 0 32px 0 12px; background: var(--surface); color: var(--ink); font: inherit; font-size: var(--font-small); text-align: left; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
+.select { appearance: none; width: 124px; height: 40px; border: 1px solid var(--line); border-radius: 6px; padding: 0 32px 0 12px; background: var(--surface); color: var(--ink); font: inherit; font-size: var(--font-small); font-weight: 600; text-align: left; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
 .select:not([data-pointer-focus]):focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 2px; }
 
 .sortButton { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: inherit; cursor: pointer; display: inline-flex; font: inherit; font-weight: 800; line-height: 20px; min-height: 24px; max-width: 100%; padding: 0 5px; white-space: nowrap; }

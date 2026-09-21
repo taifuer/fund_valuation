@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import universe from '../config/universe.json';
-import { FUNDS } from './constants';
+import { FUNDS, RANKING_INDICES } from './constants';
 
 interface HistoryConfig {
   source: string;
@@ -13,6 +13,16 @@ interface IndexConfig {
 }
 
 describe('market universe configuration', () => {
+  it('retains offline index archives without including them in recent requests', () => {
+    expect(RANKING_INDICES.some(item => ['RUT', 'OEX'].includes(item.symbol))).toBe(false);
+    expect(RANKING_INDICES.some(item => item.symbol === 'SOX')).toBe(true);
+    expect(RANKING_INDICES.find(item => item.symbol === 'SOX')?.quoteMode).not.toBe('close');
+    for (const symbol of ['RUT', 'OEX']) {
+      expect(universe.rankingIndices.find(item => item.symbol === symbol)).toMatchObject({
+        recentEnabled: false, history: { source: 'yahoo-index', symbol },
+      });
+    }
+  });
   it('labels the selected share class without inventing classes for unlabelled products', () => {
     expect(FUNDS.filter(fund => fund.shareClass === 'A')).toHaveLength(22);
     expect(FUNDS.filter(fund => fund.shareClass === 'C').map(fund => fund.code)).toEqual(['022184']);

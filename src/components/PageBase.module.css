@@ -7,6 +7,11 @@
   width: 100%;
 }
 
+/* Keep the heading-only variant stable when lazy pages reload shared rules. */
+.page.headingOnly {
+  padding-bottom: 0;
+}
+
 .header {
   align-items: flex-end;
   border-bottom: 1px solid var(--line);

@@ -276,6 +276,9 @@ export interface SystemStatus {
   quoteIssueCount: number;
   quoteTotal: number;
   workerLastSuccessAt: number;
+  marketQuoteIssueCount?: number;
+  holdingQuoteIssueCount?: number;
+  reasons?: Array<'worker-stale' | 'market-quotes' | 'holding-quotes'>;
 }
 
 export type HistoryRangeKey = '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | '5y' | 'ytd' | 'all';
@@ -301,6 +304,7 @@ export interface IndexConfig {
   name: string;
   sinaSymbol: string;
   quoteMode?: 'close';
+  recentEnabled?: boolean;
   futures?: {
     sinaSymbol: string;
     label: string;

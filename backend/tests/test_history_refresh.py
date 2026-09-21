@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from backend import server, storage
 from backend.data_coverage import historical_data_coverage
-from backend.history_refresh import expected_history_date, read_sync_states, refresh_history_item, retry_is_due
+from backend.history_refresh import ARCHIVE_REFRESH_SECONDS, expected_history_date, read_sync_states, refresh_history_item, retry_is_due
 from backend.observability import run_task, worker_task_snapshot
 
 
@@ -109,6 +109,34 @@ class HistoryRefreshTests(unittest.TestCase):
     def test_crypto_expected_day_uses_utc_not_beijing_date(self):
         current = datetime.fromisoformat('2026-09-20T01:00:00+08:00')
         self.assertEqual(expected_history_date('coinmetrics-crypto', 'BTC', current), '2026-09-18')
+
+    def test_archive_failure_preserves_prices_and_limits_checks_to_once_a_week(self):
+        with storage.get_conn() as conn:
+            conn.execute("INSERT INTO market_history VALUES ('yahoo-index','RUT','2026-09-15',2000,1)")
+        with patch.object(server, 'fetch_market_history_payload', return_value=(429, 'text/plain', b'limit')):
+            with self.assertRaisesRegex(ValueError, '429'):
+                refresh_history_item('yahoo-index', 'RUT')
+        deadline = 100_000 + ARCHIVE_REFRESH_SECONDS * 1000
+        self.assertEqual(read_sync_states()['yahoo-index:RUT']['nextCheckAt'], deadline)
+        self.assertFalse(retry_is_due('yahoo-index', 'RUT', deadline - 1))
+        self.assertTrue(retry_is_due('yahoo-index', 'RUT', deadline))
+        # Existing shorter retry schedules also obey the new archive policy.
+        with storage.get_conn() as conn:
+            conn.execute("UPDATE market_history_sync SET next_check_at=100001 WHERE symbol='RUT'")
+        self.assertFalse(retry_is_due('yahoo-index', 'RUT', 200_000))
+        self.assertEqual(server.read_market_history_from_db('yahoo-index', 'RUT'), [{'date': '2026-09-15', 'close': 2000}])
+
+    def test_worker_checks_archives_without_reintroducing_them_to_recent_summaries(self):
+        with storage.get_conn() as conn:
+            conn.execute("INSERT INTO market_history VALUES ('yahoo-index','RUT','2026-09-15',2000,1)")
+        with patch.object(server, 'configured_market_return_items_from_constants', return_value=[]), \
+                patch.object(server, 'now_ms', return_value=10_000_000), \
+                patch.object(server, 'fetch_market_history_payload', return_value=(429, 'text/plain', b'limit')) as fetch:
+            self.assertEqual(len(server.refresh_configured_market_history()), 1)
+            fetch.assert_called_once()
+            fetch.reset_mock()
+            self.assertEqual(server.refresh_configured_market_history(), [])
+            fetch.assert_not_called()
 
     def test_twse_refresh_is_tracked_after_actual_import(self):
         def store(*args, **kwargs):

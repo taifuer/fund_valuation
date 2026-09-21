@@ -135,14 +135,15 @@ describe('useOverviewData', () => {
     expect(apiMocks.fetchFundNavs).not.toHaveBeenCalled();
   });
 
-  it('does not request live quotes for close-only index archives', async () => {
+  it('requests SOX spot quotes but excludes archive-only indices', async () => {
     apiMocks.fetchDashboardSnapshot.mockResolvedValue({
       quotes: overviewSnapshot(3200, 1).quotes, marketStates: new Map(),
     });
     renderHook(() => useRankingMarketData(true));
     await waitFor(() => expect(apiMocks.fetchDashboardSnapshot).toHaveBeenCalled());
     const symbols = apiMocks.fetchDashboardSnapshot.mock.calls[0][0] as string[];
-    for (const symbol of ['gb_rut', 'gb_sox', 'gb_oex']) expect(symbols).not.toContain(symbol);
+    for (const symbol of ['gb_rut', 'gb_oex']) expect(symbols).not.toContain(symbol);
+    expect(symbols).toContain('gb_sox');
     expect(symbols).toContain('gb_ndx');
   });
 });

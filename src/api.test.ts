@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchApiMeta, fetchDashboardSnapshot, fetchFundNavs, fetchLongHistory, parseDashboardSnapshotPayload, parseSinaVar } from './api';
+import { fetchApiMeta, fetchDashboardSnapshot, fetchFundNavs, fetchLongHistory, fetchSystemStatus, parseDashboardSnapshotPayload, parseSinaVar } from './api';
 import { storeFundManagementToken } from './fundManagementAuth';
 
 function dashboardPayload(price: number) {
@@ -42,6 +42,29 @@ beforeEach(() => {
   window.sessionStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe('public service status', () => {
+  it('preserves the distinction between service health and local quote failures', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      status: 'ok', updatedAt: 1, quoteIssueCount: 2, quoteTotal: 1006, workerLastSuccessAt: 1,
+      marketQuoteIssueCount: 0, holdingQuoteIssueCount: 2, reasons: [],
+    }))));
+    expect(await fetchSystemStatus()).toMatchObject({ status: 'ok', quoteIssueCount: 2, holdingQuoteIssueCount: 2, reasons: [] });
+  });
+
+  it('accepts old responses and filters unknown reason codes', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'degraded', quoteIssueCount: 2 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'degraded', reasons: ['worker-stale', 'unknown'] }))));
+    expect(await fetchSystemStatus()).toMatchObject({ status: 'degraded', quoteIssueCount: 2, reasons: [] });
+    expect(await fetchSystemStatus()).toMatchObject({ reasons: ['worker-stale'] });
+  });
+
+  it('does not show a healthy status when the API fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 503 })));
+    expect(await fetchSystemStatus()).toMatchObject({ status: 'offline' });
+  });
 });
 
 describe('long history snapshot API', () => {

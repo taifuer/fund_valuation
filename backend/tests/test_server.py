@@ -2132,6 +2132,74 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(health["unsupportedCount"], 1)
         self.assertEqual(health["unsupported"][0]["symbol"], "tw2330")
 
+    def test_quote_health_scopes_all_issues_before_truncating_diagnostic_details(self) -> None:
+        symbols = [f'gb_holding{i}' for i in range(25)] + ['int_market']
+        with (
+            patch.object(server, 'configured_quote_symbols', return_value=symbols),
+            patch.object(server, 'configured_market_quote_symbols', return_value=['int_market']),
+            patch.object(server, 'configured_unsupported_quote_symbols', return_value=[]),
+            patch.object(server, 'market_state_for_symbol', return_value={'state': 'live'}),
+        ):
+            health = server.quote_snapshot_health()
+        self.assertEqual(health['status'], 'degraded')
+        self.assertEqual(health['issueCount'], 26)
+        self.assertEqual(len(health['issues']), 20)
+        self.assertEqual(health['marketQuoteTotal'], 1)
+        self.assertEqual(health['marketQuoteIssueCount'], 1)
+        self.assertEqual(health['holdingQuoteTotal'], 25)
+        self.assertEqual(health['holdingQuoteIssueCount'], 25)
+        self.assertTrue(all(issue['scope'] == 'holding' for issue in health['issues']))
+
+    def test_public_status_keeps_local_quote_failures_visible_without_degrading_service(self) -> None:
+        now = 2_000_000
+        quote_state = {'status': 'degraded', 'total': 1006, 'issueCount': 2,
+                       'marketQuoteTotal': 56, 'marketQuoteIssueCount': 0,
+                       'holdingQuoteTotal': 950, 'holdingQuoteIssueCount': 2,
+                       'issues': [{'symbol': 'gb_atai'}, {'symbol': 'gb_crnx'}]}
+        with (
+            patch.object(server, 'now_ms', return_value=now),
+            patch.object(server, 'quote_snapshot_health', return_value=quote_state),
+            patch.object(server, 'background_refresh_state_snapshot', return_value={'lastSuccessAt': now - 60_000}),
+            patch.object(server, 'fetch_upstream', side_effect=AssertionError('Status must not fetch upstream')),
+        ):
+            response = server.app.test_client().get('/api/status')
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload['status'], 'ok')
+        self.assertEqual(payload['reasons'], [])
+        self.assertEqual(payload['quoteIssueCount'], 2)
+        self.assertEqual(payload['holdingQuoteIssueCount'], 2)
+        self.assertNotIn('issues', payload)
+        self.assertEqual(quote_state['status'], 'degraded')
+
+    def test_public_status_alerts_on_core_failures_worker_staleness_and_broad_holding_outages(self) -> None:
+        now = 2_000_000
+        base = {'total': 1006, 'issueCount': 0, 'marketQuoteTotal': 56,
+                'marketQuoteIssueCount': 0, 'holdingQuoteTotal': 950, 'holdingQuoteIssueCount': 0}
+        cases = [
+            ({}, now, []),
+            ({}, now - 20 * 60_000, []),
+            ({}, now - 20 * 60_000 - 1, ['worker-stale']),
+            ({}, 0, ['worker-stale']),
+            ({}, now + 1, ['worker-stale']),
+            ({'marketQuoteIssueCount': 1}, now, ['market-quotes']),
+            ({'marketQuoteTotal': 0}, now, ['market-quotes']),
+            ({'holdingQuoteIssueCount': 94}, now, []),
+            ({'holdingQuoteIssueCount': 95}, now, ['holding-quotes']),
+            ({'holdingQuoteTotal': 30, 'holdingQuoteIssueCount': 2}, now, []),
+            ({'holdingQuoteTotal': 30, 'holdingQuoteIssueCount': 3}, now, ['holding-quotes']),
+            ({'holdingQuoteTotal': 31, 'holdingQuoteIssueCount': 3}, now, []),
+            ({'holdingQuoteTotal': 2, 'holdingQuoteIssueCount': 2}, now, ['holding-quotes']),
+            ({'holdingQuoteTotal': 0}, now, []),
+            ({'marketQuoteIssueCount': 1, 'holdingQuoteIssueCount': 950}, 0,
+             ['worker-stale', 'market-quotes', 'holding-quotes']),
+        ]
+        for updates, last_success, reasons in cases:
+            with self.subTest(updates=updates, last_success=last_success), patch.object(server, 'now_ms', return_value=now):
+                status = server.build_public_status_payload({**base, **updates}, {'lastSuccessAt': last_success})
+                self.assertEqual(status['reasons'], reasons)
+                self.assertEqual(status['status'], 'degraded' if reasons else 'ok')
+
     def test_unsupported_quotes_are_diagnostic_only(self) -> None:
         now = datetime.fromisoformat("2026-05-26T10:00:00+08:00")
         with (
@@ -2175,6 +2243,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(allowed.status_code, 200)
         self.assertIn("backgroundRefresh", allowed.get_json())
+        self.assertIn("publicStatus", allowed.get_json())
         self.assertIn("requestMetrics", allowed.get_json())
         self.assertIn("historyCoverage", allowed.get_json())
 

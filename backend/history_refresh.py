@@ -4,7 +4,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from .config import archived_market_return_items
 from .storage import get_conn
+
+ARCHIVE_REFRESH_SECONDS = 7 * 24 * 3600
 
 
 def expected_history_date(source: str, symbol: str, current: datetime | None = None) -> str:
@@ -42,9 +45,12 @@ def read_sync_states() -> dict[str, dict]:
 def retry_is_due(source: str, symbol: str, current_ms: int) -> bool:
     with get_conn() as conn:
         row = conn.execute(
-            'SELECT next_check_at FROM market_history_sync WHERE source=? AND symbol=?', (source, symbol),
+            'SELECT next_check_at,checked_at FROM market_history_sync WHERE source=? AND symbol=?', (source, symbol),
         ).fetchone()
-    return not row or current_ms >= row[0]
+    if not row:
+        return True
+    earliest = row[1] + ARCHIVE_REFRESH_SECONDS * 1000 if f'{source}:{symbol}' in archived_market_return_items() else 0
+    return current_ms >= max(row[0], earliest)
 
 
 def refresh_history_item(source: str, symbol: str, *, current: datetime | None = None) -> None:
@@ -86,6 +92,8 @@ def refresh_history_item(source: str, symbol: str, *, current: datetime | None =
         success_at = checked if not error else (int(previous[1]) if previous else 0)
         # Retry a lagging publisher after 30 minutes; repeated failures back off to six hours.
         delay = 1800 if status != 'error' else min(1800 * 2 ** min(max(failures - 1, 0), 4), 21600)
+        if f'{source}:{symbol}' in archived_market_return_items():
+            delay = max(delay, ARCHIVE_REFRESH_SECONDS)
         conn.execute('''
             INSERT INTO market_history_sync
               (source,symbol,checked_at,success_at,next_check_at,failures,status,latest_date,expected_date,rows_written,error)

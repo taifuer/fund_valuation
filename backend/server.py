@@ -32,7 +32,9 @@ from flask import Flask, Response, g, jsonify, request
 from werkzeug.exceptions import Forbidden, HTTPException, TooManyRequests
 
 from .config import (
+    archived_market_return_items,
     configured_fund_codes as universe_fund_codes,
+    configured_market_quote_symbols,
     configured_market_return_items as universe_market_return_items,
     configured_sina_symbols as universe_sina_symbols,
     configured_unsupported_quote_symbols as universe_unsupported_quote_symbols,
@@ -5362,6 +5364,7 @@ def quote_snapshot_health(now: datetime | None = None) -> dict[str, Any]:
     current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
     current_ms = int(current.timestamp() * 1000)
     symbols = configured_quote_symbols()
+    market_symbols = set(configured_market_quote_symbols())
     unsupported_symbols = configured_unsupported_quote_symbols()
     with get_conn() as conn:
         rows = conn.execute(
@@ -5386,8 +5389,9 @@ def quote_snapshot_health(now: datetime | None = None) -> dict[str, Any]:
     for symbol in symbols:
         row = latest_by_symbol.get(symbol)
         current_state = market_state_for_symbol(symbol, current)
+        scope = "market" if symbol in market_symbols else "holding"
         if not row:
-            issues.append({"symbol": symbol, "reason": "missing snapshot", "state": current_state["state"]})
+            issues.append({"symbol": symbol, "scope": scope, "reason": "missing snapshot", "state": current_state["state"]})
             continue
         captured_at = int(row[1])
         age_seconds = max((current_ms - captured_at) // 1000, 0)
@@ -5410,6 +5414,7 @@ def quote_snapshot_health(now: datetime | None = None) -> dict[str, Any]:
         if reason:
             issues.append({
                 "symbol": symbol,
+                "scope": scope,
                 "reason": reason,
                 "state": current_state["state"],
                 "ageSeconds": age_seconds,
@@ -5418,6 +5423,8 @@ def quote_snapshot_health(now: datetime | None = None) -> dict[str, Any]:
             })
         else:
             healthy += 1
+    market_total = len(market_symbols.intersection(symbols))
+    market_issues = sum(issue["scope"] == "market" for issue in issues)
     return {
         "status": "degraded" if issues else "ok",
         "updatedAt": current_ms,
@@ -5426,6 +5433,10 @@ def quote_snapshot_health(now: datetime | None = None) -> dict[str, Any]:
         "fallbackCount": fallback_count,
         "fallbacks": fallbacks[:20],
         "issueCount": len(issues),
+        "marketQuoteTotal": market_total,
+        "marketQuoteIssueCount": market_issues,
+        "holdingQuoteTotal": len(symbols) - market_total,
+        "holdingQuoteIssueCount": len(issues) - market_issues,
         "issues": issues[:20],
         "unsupportedCount": len(unsupported_symbols),
         "unsupported": [
@@ -5433,6 +5444,40 @@ def quote_snapshot_health(now: datetime | None = None) -> dict[str, Any]:
             for symbol in unsupported_symbols
         ],
         "retentionDays": QUOTE_SNAPSHOT_RETENTION_DAYS,
+    }
+
+
+def build_public_status_payload(
+    quote_state: dict[str, Any] | None = None,
+    worker: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if quote_state is None:
+        quote_state = quote_snapshot_health()
+    if worker is None:
+        worker = background_refresh_state_snapshot()
+    current_ms = now_ms()
+    last_success = int(worker.get("lastSuccessAt", 0) or 0)
+    reasons: list[str] = []
+    if not last_success or not 0 <= current_ms - last_success <= 20 * 60 * 1000:
+        reasons.append("worker-stale")
+    if not quote_state["marketQuoteTotal"] or quote_state["marketQuoteIssueCount"]:
+        reasons.append("market-quotes")
+    # Isolated holding failures remain diagnostic; broad provider failures alert.
+    holding_issues = quote_state["holdingQuoteIssueCount"]
+    holding_total = quote_state["holdingQuoteTotal"]
+    if holding_issues > 0 and holding_issues >= min(3, holding_total) and holding_issues * 10 >= holding_total:
+        reasons.append("holding-quotes")
+    return {
+        "status": "degraded" if reasons else "ok",
+        "reasons": reasons,
+        "updatedAt": current_ms,
+        "quoteIssueCount": quote_state["issueCount"],
+        "quoteTotal": quote_state["total"],
+        "marketQuoteTotal": quote_state["marketQuoteTotal"],
+        "marketQuoteIssueCount": quote_state["marketQuoteIssueCount"],
+        "holdingQuoteTotal": quote_state["holdingQuoteTotal"],
+        "holdingQuoteIssueCount": holding_issues,
+        "workerLastSuccessAt": last_success,
     }
 
 
@@ -5489,8 +5534,11 @@ def refresh_configured_market_history() -> list[str]:
     from .history_refresh import read_sync_states
     errors: list[str] = []
     items = configured_market_return_items_from_constants()
+    # Retain existing archives with low-frequency checks, without fetching them on page reads.
+    archived = [item for item in sorted(archived_market_return_items())
+                if latest_market_history_meta(*item.split(':', 1))[0]]
     failed_items: set[str] = set()
-    for item in items:
+    for item in [*items, *archived]:
         try:
             source, symbol = item.split(":", 1)
             if cn_etf_history_needs_adjustment(source, symbol):
@@ -5726,21 +5774,7 @@ def data_health() -> Response:
 @app.get("/api/status")
 def public_status() -> Response:
     enforce_rate_limit("status")
-
-    def build() -> dict[str, Any]:
-        quote_state = quote_snapshot_health()
-        worker = background_refresh_state_snapshot()
-        worker_last_success = int(worker.get("lastSuccessAt", 0) or 0)
-        worker_fresh = worker_last_success > 0 and now_ms() - worker_last_success <= 20 * 60 * 1000
-        return {
-            "status": "ok" if quote_state["issueCount"] == 0 and worker_fresh else "degraded",
-            "updatedAt": now_ms(),
-            "quoteIssueCount": int(quote_state["issueCount"]),
-            "quoteTotal": int(quote_state["total"]),
-            "workerLastSuccessAt": worker_last_success,
-        }
-
-    return cached_json_response("api:status", 30, build)
+    return cached_json_response("api:status", 30, build_public_status_payload)
 
 
 @app.get("/api/diagnostics/quotes")
@@ -5752,6 +5786,7 @@ def quote_diagnostics() -> Response:
         return json_response({"error": "Forbidden"}, status=403)
     payload = quote_snapshot_health()
     payload["backgroundRefresh"] = background_refresh_state_snapshot()
+    payload["publicStatus"] = build_public_status_payload(payload, payload["backgroundRefresh"])
     payload["requestMetrics"] = REQUEST_METRICS.snapshot()
     payload["workerTasks"] = worker_task_snapshot()
     payload["valuationQuality"] = read_dashboard_snapshot("valuation-quality")

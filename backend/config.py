@@ -120,6 +120,8 @@ def load_universe() -> dict[str, Any]:
                 if not symbol or symbol in symbols:
                     raise RuntimeError(f"Invalid or duplicate symbol in universe collection: {key}")
                 symbols.add(symbol)
+                if 'recentEnabled' in item and not isinstance(item['recentEnabled'], bool):
+                    raise RuntimeError(f"Invalid recentEnabled for {symbol}")
         fund_codes: set[str] = set()
         for fund in payload["funds"]:
             code = str(fund.get("code") or "") if isinstance(fund, dict) else ""
@@ -171,7 +173,7 @@ def quote_supported_symbol(symbol: str, explicit: object = None) -> bool:
     return explicit is not False and bool(SINA_SYMBOL_RE.fullmatch(normalized))
 
 
-def configured_sina_symbols() -> list[str]:
+def configured_market_quote_symbols() -> list[str]:
     symbols: list[str] = []
     payload = load_universe()
     for key in ("indices", "marketAssets", "etfAssets", "rankingIndices", "rankingSectorEtfs", "rankingIndexEtfs"):
@@ -180,11 +182,19 @@ def configured_sina_symbols() -> list[str]:
                 continue
             if item.get("quoteMode") == "close":
                 continue
+            if item.get("recentEnabled") is False:
+                continue
             candidates = [item.get("sinaSymbol")]
             futures = item.get("futures")
             if isinstance(futures, dict):
                 candidates.append(futures.get("sinaSymbol"))
             symbols.extend(str(value) for value in candidates if SINA_SYMBOL_RE.fullmatch(str(value or "")))
+    return sorted(dict.fromkeys(symbols))
+
+
+def configured_sina_symbols() -> list[str]:
+    symbols = configured_market_quote_symbols()
+    payload = load_universe()
     for fund in payload["funds"]:
         if not isinstance(fund, dict):
             continue
@@ -226,11 +236,13 @@ def configured_unsupported_quote_symbols() -> list[str]:
     return sorted(dict.fromkeys(symbols))
 
 
-def configured_market_return_items() -> list[str]:
+def configured_market_return_items(*, include_archived: bool = False) -> list[str]:
     items: list[str] = []
     payload = load_universe()
     for key in ("indices", "marketAssets", "etfAssets", "rankingIndices", "rankingSectorEtfs", "rankingIndexEtfs"):
         for item in payload[key]:
+            if isinstance(item, dict) and item.get('recentEnabled') is False and not include_archived:
+                continue
             history = item.get("history") if isinstance(item, dict) else None
             if not isinstance(history, dict):
                 continue
@@ -252,6 +264,10 @@ def configured_market_return_items() -> list[str]:
             if source in HISTORY_SOURCES and HISTORY_SYMBOL_RE.fullmatch(symbol):
                 items.append(f"{source}:{symbol}")
     return sorted(dict.fromkeys(items))
+
+
+def archived_market_return_items() -> set[str]:
+    return set(configured_market_return_items(include_archived=True)) - set(configured_market_return_items())
 
 
 def default_fund_holdings(code: str) -> list[dict[str, Any]]:

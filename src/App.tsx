@@ -499,12 +499,12 @@ export default function App() {
                   >
                     {sortDirection === 'desc' ? '↓' : '↑'}
                   </button>
-                  {fundManagementAvailable && (
-                    <button ref={managerTriggerRef} type="button" aria-label="管理基金" className={styles.managerTrigger} onClick={() => setFundManagerOpen(true)}>
-                      管理
-                    </button>
-                  )}
                 </div>
+                {fundManagementAvailable && (
+                  <button ref={managerTriggerRef} type="button" aria-label="管理基金" className={styles.managerTrigger} onClick={() => setFundManagerOpen(true)}>
+                    管理
+                  </button>
+                )}
               </div>
             </div>
             {fundManagementAvailable && fundManagerOpen && (

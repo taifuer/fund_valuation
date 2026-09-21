@@ -246,6 +246,7 @@
     {
       "symbol": "RUT",
       "name": "罗素2000",
+      "recentEnabled": false,
       "sinaSymbol": "gb_rut",
       "quoteMode": "close",
       "history": { "source": "yahoo-index", "symbol": "RUT" }
@@ -254,12 +255,12 @@
       "symbol": "SOX",
       "name": "费城半导体",
       "sinaSymbol": "gb_sox",
-      "quoteMode": "close",
       "history": { "source": "yahoo-index", "symbol": "SOX" }
     },
     {
       "symbol": "OEX",
       "name": "标普100",
+      "recentEnabled": false,
       "sinaSymbol": "gb_oex",
       "quoteMode": "close",
       "history": { "source": "yahoo-index", "symbol": "OEX" }

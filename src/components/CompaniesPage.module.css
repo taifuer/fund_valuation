@@ -2,7 +2,7 @@
   composes: page from './PageBase.module.css';
 }
 
-.viewNav { composes: viewNav from './AnalysisBase.module.css'; border-bottom: 0; }
+.viewNav { composes: viewNav from './AnalysisBase.module.css'; }
 
 .segmented {
   composes: segmented from './AnalysisBase.module.css';

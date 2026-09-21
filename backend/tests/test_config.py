@@ -8,6 +8,36 @@ from backend import config
 
 
 class FundConfigTests(unittest.TestCase):
+    def test_market_status_scope_excludes_holdings_and_archived_or_close_only_assets(self):
+        payload = copy.deepcopy(config.load_universe())
+        payload['indices'] = [
+            {'sinaSymbol': 'int_cash', 'futures': {'sinaSymbol': 'hf_future'}},
+            {'sinaSymbol': 'int_cash'},
+            {'sinaSymbol': 'int_archived', 'recentEnabled': False},
+            {'sinaSymbol': 'int_close', 'quoteMode': 'close'},
+        ]
+        payload['funds'][0]['holdings'] = [{'sinaSymbol': 'gb_holding', 'weight': 0.5}]
+        with patch.object(config, '_CACHE', payload):
+            markets = config.configured_market_quote_symbols()
+            self.assertIn('int_cash', markets)
+            self.assertIn('hf_future', markets)
+            self.assertEqual(markets.count('int_cash'), 1)
+            for symbol in ('int_archived', 'int_close', 'gb_holding'):
+                self.assertNotIn(symbol, markets)
+            self.assertIn('gb_holding', config.configured_sina_symbols())
+
+    def test_archive_visibility_does_not_delete_historical_configuration(self):
+        self.assertEqual(config.archived_market_return_items(), {'yahoo-index:RUT', 'yahoo-index:OEX'})
+        for value in ('false', 0, None):
+            with self.subTest(value=value):
+                payload = copy.deepcopy(config.load_universe())
+                payload['rankingIndices'][0]['recentEnabled'] = value
+                with patch.object(config, '_CACHE', None), patch.object(
+                    type(config.UNIVERSE_FILE), 'open', return_value=io.StringIO(json.dumps(payload)),
+                ):
+                    with self.assertRaisesRegex(RuntimeError, 'recentEnabled'):
+                        config.load_universe()
+
     def test_default_index_funds_are_official_only_and_active_funds_keep_estimates(self):
         funds = config.load_universe()['funds']
         self.assertEqual(sum(fund['strategy'] == 'index' for fund in funds), 10)

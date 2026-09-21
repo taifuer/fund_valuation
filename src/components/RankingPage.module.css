@@ -26,6 +26,7 @@
 .subControl {
   flex-basis: 100%;
   order: 4;
+  max-width: 100%;
 }
 
 .categoryControl .segmented,

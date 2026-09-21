@@ -38,6 +38,41 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test('SOX latest requests and displays spot quotes while historical ranges keep confirmed closes', async ({ page }) => {
+  const requestedSymbols: string[] = [];
+  await page.route('**/api/dashboard*', route => {
+    requestedSymbols.push(...(new URL(route.request().url()).searchParams.get('symbols') ?? '').split(','));
+    return route.fulfill({ json: {
+      schemaVersion: 1, generatedAt: Date.now(), quotesText: '', fxText: '',
+      quotes: { gb_sox: { symbol: 'gb_sox', name: '费城半导体', price: 12328.23, previousClose: 11921.69,
+        change: 406.54, changePercent: 3.41, time: '2026-09-21 23:16:17', fetchedAt: Date.now() } },
+      marketStates: { gb_sox: { symbol: 'gb_sox', market: 'us', state: 'live', source: 'calendar' } },
+    } });
+  });
+  await page.route('**/api/marketreturns*', route => {
+    const latest = { key: 'latest', label: '最新', returnPercent: 2.78, startDate: '2026-09-17',
+      endDate: '2026-09-18', startClose: 11599.49, endClose: 11921.69 };
+    return route.fulfill({ json: { 'yahoo-index:SOX': { source: 'yahoo-index', symbol: 'SOX', latest,
+      freshness: { latestDate: '2026-09-18', expectedDate: '2026-09-18', stale: false },
+      ranges: { '1m': { ...latest, key: '1m', label: '近1月', returnPercent: 1.56 } },
+    } } });
+  });
+  await page.goto('/returns');
+  const row = page.getByRole('row').filter({ has: page.getByRole('button', { name: '费城半导体走势', exact: true }) });
+  await expect(row).toContainText('+3.41%');
+  await expect(row).toContainText('12,328.23');
+  await expect(row).toContainText('开盘中');
+  await expect(row).toContainText('2026-09-21');
+  expect(requestedSymbols).toContain('gb_sox');
+  expect(requestedSymbols).not.toContain('gb_rut');
+  expect(requestedSymbols).not.toContain('gb_oex');
+  await chooseRecentRange(page, '1m', '近1月');
+  await expect(row).toContainText('+1.56%');
+  await expect(row).toContainText('11,921.69');
+  await expect(row).toContainText('收盘价');
+  await expect(row).toContainText('2026-09-18');
+});
+
 test('populated recent tables fit four mobile columns and keep the rest scrollable', async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -102,6 +137,24 @@ test('switching recent ranges shares history data and never loads fund estimates
   expect(apiRequests.some(path => /^\/api\/fund/.test(path))).toBe(false);
 });
 
+test('archive-only indices never appear or request summaries in recent categories', async ({ page }) => {
+  const items: string[] = [];
+  page.on('request', request => {
+    const url = new URL(request.url());
+    if (url.pathname === '/api/marketreturns') items.push(...(url.searchParams.get('items') ?? '').split(','));
+  });
+  for (const category of ['index', 'all']) {
+    await page.goto(`/returns?category=${category}&range=1m`);
+    await expect(page.getByRole('table', { name: '近期表现' })).toContainText('+123.45%');
+    await expect(page.getByRole('button', { name: '罗素2000走势', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '标普100走势', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '费城半导体走势', exact: true })).toHaveCount(1);
+  }
+  expect(items).toContain('yahoo-index:SOX');
+  expect(items).not.toContain('yahoo-index:RUT');
+  expect(items).not.toContain('yahoo-index:OEX');
+});
+
 test('stale histories remain readable but unranked with an accessible mobile disclosure', async ({ page, isMobile }, testInfo) => {
   const errors: string[] = [];
   const historyRequests: string[] = [];
@@ -116,7 +169,7 @@ test('stale histories remain readable but unranked with an accessible mobile dis
       maxDrawdownPercent: -12.34, winRatePercent: 65 };
     await route.fulfill({ json: Object.fromEntries(items.map(key => {
       const [source, symbol] = key.split(':');
-      const stale = ['RUT', 'OEX'].includes(symbol);
+      const stale = ['.NDX', '.INX'].includes(symbol);
       const endDate = stale ? '2026-09-15' : '2026-09-18';
       return [key, { ...range, source, symbol, endDate,
         freshness: { latestDate: endDate, expectedDate: '2026-09-18', stale },
@@ -128,7 +181,7 @@ test('stale histories remain readable but unranked with an accessible mobile dis
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/returns?range=1m');
     const table = page.getByRole('table', { name: '近期表现' });
-    for (const name of ['罗素2000', '标普100']) {
+    for (const name of ['纳指100', '标普500']) {
       const row = table.getByRole('row').filter({ has: page.getByRole('button', { name: `${name}走势`, exact: true }) });
       await expect(row.getByRole('cell').first()).toHaveText('--');
       await expect(row).toContainText('+123.45%');
@@ -163,7 +216,7 @@ test('stale histories remain readable but unranked with an accessible mobile dis
       expect(titleGeometry.height).toBeGreaterThanOrEqual(24);
       expect(titleGeometry.fullTitleHeight).toBeLessThanOrEqual(titleGeometry.titleHeight);
     }
-    const mark = table.getByRole('button', { name: '罗素2000数据待更新说明' });
+    const mark = table.getByRole('button', { name: '纳指100数据待更新说明' });
     if (isMobile) await mark.tap(); else { await mark.focus(); await page.keyboard.press('Enter'); }
     await expect(mark).toHaveAttribute('aria-expanded', 'true');
     const note = page.getByRole('note');
@@ -221,12 +274,21 @@ test('recent subcategories share a row with the right-aligned mobile range', asy
       await expectRecentRange(page, '5y', '近5年');
       const geometry = await page.evaluate(subLabel => {
         const category = document.querySelector('[aria-label="分类筛选"]')!;
-        const toolbar = category.parentElement!.getBoundingClientRect();
+        const toolbar = category.closest('section')!.getBoundingClientRect();
         const primary = category.firstElementChild!.getBoundingClientRect();
-        const sub = subLabel ? document.querySelector(`[aria-label="${subLabel}"]`)!.firstElementChild!.getBoundingClientRect() : null;
-        const select = document.querySelector('[aria-label="近期时间区间"]')!.getBoundingClientRect();
+        const subElement = subLabel ? document.querySelector(`[aria-label="${subLabel}"]`)!.firstElementChild! : null;
+        const sub = subElement?.getBoundingClientRect();
+        const selectElement = document.querySelector('[aria-label="近期时间区间"]')!;
+        const select = selectElement.getBoundingClientRect();
+        const style = (element: Element) => {
+          const css = getComputedStyle(element);
+          return { fontSize: css.fontSize, fontWeight: css.fontWeight };
+        };
         const range = document.querySelector('[aria-label="表现区间"]')!.getBoundingClientRect();
         return { toolbarRight: toolbar.right, primary: primary.toJSON(), sub: sub?.toJSON(),
+          subRadius: subElement && getComputedStyle(subElement).borderRadius,
+          selectRadius: getComputedStyle(selectElement).borderRadius,
+          subText: subElement && style(subElement.querySelector('button')!), selectText: style(selectElement),
           select: select.toJSON(), range: range.toJSON(), overflow: document.documentElement.scrollWidth - innerWidth };
       }, subLabel);
       expect(geometry.overflow).toBeLessThanOrEqual(1);
@@ -237,6 +299,8 @@ test('recent subcategories share a row with the right-aligned mobile range', asy
           expect(geometry.sub.top).toBeGreaterThanOrEqual(geometry.primary.bottom + 8);
           expect(geometry.sub.top).toBeCloseTo(geometry.select.top, 0);
           expect(geometry.sub.height).toBeCloseTo(geometry.select.height, 0);
+          expect(geometry.subRadius).toBe(geometry.selectRadius);
+          expect(geometry.subText).toEqual(geometry.selectText);
           expect(geometry.sub.left).toBeCloseTo(geometry.primary.left, 0);
           expect(geometry.select.left - geometry.sub.right).toBeGreaterThanOrEqual(8);
         }
@@ -247,6 +311,46 @@ test('recent subcategories share a row with the right-aligned mobile range', asy
       }
     }
   }
+});
+
+test('lazy company and history styles cannot change the heading gap after navigation', async ({ page, isMobile }) => {
+  await page.setViewportSize({ width: isMobile ? 390 : 1280, height: 900 });
+  await page.goto('/returns');
+  async function geometry(label: string) {
+    await expect(page.getByLabel(label, { exact: true })).toBeVisible();
+    return page.evaluate(label => {
+      const nav = document.querySelector('[aria-label="走势分析视图"]')!;
+      const header = nav.closest('header')!;
+      const filter = document.querySelector(`[aria-label="${label}"]`)!;
+      return {
+        gap: filter.getBoundingClientRect().top - header.getBoundingClientRect().bottom,
+        padding: getComputedStyle(header.parentElement!).paddingBottom,
+        navWidth: nav.getBoundingClientRect().width,
+        navHeight: nav.getBoundingClientRect().height,
+        border: getComputedStyle(nav).borderBottomWidth,
+      };
+    }, label);
+  }
+  const initial = await geometry('分类筛选');
+  await expect(page.getByRole('searchbox')).toHaveCount(0);
+  expect(initial.padding).toBe('0px');
+  expect(initial.border).toBe('0px');
+  for (const target of ['公司', '关于']) {
+    await page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: target, exact: true }).click();
+    await expect(page.getByRole('heading', { name: target === '公司' ? '公司经营趋势' : '关于本站' })).toBeVisible();
+    if (target === '公司') await expect(page.getByRole('searchbox', { name: '搜索公司' })).toBeVisible();
+    await page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '走势', exact: true }).click();
+    expect(await geometry('分类筛选')).toEqual(initial);
+  }
+  await page.getByRole('navigation', { name: '走势分析视图' }).getByRole('button', { name: '长期', exact: true }).click();
+  const historical = await geometry('历史资产类别');
+  await expect(page.getByRole('searchbox')).toHaveCount(0);
+  expect(historical.padding).toBe('0px');
+  expect(historical.border).toBe('0px');
+  await page.getByRole('navigation', { name: '走势分析视图' }).getByRole('button', { name: '近期', exact: true }).click();
+  expect(await geometry('分类筛选')).toEqual(initial);
+  await page.reload();
+  expect(await geometry('分类筛选')).toEqual(initial);
 });
 
 test('enlarged mobile filter text wraps the range without squeezing or clipping labels', async ({ page, isMobile }) => {

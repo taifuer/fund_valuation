@@ -28,6 +28,22 @@ interface Props {
 
 const FX_ORDER = ['USD', 'EUR'];
 
+function statusLabel(status: SystemStatus | null) {
+  if (!status || status.status === 'offline') return '服务状态暂不可用';
+  if (status.status === 'ok') {
+    return status.holdingQuoteIssueCount
+      ? `服务运行正常（${status.holdingQuoteIssueCount} 项持仓行情待更新）`
+      : '服务运行正常';
+  }
+  const reasons = status.reasons ?? [];
+  const labels = [
+    reasons.includes('worker-stale') ? '后台刷新延迟' : '',
+    reasons.includes('market-quotes') ? '市场行情待更新' : '',
+    reasons.includes('holding-quotes') ? '持仓行情大面积延迟' : '',
+  ].filter(Boolean);
+  return labels.length ? labels.join('；') : `数据刷新存在延迟（${status.quoteIssueCount} 项）`;
+}
+
 export default function Header({
   fxRates,
   activePage,
@@ -37,11 +53,7 @@ export default function Header({
 }: Props) {
   const [time, setTime] = useState(formatTime());
   const displayRates = FX_ORDER.map((currency) => fxRates.get(currency)).filter((rate): rate is FxRateData => rate != null);
-  const freshnessLabel = systemStatus?.status === 'ok'
-    ? '数据刷新正常'
-    : systemStatus?.status === 'degraded'
-      ? `数据刷新存在延迟（${systemStatus.quoteIssueCount} 项）`
-      : '数据状态暂不可用';
+  const freshnessLabel = statusLabel(systemStatus);
 
   useEffect(() => {
     if (!showMarketMeta) return;

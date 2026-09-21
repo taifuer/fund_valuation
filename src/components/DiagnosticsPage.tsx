@@ -43,6 +43,7 @@ export default function DiagnosticsPage() {
   }
 
   const background = payload?.backgroundRefresh as Record<string, unknown> | undefined;
+  const serviceStatus = payload?.publicStatus as Record<string, unknown> | undefined;
   const requestMetrics = payload?.requestMetrics as Record<string, unknown> | undefined;
   const requestRoutes = (requestMetrics?.routes ?? []) as Array<Record<string, unknown>>;
   const workerTasks = (payload?.workerTasks ?? []) as Array<Record<string, unknown>>;
@@ -79,10 +80,13 @@ export default function DiagnosticsPage() {
       {payload && (
         <>
           <section className={styles.metrics} aria-label="诊断摘要">
-            <div><span>状态</span><strong>{String(payload.status ?? '--')}</strong></div>
+            <div><span>服务状态</span><strong>{serviceStatus?.status === 'ok' ? '正常' : serviceStatus?.status === 'degraded' ? '异常' : '--'}</strong></div>
+            <div><span>行情状态</span><strong>{payload.status === 'ok' ? '正常' : payload.status === 'degraded' ? '部分异常' : '--'}</strong></div>
             <div><span>行情总数</span><strong>{numberValue(payload, 'total')}</strong></div>
             <div><span>正常</span><strong>{numberValue(payload, 'healthy')}</strong></div>
             <div><span>异常</span><strong>{numberValue(payload, 'issueCount')}</strong></div>
+            <div><span>市场行情异常</span><strong>{numberValue(payload, 'marketQuoteIssueCount')}</strong></div>
+            <div><span>持仓行情异常</span><strong>{numberValue(payload, 'holdingQuoteIssueCount')}</strong></div>
             <div><span>兜底</span><strong>{numberValue(payload, 'fallbackCount')}</strong></div>
             <div><span>刷新次数</span><strong>{numberValue(background ?? null, 'runCount')}</strong></div>
             <div><span>进程请求</span><strong>{numberValue(requestMetrics ?? null, 'requestCount')}</strong></div>
@@ -122,10 +126,11 @@ export default function DiagnosticsPage() {
             {issues.length === 0 ? <div className={styles.empty}>当前没有异常快照</div> : (
               <div className={styles.tableWrap}>
                 <table>
-                  <thead><tr><th>标的</th><th>状态</th><th>时间</th><th>来源</th><th>原因</th></tr></thead>
+                  <thead><tr><th>标的</th><th>范围</th><th>状态</th><th>时间</th><th>来源</th><th>原因</th></tr></thead>
                   <tbody>{issues.map((issue, index) => (
                     <tr key={`${String(issue.symbol ?? '')}-${index}`}>
                       <td>{String(issue.symbol ?? '--')}</td>
+                      <td>{issue.scope === 'market' ? '市场' : issue.scope === 'holding' ? '持仓/估值' : '--'}</td>
                       <td>{String(issue.state ?? '--')}</td>
                       <td>{String(issue.quoteTime ?? '--')}</td>
                       <td>{String(issue.source ?? '--')}</td>

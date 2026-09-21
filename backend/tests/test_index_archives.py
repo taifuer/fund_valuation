@@ -89,12 +89,14 @@ class IndexArchiveTests(unittest.TestCase):
         self.assertEqual(datetime.fromtimestamp(start, ZoneInfo('America/New_York')).date().isoformat(), '2026-09-05')
         self.assertIn('period1=-2208988800', index_history_url('RUT', now=now))
 
-    def test_configuration_has_histories_but_no_live_polling_or_futures(self):
+    def test_sox_has_cash_quotes_while_unavailable_indices_remain_archive_only(self):
         symbols = config.configured_sina_symbols()
         histories = config.configured_market_return_items()
         for symbol in INDEX_SYMBOLS:
-            self.assertNotIn(f'gb_{symbol.lower()}', symbols)
-            self.assertIn(f'yahoo-index:{symbol}', histories)
+            self.assertEqual(f'gb_{symbol.lower()}' in symbols, symbol == 'SOX')
+            self.assertEqual(f'gb_{symbol.lower()}' in config.configured_market_quote_symbols(), symbol == 'SOX')
+            self.assertIn(f'yahoo-index:{symbol}', config.configured_market_return_items(include_archived=True))
+            self.assertEqual(f'yahoo-index:{symbol}' in histories, symbol == 'SOX')
             item = next(asset for asset in assets() if asset['id'] == symbol)
             self.assertEqual(item['group'], 'usa')
             self.assertEqual(item['basis'], 'price')

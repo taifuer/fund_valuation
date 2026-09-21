@@ -36,4 +36,21 @@ describe('DiagnosticsPage history freshness', () => {
     expect(within(screen.getByText('标普100').closest('tr')!).getByText('缺数据')).toBeInTheDocument();
     expect(fetchQuoteDiagnostics).toHaveBeenCalledWith('test-token');
   });
+
+  it('keeps holding failures visible even when public service health is normal', async () => {
+    vi.mocked(fetchQuoteDiagnostics).mockResolvedValue({
+      status: 'degraded', publicStatus: { status: 'ok' }, total: 1006, healthy: 1004,
+      issueCount: 2, holdingQuoteIssueCount: 2, marketQuoteIssueCount: 0,
+      issues: [{ symbol: 'gb_atai', scope: 'holding', state: 'live', quoteTime: '2026-09-19 09:30:10',
+        source: 'upstream', reason: 'quote date 2026-09-19 before 2026-09-21' }],
+    });
+    render(<DiagnosticsPage />);
+    fireEvent.change(screen.getByLabelText('诊断令牌'), { target: { value: 'test-token' } });
+    fireEvent.click(screen.getByRole('button', { name: '查询' }));
+    const summary = await screen.findByRole('region', { name: '诊断摘要' });
+    expect(within(summary).getByText('服务状态').parentElement).toHaveTextContent('正常');
+    expect(within(summary).getByText('行情状态').parentElement).toHaveTextContent('部分异常');
+    expect(screen.getByText('gb_atai').closest('tr')).toHaveTextContent('持仓/估值');
+    expect(screen.getByText('gb_atai').closest('tr')).toHaveTextContent('quote date 2026-09-19 before 2026-09-21');
+  });
 });

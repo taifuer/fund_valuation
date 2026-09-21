@@ -55,6 +55,26 @@ describe('Header', () => {
     expect(onPageChange).toHaveBeenCalledWith('funds');
   });
 
+  it('keeps the service dot green while reporting isolated holding failures in its tooltip', () => {
+    render(<Header fxRates={new Map()} activePage="overview" onPageChange={vi.fn()}
+      systemStatus={{ status: 'ok', updatedAt: 1, workerLastSuccessAt: 1, quoteTotal: 1006,
+        quoteIssueCount: 2, marketQuoteIssueCount: 0, holdingQuoteIssueCount: 2, reasons: [] }} />);
+    const dot = screen.getByLabelText('服务运行正常（2 项持仓行情待更新）');
+    expect(dot).not.toHaveClass(/liveDegraded|liveOffline/);
+    expect(dot).toHaveAttribute('title', '服务运行正常（2 项持仓行情待更新）');
+  });
+
+  it.each([
+    ['worker-stale', '后台刷新延迟'],
+    ['market-quotes', '市场行情待更新'],
+    ['holding-quotes', '持仓行情大面积延迟'],
+  ] as const)('explains %s without presenting it as zero quote failures', (reason, label) => {
+    render(<Header fxRates={new Map()} activePage="overview" onPageChange={vi.fn()}
+      systemStatus={{ status: 'degraded', updatedAt: 1, workerLastSuccessAt: 0,
+        quoteTotal: 1006, quoteIssueCount: 0, reasons: [reason] }} />);
+    expect(screen.getByLabelText(label)).toHaveClass(/liveDegraded/);
+  });
+
   it('keeps the combined performance entry active for both subpages', () => {
     const { rerender } = render(
       <Header fxRates={new Map()} activePage="ranking" onPageChange={vi.fn()} />,
@@ -68,7 +88,7 @@ describe('Header', () => {
 
   it('shows an offline status before the first status response', () => {
     render(<Header fxRates={new Map()} activePage="overview" onPageChange={vi.fn()} />);
-    expect(screen.getByLabelText('数据状态暂不可用')).toHaveClass(/liveOffline/);
+    expect(screen.getByLabelText('服务状态暂不可用')).toHaveClass(/liveOffline/);
   });
 
   it('hides market metadata on the about page', () => {
@@ -81,7 +101,7 @@ describe('Header', () => {
       />,
     );
     expect(screen.queryByText(/北京时间/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('数据状态暂不可用')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('服务状态暂不可用')).not.toBeInTheDocument();
   });
 
   it('hides live market metadata on the offline financial-report page', () => {
@@ -94,7 +114,7 @@ describe('Header', () => {
       />,
     );
     expect(screen.queryByText(/北京时间/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('数据状态暂不可用')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('服务状态暂不可用')).not.toBeInTheDocument();
   });
 
   it('shows only USD and EUR in the global exchange-rate summary', () => {

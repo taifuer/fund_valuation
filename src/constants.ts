@@ -13,7 +13,7 @@ function fundConfigs(value: unknown): Fund[] {
 export const INDICES = indexConfigs(universe.indices);
 export const MARKET_ASSETS = indexConfigs(universe.marketAssets);
 export const ETF_ASSETS = indexConfigs(universe.etfAssets);
-export const RANKING_INDICES = indexConfigs(universe.rankingIndices);
+export const RANKING_INDICES = indexConfigs(universe.rankingIndices).filter(item => item.recentEnabled !== false);
 export const RANKING_SECTOR_ETFS = indexConfigs(universe.rankingSectorEtfs);
 export const RANKING_INDEX_ETFS = indexConfigs(universe.rankingIndexEtfs);
 export const RANKING_ETFS: IndexConfig[] = [...RANKING_INDEX_ETFS, ...RANKING_SECTOR_ETFS];

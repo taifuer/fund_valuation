@@ -173,7 +173,7 @@ function makeMarketItems(
         ? (useLatestCloseReturn ? latestReturn.endDate : quoteDate ?? latestReturn?.endDate)
         : rangeReturn?.endDate,
       sourceLabel: freshness?.stale ? '待更新' : range === 'today' && (useLatestCloseReturn || item.quoteMode === 'close')
-        ? '最新收盘'
+        ? '收盘价'
         : range === 'today'
           ? latestSourceLabel(state)
           : '收盘价',

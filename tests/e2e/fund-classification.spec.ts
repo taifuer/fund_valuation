@@ -82,6 +82,39 @@ test('fund strategies are filterable and official-only details do not fetch hold
   await expect(page.locator('#fund-270042 [aria-expanded="true"]')).toBeVisible();
 });
 
+test('compact management stays visible beside mobile fund filters for every strategy', async ({ page, isMobile }, testInfo) => {
+  for (const width of isMobile ? [320, 390, 640] : [1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/funds');
+    const filters = page.getByRole('group', { name: '基金类型筛选' });
+    const manager = page.getByRole('button', { name: '管理基金', exact: true });
+    for (const name of ['主动', '指数', '全部']) {
+      await filters.getByRole('button', { name, exact: true }).click();
+      await expect(manager).toBeInViewport();
+      const filterBox = (await filters.boundingBox())!;
+      const box = (await manager.boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(56);
+      expect(box.width).toBeLessThanOrEqual(64);
+      expect(box.x + box.width).toBeLessThanOrEqual(width - 10);
+      if (isMobile) {
+        expect(box.y).toBeCloseTo(filterBox.y, 0);
+        expect(box.x).toBeGreaterThanOrEqual(filterBox.x + filterBox.width + 6);
+        expect(box.height).toBe(40);
+        if (name !== '指数') {
+          const sortBox = (await page.getByLabel('基金排序方式').boundingBox())!;
+          expect(sortBox.y).toBeGreaterThanOrEqual(box.y + box.height + 6);
+          expect(sortBox.x + sortBox.width).toBeLessThanOrEqual(width - 10);
+        }
+      }
+      await manager.click();
+      await expect(page.getByRole('dialog', { name: '管理基金' })).toBeVisible();
+      await page.getByRole('button', { name: '关闭基金管理' }).click();
+      await expect(manager).toBeFocused();
+    }
+    await page.screenshot({ path: testInfo.outputPath(`fund-toolbar-${width}.png`) });
+  }
+});
+
 test('slow fund loading and failures stay below the toolbar without replacing the description', async ({ page }) => {
   let release = () => {};
   const gate = new Promise<void>(resolve => { release = resolve; });

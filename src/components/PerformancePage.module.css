@@ -1,16 +1,8 @@
 .viewHeader {
-  composes: page from './PageBase.module.css';
-  padding-bottom: 0;
+  composes: page headingOnly from './PageBase.module.css';
 }
 
 .viewNav {
   composes: viewNav from './AnalysisBase.module.css';
-  border-bottom: 0;
   flex: 0 0 auto;
-}
-
-@media (max-width: 720px) {
-  .viewNav {
-    gap: 22px;
-  }
 }
