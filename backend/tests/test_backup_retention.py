@@ -1,4 +1,6 @@
+import gc
 import os
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -23,6 +25,9 @@ class BackupRetentionTests(unittest.TestCase):
     def backup(self, name):
         path = self.backups / name
         migrate_database(path)
+        # Finish WAL writes before tests assign file timestamps.
+        with closing(sqlite3.connect(path)) as conn:
+            conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
         return path
 
     def test_daily_two_and_deployment_one_leave_other_recovery_files_untouched(self):
@@ -80,6 +85,7 @@ class BackupRetentionTests(unittest.TestCase):
         files = [self.backup(f'fund-202609{day}-090000.db') for day in (19, 20, 21)]
         for path in files:
             os.utime(path, (1, 1))
+        gc.collect()
         with patch('backend.db_admin.backup_database', side_effect=RuntimeError('disk full')):
             with self.assertRaisesRegex(RuntimeError, 'disk full'):
                 ensure_recent_backup(database, backup_dir=self.backups, max_files=2)

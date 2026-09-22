@@ -97,7 +97,7 @@ docker compose --profile tools run --rm db-tools python -m backend.db_admin opti
 
 ## 备份与清理
 
-Docker worker 默认每天创建一次通过完整性校验的 SQLite 备份，保留 7 天且最多 2 份。部署前备份独立保留最近 1 份，仅在新备份验证和部署验收通过后轮换；失败部署不会触发清理。手工备份和恢复前安全备份不自动删除。生产环境应把 `FUND_VALUATION_BACKUP_HOST_DIR` 设置到 Web 根目录之外，并由独立任务同步到异地或对象存储。
+Docker worker 默认每天创建一次通过完整性校验的 SQLite 备份，保留 7 天且最多 2 份。部署前备份独立保留最近 1 份，仅在新备份验证和部署验收通过后轮换；失败部署不会触发清理。规则按标准时间戳文件名匹配；自定义名称的手工备份和恢复前安全备份不自动删除。生产环境应把 `FUND_VALUATION_BACKUP_HOST_DIR` 设置到 Web 根目录之外，并由独立任务同步到异地或对象存储。
 
 行情快照、原始响应和响应缓存属于可再生成数据，会按配置周期清理并执行非阻塞 WAL checkpoint 与 `PRAGMA optimize`；基金净值、市场日线和季度持仓不会被自动删除。恢复数据库前会自动备份当前文件，生产恢复仍建议先停止 backend 和 worker。
 
