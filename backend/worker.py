@@ -254,7 +254,7 @@ def main() -> None:
                         backup_dir=Path(configured_backup_dir) if configured_backup_dir else None,
                         interval_hours=int(os.environ.get("FUND_VALUATION_BACKUP_INTERVAL_HOURS", "24")),
                         retention_days=int(os.environ.get("FUND_VALUATION_BACKUP_RETENTION_DAYS", "7")),
-                        max_files=positive_int_env("FUND_VALUATION_BACKUP_MAX_FILES", 3),
+                        max_files=positive_int_env("FUND_VALUATION_BACKUP_MAX_FILES", 2),
                     )
                     if backup:
                         tasks.append("backup")

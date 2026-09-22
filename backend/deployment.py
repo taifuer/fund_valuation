@@ -125,6 +125,13 @@ def main() -> None:
     except Exception:
         print(f'Deployment stopped. Inspect {destination}; no automatic DB restore or image pruning performed.', flush=True)
         raise
+    cleanup = compose + ['--profile', 'tools', 'run', '--rm', '--no-deps', 'db-tools',
+                         'python', '-m', 'backend.db_admin', 'prune-backups', '--kind', 'deployment', '--max-files', '1']
+    try:
+        print(run(cleanup), flush=True)
+    except Exception as exc:
+        # Retention failures must not label a healthy deployment as failed.
+        print(f'Deployment verified; backup retention needs attention: {exc}', flush=True)
 
 
 if __name__ == '__main__':

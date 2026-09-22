@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -200,6 +201,42 @@ def default_backup_path(source: Path) -> Path:
     return directory / f"{source.stem}-{stamp}.db"
 
 
+def scheduled_backup_files(directory: Path, prefix: str) -> list[Path]:
+    pattern = re.compile(rf'{re.escape(prefix)}-\d{{8}}-\d{{6}}\.db')
+    return sorted(
+        (path for path in directory.iterdir()
+         if pattern.fullmatch(path.name) and not path.is_symlink() and path.is_file()
+         and path.stat().st_nlink == 1),
+        key=lambda path: path.name, reverse=True,
+    ) if directory.exists() else []
+
+
+def prune_backups(
+    directory: Path, *, prefix: str, max_files: int,
+    retention_days: int | None = None, now: datetime | None = None,
+) -> dict[str, object]:
+    if max_files < 1:
+        raise ValueError('At least one backup must be retained')
+    files = scheduled_backup_files(directory, prefix)
+    current = now or datetime.now(ZoneInfo('Asia/Shanghai'))
+    cutoff = current - timedelta(days=max(retention_days, 1)) if retention_days is not None else None
+    retained = [path for index, path in enumerate(files) if index == 0 or (
+        index < max_files and (cutoff is None or path.stat().st_mtime >= cutoff.timestamp()))]
+    removed = [path for path in files if path not in retained]
+    if removed:
+        # Never discard older recovery points when a retained backup is corrupt.
+        for path in retained:
+            verify_database(path)
+    removed_bytes = 0
+    for path in removed:
+        for candidate in (path, Path(str(path) + '-wal'), Path(str(path) + '-shm')):
+            if candidate.is_file() and not candidate.is_symlink():
+                removed_bytes += candidate.stat().st_size
+                candidate.unlink()
+    return {'retained': [path.name for path in retained],
+            'removed': [path.name for path in removed], 'removedBytes': removed_bytes}
+
+
 def ensure_recent_backup(
     source: Path,
     *,
@@ -212,27 +249,17 @@ def ensure_recent_backup(
     current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
     configured = os.environ.get("FUND_VALUATION_BACKUP_DIR", "").strip()
     directory = backup_dir or (Path(configured) if configured else source.parent / "backups")
-    existing = sorted(directory.glob(f"{source.stem}-*.db"), key=lambda path: path.stat().st_mtime, reverse=True) if directory.exists() else []
+    existing = scheduled_backup_files(directory, source.stem)
     if existing:
         latest_age = current.timestamp() - existing[0].stat().st_mtime
         if latest_age < max(interval_hours, 1) * 60 * 60:
+            prune_backups(directory, prefix=source.stem, max_files=max_files or max(len(existing), 1),
+                          retention_days=retention_days, now=current)
             return None
     destination = directory / f"{source.stem}-{current.strftime('%Y%m%d-%H%M%S')}.db"
     backup_database(source, destination)
-    cutoff = current - timedelta(days=max(retention_days, 1))
-    for path in directory.glob(f"{source.stem}-*.db"):
-        if path == destination:
-            continue
-        if datetime.fromtimestamp(path.stat().st_mtime, ZoneInfo("Asia/Shanghai")) < cutoff:
-            path.unlink()
-    if max_files is not None:
-        retained = sorted(
-            directory.glob(f"{source.stem}-*.db"),
-            key=lambda path: path.stat().st_mtime,
-            reverse=True,
-        )
-        for path in retained[max(max_files, 1):]:
-            path.unlink()
+    prune_backups(directory, prefix=source.stem, max_files=max_files or len(existing) + 1,
+                  retention_days=retention_days, now=current)
     return destination
 
 
@@ -276,6 +303,11 @@ def parse_args() -> argparse.Namespace:
     verify_parser = subparsers.add_parser('verify-backup', help='Restore and migrate a backup in an isolated temporary directory')
     verify_parser.add_argument('backup', type=Path)
 
+    prune_parser = subparsers.add_parser('prune-backups', help='Verify retained backups and remove older scheduled copies')
+    prune_parser.add_argument('--kind', choices=('daily', 'deployment'), required=True)
+    prune_parser.add_argument('--max-files', type=int, required=True)
+    prune_parser.add_argument('--database', type=Path, default=DB_PATH)
+
     optimize_parser = subparsers.add_parser("optimize", help="Prune regenerable caches and run safe SQLite maintenance")
     optimize_parser.add_argument("--database", type=Path, default=DB_PATH)
     optimize_parser.add_argument(
@@ -312,6 +344,11 @@ def main() -> None:
         return
     if args.command == 'verify-backup':
         print(json.dumps(verify_backup_restore(args.backup), indent=2))
+        return
+    if args.command == 'prune-backups':
+        directory = default_backup_path(args.database).parent
+        prefix = 'pre-deploy' if args.kind == 'deployment' else args.database.stem
+        print(json.dumps(prune_backups(directory, prefix=prefix, max_files=args.max_files), indent=2))
         return
     if args.command == "backup":
         destination = args.output or default_backup_path(args.database)
