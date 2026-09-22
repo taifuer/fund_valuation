@@ -33,6 +33,16 @@
   --font-small: 12px;
   --font-body: 14px;
   --font-heading: 20px;
+  --control-height: 32px;
+  --control-item-height: calc(var(--control-height) - 6px);
+  --page-width: 1040px;
+  --page-gutter: 16px;
+  --focus-color: var(--ink-muted);
+  --focus-shadow: 0 0 0 2px rgba(100, 116, 139, 0.16);
+}
+
+@media (max-width: 720px) {
+  :root { --control-height: 40px; --page-gutter: 12px; }
 }
 
 body {
@@ -51,6 +61,13 @@ input,
 select,
 textarea {
   font-family: inherit;
+}
+
+/* Low specificity lets controls retain their explicit touch/input treatment. */
+:where(button:focus-visible, a[href]:focus-visible, input:focus-visible,
+  select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible) {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
 }
 
 /* Respect users who prefer reduced motion: disable the live/pulse/blink/bounce

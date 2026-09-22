@@ -62,34 +62,40 @@ function FundDetails({
   return (
     <div className={styles.expanded}>
       <div className={styles.tabs}>
-        {estimateEnabled && <button
-          type="button"
-          className={`${styles.tabButton} ${activeTab === 'holdings' ? styles.tabButtonActive : ''}`}
-          onClick={() => onTabChange('holdings')}
-        >
-          持仓
-        </button>}
-        <button
-          type="button"
-          className={`${styles.tabButton} ${activeTab === 'nav' ? styles.tabButtonActive : ''}`}
-          onClick={() => onTabChange('nav')}
-        >
-          净值
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${activeTab === 'trend' ? styles.tabButtonActive : ''}`}
-          onClick={() => onTabChange('trend')}
-        >
-          走势
-        </button>
-        <button
-          type="button"
-          className={`${styles.tabButton} ${activeTab === 'profile' ? styles.tabButtonActive : ''}`}
-          onClick={() => onTabChange('profile')}
-        >
-          资料
-        </button>
+        <div className={styles.tabGroup} role="group" aria-label="基金详情视图">
+          {estimateEnabled && <button
+            type="button"
+            className={`${styles.tabButton} ${activeTab === 'holdings' ? styles.tabButtonActive : ''}`}
+            aria-pressed={activeTab === 'holdings'}
+            onClick={() => onTabChange('holdings')}
+          >
+            持仓
+          </button>}
+          <button
+            type="button"
+            className={`${styles.tabButton} ${activeTab === 'nav' ? styles.tabButtonActive : ''}`}
+            aria-pressed={activeTab === 'nav'}
+            onClick={() => onTabChange('nav')}
+          >
+            净值
+          </button>
+          <button
+            type="button"
+            className={`${styles.tabButton} ${activeTab === 'trend' ? styles.tabButtonActive : ''}`}
+            aria-pressed={activeTab === 'trend'}
+            onClick={() => onTabChange('trend')}
+          >
+            走势
+          </button>
+          <button
+            type="button"
+            className={`${styles.tabButton} ${activeTab === 'profile' ? styles.tabButtonActive : ''}`}
+            aria-pressed={activeTab === 'profile'}
+            onClick={() => onTabChange('profile')}
+          >
+            资料
+          </button>
+        </div>
       </div>
       <Suspense fallback={<div className={styles.tabLoading}>详情加载中...</div>}>
         {activeTab === 'holdings' && (estimate?.holdingsQuotes.length ? (

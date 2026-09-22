@@ -1,9 +1,9 @@
 .page {
   color: var(--ink);
   margin: 0 auto;
-  max-width: 1040px;
+  max-width: var(--page-width);
   min-width: 0;
-  padding: 28px 16px 32px;
+  padding: 28px var(--page-gutter) 32px;
   width: 100%;
 }
 
@@ -31,7 +31,7 @@
 
 @media (max-width: 640px) {
   .page {
-    padding: 20px 12px 28px;
+    padding: 20px var(--page-gutter) 28px;
   }
 
   .header {

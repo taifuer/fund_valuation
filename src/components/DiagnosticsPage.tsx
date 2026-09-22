@@ -61,11 +61,12 @@ export default function DiagnosticsPage() {
     <main className={styles.page}>
       <div className={styles.headerRow}>
         <div>
-          <h2>运行诊断</h2>
+          <h2 className={styles.title}>运行诊断</h2>
           <p>行情快照与后台刷新状态</p>
         </div>
         <div className={styles.authForm}>
           <input
+            className={styles.tokenInput}
             type="password"
             value={token}
             placeholder="诊断令牌"
@@ -73,7 +74,7 @@ export default function DiagnosticsPage() {
             onChange={(event) => setToken(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Enter') void load(); }}
           />
-          <button type="button" onClick={load} disabled={loading}>{loading ? '加载中' : '查询'}</button>
+          <button type="button" className={styles.queryButton} onClick={load} disabled={loading}>{loading ? '加载中' : '查询'}</button>
         </div>
       </div>
       {error && <div className={styles.error} role="alert">{error}</div>}

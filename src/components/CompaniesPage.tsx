@@ -616,7 +616,7 @@ export default function CompaniesPage() {
                   <button
                     key={regionItem.key}
                     type="button"
-                    className={selectedRegion === regionItem.key ? styles.regionButtonActive : ''}
+                    className={`${styles.regionButton} ${selectedRegion === regionItem.key ? styles.regionButtonActive : ''}`}
                     aria-pressed={selectedRegion === regionItem.key}
                     onClick={() => selectRegion(regionItem.key)}
                   >
@@ -630,6 +630,7 @@ export default function CompaniesPage() {
               <span>搜索公司</span>
               <input
                 type="search"
+                className={styles.searchInput}
                 value={companyQuery}
                 placeholder="搜索名称或代码"
                 autoComplete="off"
@@ -650,7 +651,7 @@ export default function CompaniesPage() {
                     key={company.id}
                     id={`company-option-${company.id}`}
                     type="button"
-                    className={active ? styles.companyOptionActive : ''}
+                    className={styles.companyOption}
                     aria-pressed={active}
                     aria-controls="company-trend-panel"
                     onClick={() => selectCompany(company, Boolean(companyQuery.trim()))}

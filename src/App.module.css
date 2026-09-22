@@ -81,43 +81,30 @@
 }
 
 .sortToggle {
-  display: inline-flex;
+  composes: segmented from './components/AnalysisBase.module.css';
   flex: 0 0 auto;
-  padding: 2px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: #fff;
 }
 
 .sortButton {
-  min-width: 74px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #64748b;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 24px;
-  padding: 0 8px;
+  composes: segmentButton from './components/AnalysisBase.module.css';
+  --segment-min-width: 74px;
 }
 
 .sortButtonActive {
-  background: #0f172a;
-  color: #fff;
+  composes: segmentButtonActive from './components/AnalysisBase.module.css';
 }
 
 .sortDirectionButton {
   background: #fff;
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  border-radius: 6px;
   color: #334155;
   cursor: pointer;
   flex: 0 0 32px;
   font-size: 16px;
   font-weight: 700;
-  height: 30px;
-  line-height: 28px;
+  height: var(--control-height);
+  line-height: 20px;
   padding: 0;
   text-align: center;
   width: 32px;
@@ -129,11 +116,12 @@
 }
 
 .sortDirectionButton:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--focus-color);
   outline-offset: 2px;
 }
 
 .fundManager {
+  --control-height: 40px;
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
@@ -223,7 +211,7 @@
   display: inline-flex;
   font-size: 12px;
   font-weight: 700;
-  height: 30px;
+  height: var(--control-height);
   justify-content: center;
   min-width: 56px;
   padding: 0 10px;
@@ -253,15 +241,9 @@
 }
 
 .fundSearchInput {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  color: #0f172a;
-  font-size: 13px;
-  height: 40px;
+  composes: input from './components/AnalysisBase.module.css';
+  --input-font-size: 13px;
   line-height: normal;
-  outline: none;
-  padding: 0 11px;
   width: 100%;
 }
 
@@ -274,48 +256,19 @@
   letter-spacing: 0;
 }
 
-.fundSearchInput:focus {
-  border-color: #94a3b8;
-  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.16);
-}
-
 .managerButton,
 .managerButtonPrimary {
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  cursor: pointer;
+  --action-padding: 0 14px;
   flex: 0 0 auto;
-  font-size: 12px;
-  font-weight: 700;
-  height: 40px;
   min-width: 76px;
-  padding: 0 14px;
 }
 
 .managerButton {
-  background: #fff;
-  color: #64748b;
-}
-
-.managerButton:hover {
-  background: #f8fafc;
-  color: #334155;
+  composes: actionButton from './components/AnalysisBase.module.css';
 }
 
 .managerButtonPrimary {
-  background: #0f172a;
-  border-color: #0f172a;
-  color: #fff;
-}
-
-.managerButtonPrimary:hover {
-  background: #1e293b;
-}
-
-.managerButton:disabled,
-.managerButtonPrimary:disabled {
-  cursor: not-allowed;
-  opacity: 0.58;
+  composes: actionButton actionButtonPrimary from './components/AnalysisBase.module.css';
 }
 
 .managerMessage {
@@ -364,8 +317,8 @@
 
 .footerInner {
   margin: 0 auto;
-  max-width: 1040px;
-  padding: 16px;
+  max-width: var(--page-width);
+  padding: 16px var(--page-gutter);
   text-align: center;
 }
 
@@ -407,14 +360,8 @@
   .fundToolbar .managerTrigger {
     grid-column: 2;
     grid-row: 1;
-    height: 40px;
     min-width: 56px;
     padding: 0 12px;
-  }
-
-  .fundToolbar .sortButton {
-    line-height: 26px;
-    min-height: 34px;
   }
 
   .fundControls {
@@ -441,8 +388,6 @@
 
   .fundToolbar .sortDirectionButton {
     flex-basis: 36px;
-    height: 40px;
-    line-height: 38px;
     width: 36px;
   }
 

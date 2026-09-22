@@ -10,9 +10,7 @@
 .segmentButtonActive { composes: segmentButtonActive from './AnalysisBase.module.css'; }
 .groups { composes: segmented from './AnalysisBase.module.css'; }
 .assets { display: flex; flex-wrap: wrap; gap: 5px 8px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
-.assets button { min-height: 32px; border: 1px solid transparent; border-radius: 5px; background: transparent; padding: 4px 10px; font-size: var(--font-small); color: var(--ink-muted); cursor: pointer; }
-.assets button:hover { background: var(--surface); color: var(--ink); }
-.assets button[aria-pressed=true] { border-color: var(--line); background: var(--surface-sunken); color: var(--ink); font-weight: 700; }
+.assetChoice { composes: choiceButton from './AnalysisBase.module.css'; }
 .assetHeader { margin: 18px 0 12px; justify-content: space-between; }
 .assetHeader h3, .tableHeading h3 { font-size: 16px; margin: 0; line-height: 1.5; }
 .summary { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 18px; margin-bottom: 18px; color: var(--ink-muted); font-size: var(--font-small); font-variant-numeric: tabular-nums; }
@@ -70,13 +68,13 @@
 .more { display: flex; justify-content: center; padding: 14px 0 4px; }
 .more button, .message button { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink-muted); font-size: var(--font-small); padding: 7px 13px; cursor: pointer; min-height: 34px; }
 .message { min-height: 48px; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 13px; color: var(--ink-muted); }
-.page button:focus-visible, .rangeSelect:not([data-pointer-focus]):focus-visible, .chart:focus-visible, .tableScroll:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 2px; }
+.page button:focus-visible, .rangeSelect:not([data-pointer-focus]):focus-visible, .chart:focus-visible, .tableScroll:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
 @media (max-width: 720px) {
   .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; }
   .groups { grid-column: 1 / -1; width: 100%; flex-wrap: nowrap; }
-  .groups .segmentButton { flex: 1; min-width: 0; padding: 0 6px; line-height: 32px; }
+  .groups .segmentButton { flex: 1; min-width: 0; padding: 0 6px; }
   .modes { grid-column: 1; margin-left: 0; justify-self: start; }
-  .modes .segmentButton { min-width: 50px; line-height: 34px; }
+  .modes .segmentButton { min-width: 50px; }
   .rangeControl { grid-column: 2; justify-self: end; margin-left: 0; min-width: 0; }
   .rangeControl .ranges { display: none; }
   .mobileRange { display: block; }
@@ -84,7 +82,7 @@
   .summary { gap: 8px; }
   .summary dl { gap: 8px 14px; }
   .assets { gap: 4px; }
-  .assets button { padding: 4px 8px; }
+  .assets button { padding-inline: 8px; }
   .table { min-width: 680px; font-size: var(--font-small); }
   .comparisonTable { min-width: calc(682px + var(--comparison-values-width)); font-size: var(--font-small); }
   .comparisonTable th, .comparisonTable td { padding: 9px 6px; }

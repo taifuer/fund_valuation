@@ -1,7 +1,5 @@
 .page {
-  margin: 0 auto;
-  max-width: 1040px;
-  padding: 14px 16px 32px;
+  composes: page from './PageBase.module.css';
 }
 
 .headerRow {
@@ -12,29 +10,12 @@
   margin-bottom: 12px;
 }
 
-.headerRow h2 { color: #0f172a; font-size: 18px; }
-.headerRow p { color: #94a3b8; font-size: 12px; margin-top: 2px; }
+.title { composes: title from './PageBase.module.css'; }
+.headerRow p { color: var(--ink-muted); font-size: 13px; margin-top: 5px; }
 
 .authForm { display: flex; gap: 6px; }
-.authForm input {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  font: inherit;
-  font-size: 12px;
-  height: 32px;
-  padding: 0 9px;
-}
-.authForm button {
-  background: #0f172a;
-  border: 0;
-  border-radius: 6px;
-  color: #fff;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 0 12px;
-}
+.tokenInput { composes: input from './AnalysisBase.module.css'; }
+.queryButton { composes: actionButton actionButtonPrimary from './AnalysisBase.module.css'; }
 .authForm button:disabled { cursor: wait; opacity: 0.6; }
 
 .error { background: #fef2f2; border: 1px solid #fee2e2; border-radius: 6px; color: #b91c1c; font-size: 12px; padding: 10px; }

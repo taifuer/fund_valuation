@@ -1,8 +1,8 @@
 .page {
   margin: 0 auto;
-  max-width: 1040px;
+  max-width: var(--page-width);
   min-width: 0;
-  padding: 14px 16px 32px;
+  padding: 14px var(--page-gutter) 32px;
   width: 100%;
 }
 
@@ -24,10 +24,12 @@
   cursor: pointer;
   font-size: var(--font-small);
   font-weight: 600;
-  line-height: 26px;
-  min-width: 58px;
-  padding: 0 8px;
+  line-height: 20px;
+  min-height: var(--control-item-height);
+  min-width: var(--segment-min-width, 58px);
+  padding: var(--segment-padding, 0 8px);
   white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .segmentButtonActive {
@@ -41,9 +43,74 @@
 }
 
 .segmentButton:focus-visible {
-  outline: 2px solid var(--ink-muted);
+  outline: 2px solid var(--focus-color);
   outline-offset: 2px;
 }
+
+.choiceButton {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--ink-muted);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--font-small);
+  font-weight: 600;
+  justify-content: center;
+  line-height: 20px;
+  min-height: var(--control-height);
+  padding: 0 10px;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.choiceButton[aria-pressed=true] {
+  background: var(--surface-sunken);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.choiceButton:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
+}
+
+.actionButton {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink-muted);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: var(--action-font-size, var(--font-small));
+  font-weight: 600;
+  justify-content: center;
+  line-height: 20px;
+  min-height: var(--control-height);
+  padding: var(--action-padding, 0 10px);
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.actionButtonPrimary { background: #0f172a; border-color: #0f172a; color: var(--surface); }
+.actionButton:disabled { cursor: not-allowed; opacity: .58; }
+.actionButton:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+
+.input {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: var(--input-font-size, var(--font-small));
+  height: var(--control-height);
+  min-width: 0;
+  outline: none;
+  padding: 0 10px;
+}
+.input:focus { border-color: var(--focus-color); box-shadow: var(--focus-shadow); }
 
 .tableWrap {
   background: var(--surface);
@@ -55,23 +122,26 @@
 .viewNav { display: flex; flex-wrap: wrap; gap: 24px; }
 .viewNav button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--ink-muted); cursor: pointer; font-size: var(--font-body); font-weight: 700; line-height: 34px; padding: 0 2px; }
 .viewNav button[aria-current=page], .viewNav button[aria-pressed=true] { border-bottom-color: var(--chart-line); color: var(--ink); }
-.viewNav button:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 2px; }
+.viewNav button:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
 
 .selectWrap { position: relative; }
-.selectWrap::after { content: ''; position: absolute; right: 14px; top: 15px; width: 6px; height: 6px; border: solid var(--ink-muted); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); pointer-events: none; }
-.select { appearance: none; width: 124px; height: 40px; border: 1px solid var(--line); border-radius: 6px; padding: 0 32px 0 12px; background: var(--surface); color: var(--ink); font: inherit; font-size: var(--font-small); font-weight: 600; text-align: left; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
-.select:not([data-pointer-focus]):focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 2px; }
+.selectWrap::after { content: ''; position: absolute; right: 14px; top: 50%; margin-top: -5px; width: 6px; height: 6px; border: solid var(--ink-muted); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); pointer-events: none; }
+.select { appearance: none; display: block; width: 124px; height: var(--control-height); border: 1px solid var(--line); border-radius: 6px; padding: 0 32px 0 12px; background: var(--surface); color: var(--ink); font: inherit; font-size: var(--font-small); font-weight: 600; text-align: left; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
+.select:not([data-pointer-focus]):focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
 
 .sortButton { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: inherit; cursor: pointer; display: inline-flex; font: inherit; font-weight: 800; line-height: 20px; min-height: 24px; max-width: 100%; padding: 0 5px; white-space: nowrap; }
 .table th[aria-sort=ascending] .sortButton, .table th[aria-sort=descending] .sortButton { background: var(--surface-sunken); border-color: var(--line); color: var(--ink); }
-.sortButton:focus-visible { outline: 2px solid var(--ink-muted); outline-offset: 2px; }
+.sortButton:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
 .notes { color: var(--ink-muted); font-size: var(--font-small); line-height: 1.7; margin-top: 12px; }
 .notes p + p { margin-top: 4px; }
 
 @media (hover: hover) and (pointer: fine) {
   .segmentButton:hover:not(:disabled):not(.segmentButtonActive), .viewNav button:hover { color: var(--ink); }
+  .choiceButton:hover:not([aria-pressed=true]) { background: var(--surface); color: var(--ink); }
   .sortButton:hover { background: var(--surface-sunken); color: var(--ink); }
   .select:not([data-pointer-focus]):hover { border-color: var(--ink-muted); }
+  .actionButton:hover:not(:disabled):not(.actionButtonPrimary) { background: var(--surface-muted); color: var(--ink); }
+  .actionButtonPrimary:hover:not(:disabled) { background: var(--ink); }
 }
 
 .table {
@@ -108,6 +178,6 @@
 }
 
 @media (max-width: 720px) {
-  .page { padding: 8px 12px 28px; }
+  .page { padding: 8px var(--page-gutter) 28px; }
   .table th, .table td { padding: 9px 8px; }
 }

@@ -94,6 +94,7 @@ export default function FundNavTable({ fundCode }: Props) {
           <div className={styles.pagination}>
             <button
               type="button"
+              className={styles.pageButton}
               disabled={currentPage === 0}
               onClick={() => setPage((value) => Math.max(0, value - 1))}
             >
@@ -102,6 +103,7 @@ export default function FundNavTable({ fundCode }: Props) {
             <span>{currentPage + 1} / {totalPages}</span>
             <button
               type="button"
+              className={styles.pageButton}
               disabled={currentPage >= totalPages - 1}
               onClick={() => setPage((value) => Math.min(totalPages - 1, value + 1))}
             >

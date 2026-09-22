@@ -195,7 +195,7 @@ export default function LongHistoryPage() {
       </div>
       <div id="history-panel" role="tabpanel" aria-labelledby={`history-view-${choices.view}`}>
       {choices.view === 'price' && <div className={styles.assets} role="group" aria-label="历史标的">
-        {filtered.map(item => <button type="button" key={item.id} aria-pressed={selected?.id === item.id}
+        {filtered.map(item => <button type="button" className={styles.assetChoice} key={item.id} aria-pressed={selected?.id === item.id}
           onClick={() => choose({ asset: item.id })}>{item.name}</button>)}
       </div>}
       {error && <div role="status" className={styles.message}>{error}<button type="button" onClick={() => setAttempt(value => value + 1)}>重试</button></div>}

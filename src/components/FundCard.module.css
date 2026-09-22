@@ -18,7 +18,7 @@
 }
 
 .cardToggle:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--focus-color);
   outline-offset: -2px;
 }
 
@@ -122,8 +122,8 @@
 }
 
 .removeButton:focus-visible {
-  border-color: #94a3b8;
-  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.2);
+  border-color: var(--focus-color);
+  box-shadow: var(--focus-shadow);
   opacity: 1;
   outline: none;
 }
@@ -316,30 +316,19 @@
 }
 
 .tabs {
-  display: flex;
-  gap: 4px;
   border-top: 1px solid #f1f5f9;
   background: #fff;
   padding: 8px 14px;
 }
 
+.tabGroup { composes: segmented from './AnalysisBase.module.css'; }
+
 .tabButton {
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #fff;
-  color: #64748b;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 24px;
-  min-width: 56px;
-  padding: 0 10px;
+  composes: segmentButton from './AnalysisBase.module.css';
 }
 
 .tabButtonActive {
-  background: #0f172a;
-  border-color: #0f172a;
-  color: #fff;
+  composes: segmentButtonActive from './AnalysisBase.module.css';
 }
 
 .tabLoading {

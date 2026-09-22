@@ -77,27 +77,33 @@ export default function CompanyReportCalendar() {
           <span>{monthEvents.length} 项官方披露或确认日程</span>
         </div>
         <div className={styles.calendarActions}>
-          <select
-            className={styles.monthSelect}
-            aria-label="选择财报月份"
-            value={selectedMonth}
-            onChange={(event) => setSelectedMonth(event.target.value)}
-          >
-            {selectableMonths.map((value) => {
-              const [optionYear, optionMonth] = value.split('-').map(Number);
-              const count = companyReportEvents.filter(
-                (event) => event.publishedAt.startsWith(value),
-              ).length;
-              return (
-                <option key={value} value={value}>
-                  {optionYear} 年 {optionMonth} 月{count > 0 ? ` · ${count}` : ''}
-                </option>
-              );
-            })}
-          </select>
-          <div className={styles.monthControls}>
+          <div className={styles.monthSelectWrap}>
+            <select
+              className={styles.monthSelect}
+              aria-label="选择财报月份"
+              value={selectedMonth}
+              onPointerDown={event => { event.currentTarget.dataset.pointerFocus = 'true'; }}
+              onKeyDown={event => { if (event.key !== 'Escape') delete event.currentTarget.dataset.pointerFocus; }}
+              onBlur={event => { delete event.currentTarget.dataset.pointerFocus; }}
+              onChange={(event) => setSelectedMonth(event.target.value)}
+            >
+              {selectableMonths.map((value) => {
+                const [optionYear, optionMonth] = value.split('-').map(Number);
+                const count = companyReportEvents.filter(
+                  (event) => event.publishedAt.startsWith(value),
+                ).length;
+                return (
+                  <option key={value} value={value}>
+                    {optionYear} 年 {optionMonth} 月{count > 0 ? ` · ${count}` : ''}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+          <div className={styles.monthControls} role="group" aria-label="月份切换">
             <button
               type="button"
+              className={styles.monthButton}
               aria-label="上个月"
               title="上个月"
               onClick={() => setSelectedMonth((current) => moveMonth(current, -1))}
@@ -106,7 +112,8 @@ export default function CompanyReportCalendar() {
             </button>
             <button
               type="button"
-              className={selectedMonth === initialMonth ? styles.currentMonthActive : ''}
+              className={`${styles.monthButton} ${selectedMonth === initialMonth ? styles.currentMonthActive : ''}`}
+              aria-pressed={selectedMonth === initialMonth}
               onClick={() => setSelectedMonth(initialMonth)}
             >
               本月
@@ -114,6 +121,7 @@ export default function CompanyReportCalendar() {
             <button
               type="button"
               aria-label="下个月"
+              className={styles.monthButton}
               title="下个月"
               onClick={() => setSelectedMonth((current) => moveMonth(current, 1))}
             >

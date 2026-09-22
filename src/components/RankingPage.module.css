@@ -58,7 +58,7 @@
 }
 
 .tableWrap:focus-visible {
-  outline: 2px solid var(--ink-muted);
+  outline: 2px solid var(--focus-color);
   outline-offset: 2px;
 }
 
@@ -173,7 +173,7 @@
 }
 
 .freshnessMark:focus-visible {
-  outline: 2px solid var(--ink-muted);
+  outline: 2px solid var(--focus-color);
   outline-offset: 1px;
 }
 
@@ -208,7 +208,7 @@
 }
 
 .nameButton:focus-visible {
-  outline: 2px solid var(--ink-muted);
+  outline: 2px solid var(--focus-color);
   outline-offset: 3px;
   border-radius: 2px;
 }
@@ -333,7 +333,6 @@
 
   .subControl .segmentButton {
     flex: 0 0 auto;
-    min-height: 34px;
   }
 
   .rangeControl .rangeSelect {

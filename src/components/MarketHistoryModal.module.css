@@ -48,23 +48,13 @@
 }
 
 .closeButton {
-  align-items: center;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  color: #475569;
-  cursor: pointer;
-  display: inline-flex;
+  composes: actionButton from './AnalysisBase.module.css';
+  --action-font-size: 22px;
+  --action-padding: 0;
   flex: 0 0 auto;
-  font-size: 22px;
-  height: 32px;
-  justify-content: center;
+  height: var(--control-height);
   line-height: 1;
-  width: 32px;
-}
-
-.closeButton:hover {
-  background: #f1f5f9;
+  width: var(--control-height);
 }
 
 .rangeGroup {
@@ -74,8 +64,8 @@
 
 .rangeButton {
   composes: segmentButton from './AnalysisBase.module.css';
-  min-width: 38px;
-  padding: 0 7px;
+  --segment-min-width: 38px;
+  --segment-padding: 0 7px;
 }
 
 .rangeButtonActive {
@@ -120,11 +110,6 @@
 .chart {
   composes: chart from './ChartBase.module.css';
   height: 218px;
-}
-
-.chart:focus-visible {
-  outline: 2px solid #64748b;
-  outline-offset: 2px;
 }
 
 .gridLine {

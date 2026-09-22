@@ -47,7 +47,7 @@
 }
 
 .section > p a:focus-visible {
-  outline: 2px solid var(--ink-muted);
+  outline: 2px solid var(--focus-color);
   outline-offset: 3px;
 }
 

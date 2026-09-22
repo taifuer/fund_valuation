@@ -85,47 +85,29 @@
   flex: 0 0 auto;
 }
 
-.regionSwitcher button {
+.regionButton {
+  composes: segmentButton from './AnalysisBase.module.css';
+  --segment-min-width: 57px;
+  --segment-padding: 0 9px;
   align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: 5px;
-  color: #6f7a89;
-  cursor: pointer;
   display: inline-flex;
-  font-size: var(--font-small);
-  font-weight: 700;
   gap: 5px;
-  height: 29px;
   justify-content: center;
-  min-width: 57px;
-  padding: 0 9px;
-  transition: background-color 120ms ease, box-shadow 120ms ease, color 120ms ease;
 }
 
 .regionSwitcher button small {
-  color: #a0a8b3;
+  color: var(--ink-faint);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
 }
 
-.regionSwitcher button:hover {
-  color: #263246;
-}
-
-.regionSwitcher .regionButtonActive {
-  background: #0f172a;
-  color: var(--surface);
+.regionButtonActive {
+  composes: segmentButtonActive from './AnalysisBase.module.css';
 }
 
 .regionSwitcher .regionButtonActive small {
   color: var(--line);
-}
-
-.regionSwitcher button:focus-visible {
-  box-shadow: inset 0 0 0 2px rgba(22, 125, 141, 0.5);
-  outline: none;
 }
 
 .companySearch {
@@ -143,29 +125,13 @@
   width: 1px;
 }
 
-.companySearch input {
-  appearance: none;
-  background: #fff;
-  border: 1px solid #dfe5ec;
-  border-radius: 6px;
-  box-sizing: border-box;
-  color: #263246;
-  font: inherit;
-  font-size: 11px;
-  height: 34px;
-  outline: none;
-  padding: 0 10px;
-  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+.searchInput {
+  composes: input from './AnalysisBase.module.css';
   width: 100%;
 }
 
 .companySearch input::placeholder {
   color: #9aa3af;
-}
-
-.companySearch input:focus {
-  border-color: #6aa6ad;
-  box-shadow: 0 0 0 2px rgba(22, 125, 141, 0.12);
 }
 
 .companyOptions {
@@ -177,41 +143,14 @@
   padding: 9px 2px 10px;
 }
 
-.companyOptions button {
-  align-items: center;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  color: #667284;
-  cursor: pointer;
-  display: inline-flex;
+.companyOption {
+  composes: choiceButton from './AnalysisBase.module.css';
   flex: 0 0 auto;
-  height: 29px;
-  outline: none;
-  padding: 0 10px;
-  transition: background-color 100ms ease, border-color 100ms ease, color 100ms ease, box-shadow 100ms ease;
-  white-space: nowrap;
-}
-
-.companyOptions button:hover {
-  background: #f6f9fa;
-  color: #172033;
 }
 
 .companyOptions button strong {
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.companyOptions .companyOptionActive {
-  background: #f3f5f7;
-  border-color: #d9dfe6;
-  color: #263246;
-}
-
-.companyOptions button:focus-visible {
-  background: #f5fafb;
-  box-shadow: inset 0 0 0 2px rgba(22, 125, 141, 0.5);
+  font-size: inherit;
+  font-weight: inherit;
 }
 
 .pickerEmpty {
@@ -397,8 +336,8 @@
   padding: 0 1px;
 }
 
-.metricButton:hover {
-  color: #263246;
+@media (hover: hover) and (pointer: fine) {
+  .metricButton:hover:not(:disabled) { color: var(--ink); }
 }
 
 .metricButton:disabled {
@@ -546,7 +485,8 @@
 }
 
 .detailTableHeading:focus-visible {
-  box-shadow: inset 0 0 0 2px rgba(22, 125, 141, 0.45);
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
 }
 
 .detailTableTitle {
@@ -663,8 +603,8 @@
 }
 
 .detailTableToggle:focus-visible {
-  box-shadow: inset 0 0 0 2px rgba(22, 125, 141, 0.45);
-  outline: none;
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
 }
 
 .detailMetric {
@@ -767,7 +707,6 @@
   }
 
   .regionSwitcher button {
-    font-size: 10px;
     gap: 3px;
   }
 
@@ -785,7 +724,6 @@
   }
 
   .companyOptions button {
-    height: 28px;
     padding-inline: 8px;
   }
 
