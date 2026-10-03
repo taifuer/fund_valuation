@@ -215,8 +215,20 @@ describe('dashboard API contract', () => {
     expect(parsed?.data).toMatchObject({
       price: 64140.9,
       time: '2026-07-17 14:30:01',
-      dateReliable: false,
+      dateReliable: true,
     });
+  });
+
+  it('keeps the September close date during Golden Week for indices, ETFs and futures', () => {
+    const now = new Date('2026-10-03T12:00:00+08:00').getTime();
+    for (const symbol of ['sh000001', 'sz159326']) {
+      const fields = ['name', '10', '10', '10.2', ...Array(26).fill('0'), '2026-09-30', '15:00:00', '00'];
+      expect(parseSinaVar(`var hq_str_${symbol}="${fields.join(',')}";`, now)?.data)
+        .toMatchObject({ time: '2026-09-30 15:00:00', dateReliable: true, fetchedAt: now });
+    }
+    const future = ['110', '0', '0', '0', '0', '0', '05:00:00', '100', '100', '0', '0', '0', '2026-09-30'];
+    expect(parseSinaVar(`var hq_str_hf_NQ="${future.join(',')}";`, now)?.data)
+      .toMatchObject({ time: '2026-09-30 05:00:00', dateReliable: true });
   });
 
   it('parses the direct Hang Seng TECH spot quote', () => {

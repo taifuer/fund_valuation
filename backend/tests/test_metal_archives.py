@@ -8,7 +8,7 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from backend import storage
-from backend.long_history import assets, read_points, refresh, save_points, stored_daily_points
+from backend.long_history import assets, read_points, refresh, refresh_monthly_archives, save_points, stored_daily_points
 from backend.long_history_sources import parse_yahoo
 from backend.metal_archives import store_metal_archive, sync_metals, validate_metals
 
@@ -150,3 +150,19 @@ class MetalArchiveTests(unittest.TestCase):
         fetch.assert_not_called()
         self.assertEqual(result['checked'], 0)
         self.assertEqual({row['source'] for row in read_points('GC')}, {'yahoo'})
+
+    def test_monthly_job_skips_complete_archive_and_limits_failed_retries_across_restarts(self):
+        store_metal_archive('GC', self.rows, NOW)
+        with patch('backend.long_history.assets', return_value=[GOLD]), \
+                patch('backend.metal_archives.sync_metals', return_value={'metals': [{'asset': 'GC', 'error': 'HTTP 429'}]}) as sync:
+            self.assertEqual(refresh_monthly_archives(NOW)['checked'], 0)
+            sync.assert_not_called()
+            october = datetime.fromisoformat('2026-10-03T12:00:00+08:00')
+            self.assertEqual(refresh_monthly_archives(october)['checked'], 1)
+            self.assertEqual(refresh_monthly_archives(october)['checked'], 0)
+            sync.assert_called_once_with(october, asset_ids=['GC'], force_refresh=True)
+            self.assertEqual(refresh_monthly_archives(october + timedelta(days=1))['checked'], 1)
+            self.assertEqual(read_points('GC')[-1]['period'], '2026-08')
+            with storage.get_conn() as conn:
+                payload = json.loads(conn.execute("SELECT payload FROM dashboard_snapshots WHERE name='long-history:GC'").fetchone()[0])
+            self.assertTrue(payload['asset']['refreshFailed'])

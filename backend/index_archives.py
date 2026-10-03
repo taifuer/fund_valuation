@@ -126,19 +126,21 @@ def parse_index_history(text: str, symbol: str, cutoff: str) -> list[dict]:
     return sorted(rows, key=lambda row: row['date'])
 
 
-def sync_indices() -> dict:
+def sync_indices(*, now: datetime | None = None, symbols: list[str] | None = None, force_refresh: bool = False) -> dict:
     from . import server
     from .long_history import assets, completed_cutoff, daily_month_ends, missing_months, publish, save_points, valid_point
-    now = datetime.now(ZoneInfo('Asia/Shanghai'))
+    now = now or datetime.now(ZoneInfo('Asia/Shanghai'))
     universe = {asset['id']: asset for asset in assets()}
     results = []
     for symbol in INDEX_SYMBOLS:
+        if symbols is not None and symbol not in symbols:
+            continue
         try:
             url = index_history_url(symbol, now=now)
             status, _, body = server.fetch_upstream(
                 url, referer='https://finance.yahoo.com/', content_type='application/json',
                 cache_key=f'longhistory-indices:{symbol}:{now:%Y-%m}', kind='longhistory',
-                ttl_seconds=30 * 24 * 3600, use_requests=True,
+                ttl_seconds=30 * 24 * 3600, use_requests=True, force_refresh=force_refresh,
             )
             if status >= 400:
                 raise ValueError(f'Index archive HTTP {status}')

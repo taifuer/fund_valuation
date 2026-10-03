@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .long_history import refresh as refresh_long_history
+from .long_history import refresh as refresh_long_history, refresh_monthly_archives
 from .daily_archive import refresh as refresh_daily_archive
 
 import argparse
@@ -8,12 +8,13 @@ import math
 import os
 import signal
 import socket
+import sqlite3
 import threading
 import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Callable, TypeVar
 from zoneinfo import ZoneInfo
 
 from .db_admin import ensure_recent_backup, optimize_database, positive_int_env
@@ -35,6 +36,7 @@ from .server import (
     prewarm_purchase_status_cache,
     prewarm_response_cache,
     publish_dashboard_snapshot,
+    publish_public_status_snapshot,
     prune_in_memory_caches,
     quote_group_refresh_interval,
     quote_symbol_groups,
@@ -50,6 +52,30 @@ from .server import (
     store_dashboard_snapshot,
     release_background_job,
 )
+
+T = TypeVar('T')
+
+
+def coordinate_worker(action: Callable[[], T], stop_event: threading.Event | None = None) -> T | None:
+    """A contended lease/heartbeat must not terminate the refresh process."""
+    for attempt in range(3):
+        try:
+            return action()
+        except sqlite3.OperationalError as exc:
+            code = getattr(exc, 'sqlite_errorcode', 0) & 0xff
+            if code not in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED) and str(exc) not in (
+                'database is locked', 'database table is locked',
+            ):
+                raise
+            if attempt == 2:
+                print(f'Worker coordination deferred after SQLite contention: {exc}', flush=True)
+                return None
+            delay = 0.1 * (2 ** attempt)
+            if stop_event is not None:
+                if stop_event.wait(delay):
+                    return None
+            else:
+                time.sleep(delay)
 
 
 def latest_fund_history_refresh_delay(now: datetime | None = None) -> int:
@@ -134,12 +160,14 @@ def main() -> None:
         "fund_purchase": 0.0,
         "market_history": 0.0,
         "long_history": 0.0,
+        "monthly_archives": 0.0,
         "daily_archive": 0.0,
         "fx_history": 0.0,
         "valuation_history": 0.0,
         "backup": 0.0,
         "cleanup": 0.0,
         "valuation_quality": 0.0,
+        "public_status": 0.0,
     }
 
     def refresh_quotes(symbols: list[str], currencies: list[str]) -> None:
@@ -199,6 +227,13 @@ def main() -> None:
                     tasks.append(f"daily-archive:{result['inserted']}")
                 except Exception as exc:
                     errors.append(f"daily-archive: {exc}")
+            if 'monthly_archives' in flags:
+                try:
+                    result = run_task('monthly_archives', refresh_monthly_archives)
+                    tasks.append(f"monthly-archives:{result['checked']}")
+                    errors.extend(result['errors'])
+                except Exception as exc:
+                    errors.append(f'monthly-archives: {exc}')
             if "fx_history" in flags:
                 try:
                     rows = run_task("fx_history", refresh_configured_fx_history)
@@ -254,7 +289,7 @@ def main() -> None:
                         backup_dir=Path(configured_backup_dir) if configured_backup_dir else None,
                         interval_hours=int(os.environ.get("FUND_VALUATION_BACKUP_INTERVAL_HOURS", "24")),
                         retention_days=int(os.environ.get("FUND_VALUATION_BACKUP_RETENTION_DAYS", "7")),
-                        max_files=positive_int_env("FUND_VALUATION_BACKUP_MAX_FILES", 2),
+                        max_files=positive_int_env("FUND_VALUATION_BACKUP_MAX_FILES", 1),
                     )
                     if backup:
                         tasks.append("backup")
@@ -287,7 +322,7 @@ def main() -> None:
                 updates.update({"lastErrorAt": now_ms(), "lastError": "; ".join(errors[:5])[:480]})
             else:
                 updates.update({"lastSuccessAt": now_ms(), "lastError": ""})
-            mark_background_refresh(owner, **updates)
+            coordinate_worker(lambda: mark_background_refresh(owner, **updates), stop_event)
         elapsed = time.monotonic() - started
         if tasks:
             print(f"Maintenance tasks {','.join(tasks)} completed in {elapsed:.1f}s", flush=True)
@@ -300,7 +335,7 @@ def main() -> None:
         try:
             while not stop_event.is_set():
                 started = time.monotonic()
-                acquired = claim_background_job(owner, lease_seconds=180)
+                acquired = coordinate_worker(lambda: claim_background_job(owner, lease_seconds=180), stop_event)
                 tasks: list[str] = []
                 errors: list[str] = []
                 current = time.monotonic()
@@ -338,6 +373,13 @@ def main() -> None:
                         tasks.append(f"fund-estimates:{estimate_result['funds']}")
                     except Exception as exc:
                         errors.append(f"fund-estimates: {exc}")
+                if acquired and current >= due['public_status']:
+                    try:
+                        run_task('public_status', publish_public_status_snapshot)
+                        tasks.append('public-status')
+                    except Exception as exc:
+                        errors.append(f'public-status: {exc}')
+                    due['public_status'] = current + 5 * 60
                 maintenance_flags: set[str] = set()
                 if acquired:
                     maintenance_intervals = {
@@ -349,6 +391,7 @@ def main() -> None:
                         "market_history": max(maintenance_interval, 30 * 60),
                         "daily_archive": 30 * 60,
                         "long_history": 30 * 60,
+                        "monthly_archives": 24 * 60 * 60,
                         "fx_history": 24 * 60 * 60,
                         "valuation_history": 24 * 60 * 60,
                         "backup": 60 * 60,
@@ -373,7 +416,7 @@ def main() -> None:
                         updates.update({"lastErrorAt": now_ms(), "lastError": "; ".join(errors[:5])[:480]})
                     else:
                         updates.update({"lastSuccessAt": now_ms(), "lastError": ""})
-                    mark_background_refresh(owner, **updates)
+                    coordinate_worker(lambda: mark_background_refresh(owner, **updates), stop_event)
                     print(f"Worker tasks {','.join(tasks)} completed in {elapsed:.1f}s", flush=True)
                     if errors:
                         print(f"Worker errors: {'; '.join(errors[:5])}", flush=True)
@@ -388,7 +431,7 @@ def main() -> None:
             print("Refresh worker stopped", flush=True)
         finally:
             maintenance_queue.join()
-            release_background_job(owner)
+            coordinate_worker(lambda: release_background_job(owner))
 
 
 if __name__ == "__main__":

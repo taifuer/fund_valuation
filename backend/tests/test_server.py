@@ -2162,7 +2162,9 @@ class ServerDataRefreshTests(unittest.TestCase):
             patch.object(server, 'background_refresh_state_snapshot', return_value={'lastSuccessAt': now - 60_000}),
             patch.object(server, 'fetch_upstream', side_effect=AssertionError('Status must not fetch upstream')),
         ):
-            response = server.app.test_client().get('/api/status')
+            server.publish_public_status_snapshot()
+            with patch.object(server, 'quote_snapshot_health', side_effect=AssertionError('No full scan on page reads')):
+                response = server.app.test_client().get('/api/status')
         payload = response.get_json()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload['status'], 'ok')
@@ -2171,6 +2173,27 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(payload['holdingQuoteIssueCount'], 2)
         self.assertNotIn('issues', payload)
         self.assertEqual(quote_state['status'], 'degraded')
+
+    def test_public_status_missing_or_expired_snapshot_never_scans_and_never_reports_green(self):
+        now = 5_000_000
+        with patch.object(server, 'now_ms', return_value=now), \
+                patch.object(server, 'quote_snapshot_health', side_effect=AssertionError('No scan')), \
+                patch.object(server, 'background_refresh_state_snapshot', return_value={'lastSuccessAt': now}):
+            self.assertIn('status-stale', server.read_public_status_payload()['reasons'])
+            with patch.object(server, 'now_ms', return_value=now - 21 * 60_000):
+                server.store_dashboard_snapshot({'quoteIssueCount': 0, 'quoteTotal': 10, 'marketQuoteTotal': 5,
+                    'marketQuoteIssueCount': 0, 'holdingQuoteTotal': 5, 'holdingQuoteIssueCount': 0}, 'public-status')
+            payload = server.read_public_status_payload()
+            self.assertEqual(payload['status'], 'degraded')
+            self.assertEqual(payload['reasons'], ['status-stale'])
+
+    def test_public_status_rechecks_heartbeat_even_with_fresh_quote_snapshot(self):
+        with patch.object(server, 'now_ms', return_value=5_000_000), \
+                patch.object(server, 'background_refresh_state_snapshot', return_value={'lastSuccessAt': 1}), \
+                patch.object(server, 'quote_snapshot_health', side_effect=AssertionError('No scan')):
+            server.store_dashboard_snapshot({'quoteIssueCount': 0, 'quoteTotal': 10, 'marketQuoteTotal': 5,
+                'marketQuoteIssueCount': 0, 'holdingQuoteTotal': 5, 'holdingQuoteIssueCount': 0}, 'public-status')
+            self.assertEqual(server.read_public_status_payload()['reasons'], ['worker-stale'])
 
     def test_public_status_alerts_on_core_failures_worker_staleness_and_broad_holding_outages(self) -> None:
         now = 2_000_000

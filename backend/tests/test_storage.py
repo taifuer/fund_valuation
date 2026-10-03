@@ -7,6 +7,7 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from unittest.mock import patch
 
 from backend.db_admin import (
     backup_database,
@@ -27,6 +28,27 @@ from backend.storage import (
 
 
 class StorageMigrationTests(unittest.TestCase):
+    def test_schema_seventeen_repairs_legacy_version_collision_without_losing_history(self):
+        with tempfile.TemporaryDirectory(prefix='fund-schema-test-') as directory:
+            path = Path(directory) / 'legacy.db'
+            self.assertTrue(path.is_relative_to(Path(tempfile.gettempdir())))
+            with sqlite3.connect(path) as conn:
+                conn.executescript("""
+                    CREATE TABLE fund_nav_history(code TEXT,date TEXT,nav REAL,change_percent REAL NOT NULL,fetched_at INTEGER,PRIMARY KEY(code,date));
+                    INSERT INTO fund_nav_history VALUES('A','2026-09-28',1,0,1),('A','2026-09-29',1.1,0,2),('A','2026-09-30',1.1,0,3);
+                    CREATE TABLE company_fundamentals(payload TEXT);
+                    INSERT INTO company_fundamentals VALUES('legacy data');
+                    PRAGMA user_version=16;
+                """)
+            migrate_database(path)
+            migrate_database(path)
+            with sqlite3.connect(path) as conn:
+                self.assertEqual(conn.execute('SELECT nav,change_percent FROM fund_nav_history ORDER BY date').fetchall(),
+                                 [(1, 0), (1.1, None), (1.1, 0)])
+                self.assertEqual(conn.execute('SELECT payload FROM company_fundamentals').fetchone()[0], 'legacy data')
+                for table in ('fund_nav_details', 'market_adjustment_factors', 'fund_disclosure_metadata'):
+                    self.assertEqual(conn.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0], 0)
+
     def test_schema_sixteen_preserves_history_and_adds_sync_and_provenance(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'sync-migration.db'
@@ -427,6 +449,28 @@ class StorageMigrationTests(unittest.TestCase):
             self.assertGreater(result["compressedResponseCacheBytesSaved"], 0)
             self.assertEqual(result["deduplicatedQuoteSnapshotRows"], 1)
             self.assertEqual(result["deduplicatedQuoteSnapshotBytes"], len(quote_line))
+
+    def test_compression_does_not_hold_a_write_lock_or_overwrite_a_concurrent_refresh(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / 'maintenance.db'
+            self.assertTrue(database.is_relative_to(Path(tempfile.gettempdir())))
+            migrate_database(database)
+            now = datetime(2026, 10, 3, tzinfo=ZoneInfo('Asia/Shanghai'))
+            body = b'old' * 10000
+            with sqlite3.connect(database) as conn:
+                conn.execute('INSERT INTO response_cache VALUES (?,?,?,?,?,?)',
+                             ('key', 'url', 200, 'text/plain', body, int(now.timestamp() * 1000)))
+
+            def compress(value):
+                with sqlite3.connect(database, timeout=0.05) as other:
+                    other.execute("UPDATE response_cache SET body=? WHERE cache_key='key'", (b'refreshed',))
+                return encode_cache_body(value)
+
+            with patch('backend.db_admin.encode_cache_body', side_effect=compress):
+                result = optimize_database(database, raw_dir=Path(directory) / 'raw', now=now)
+            with sqlite3.connect(database) as conn:
+                self.assertEqual(conn.execute('SELECT body FROM response_cache').fetchone()[0], b'refreshed')
+            self.assertEqual(result['compressedResponseCacheRows'], 0)
 
     def test_raw_response_pruning_preserves_recent_and_unknown_directories(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

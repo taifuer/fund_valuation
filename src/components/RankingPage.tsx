@@ -113,7 +113,7 @@ function marketReturnKey(item: IndexConfig) {
 }
 
 function shouldUseLatestCloseReturn(item: IndexConfig, quote: QuoteData | undefined, state: MarketStateData['state']) {
-  if (!quote) return true;
+  if (!quote || quote.dateReliable === false) return true;
   if (!item.sinaSymbol.startsWith('gb_')) return false;
   if (state === 'live') return false;
   return Math.abs(quote.changePercent) < 0.005;
@@ -142,7 +142,8 @@ function makeMarketItems(
     const useLatestCloseReturn = range === 'today'
       && latestReturn != null
       && shouldUseLatestCloseReturn(item, quote, state);
-    const quoteDate = quote ? marketLocalDate(item.sinaSymbol, quote.regularTime ?? quote.time) ?? quote.time?.slice(0, 10) : undefined;
+    const quoteDate = quote && quote.dateReliable !== false
+      ? marketLocalDate(item.sinaSymbol, quote.regularTime ?? quote.time) ?? quote.time?.slice(0, 10) : undefined;
     // A live quote can still rank even if its separate daily-history feed is behind.
     const usesHistory = range !== 'today' || useLatestCloseReturn || !quote;
     const freshness = usesHistory ? summary?.freshness : quoteDate && summary?.freshness ? {

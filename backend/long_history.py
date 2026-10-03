@@ -109,8 +109,9 @@ def completed_months(rows: list[dict[str, Any]], asset: dict[str, Any], now: dat
     for point in month_end_rows(rows):
         if point['period'] > cutoff[:7]:
             continue
-        # Tencent's pre-1993 SSE series disagrees with SSE's published yearbooks.
-        if asset['id'] == 'SH000001' and point['source'] == 'tencent' and point['period'] < '1993-01':
+        # Legacy daily imports lack provenance and can reintroduce the same bad
+        # early SSE archive under the generic Sina label. Keep reviewed sources.
+        if asset['id'] == 'SH000001' and point['source'] in {'tencent', 'sina'} and point['period'] < '1993-01':
             continue
         year, month = map(int, point['period'].split('-'))
         expected = date(year, month, calendar.monthrange(year, month)[1])
@@ -381,7 +382,8 @@ def publish(now: datetime | None = None) -> dict[str, Any]:
         points = completed_months(read_points(asset["id"]), asset, now)
         series[asset['id']] = points
         with get_conn() as conn:
-            state = conn.execute("SELECT success_at,error FROM long_history_sync WHERE asset_id=?", (asset["id"],)).fetchone()
+            failed = conn.execute("SELECT 1 FROM long_history_sync WHERE asset_id IN (?,?,?) AND error<>'' LIMIT 1",
+                                  (asset['id'], f"daily:{asset['id']}", f"monthly:{asset['id']}")).fetchone()
         note = "连续期货价格，包含换月影响，不等于持有收益。" if asset["basis"] == "futures" else "价格涨跌，不含股息再投资。"
         if asset["id"] == "INX" and points and points[0]["period"] < "1957-03":
             note += "1957 年正式发布前为回溯历史口径。"
@@ -398,7 +400,7 @@ def publish(now: datetime | None = None) -> dict[str, Any]:
                             "completedThrough": completed_cutoff(asset, now)[:7],
                             "missingMonths": missing_months(points, completed_cutoff(asset, now)),
                             "sources": [SOURCE_NAMES.get(key, key) for key in dict.fromkeys(p["source"] for p in points)],
-                            "refreshFailed": bool(state and state[1]),
+                            "refreshFailed": bool(failed),
                             "performance": range_performances(points),
                             "annual": annual_returns(points, now.year, asset_id=asset['id'],
                                 unfinished_year=local_year if local_year < now.year else None)})
@@ -492,15 +494,19 @@ def refresh(*, limit: int = 2, twse_months: int = 2, now: datetime | None = None
     timestamp = int(now.timestamp() * 1000)
     all_assets = assets()
     errors = []
+    with get_conn() as conn:
+        checked = {row[0]: int(row[1]) for row in conn.execute("SELECT asset_id,checked_at FROM long_history_sync")}
     for asset in all_assets:
+        key = f"daily:{asset['id']}"
+        if not force and timestamp - checked.get(key, 0) < 24 * 3600 * 1000:
+            continue
+        error = ''
         try:
             save_points(asset["id"], stored_daily_points(asset, now), timestamp)
         except Exception as exc:
-            errors.append(f"{asset['id']}: {exc}")
-    # Publish existing histories first, even while longer backfills remain in progress.
-    publish(now)
-    with get_conn() as conn:
-        checked = {row[0]: int(row[1]) for row in conn.execute("SELECT asset_id,checked_at FROM long_history_sync")}
+            error = str(exc)[:240]
+            errors.append(f"{asset['id']}: {error}")
+        record_sync(key, timestamp, error)
     pending = sorted((asset for asset in all_assets if asset['id'] not in OFFLINE_METALS),
                      key=lambda asset: checked.get(asset["id"], 0))
     pending = [asset for asset in pending if force or timestamp - checked.get(asset["id"], 0) >= 24 * 3600 * 1000][:limit]
@@ -514,14 +520,53 @@ def refresh(*, limit: int = 2, twse_months: int = 2, now: datetime | None = None
         except Exception as exc:
             error = str(exc)[:240]
             errors.append(f"{asset['id']}: {error}")
-        with get_conn() as conn:
-            conn.execute("""INSERT INTO long_history_sync VALUES (?,?,?,?) ON CONFLICT(asset_id) DO UPDATE SET
-                checked_at=excluded.checked_at,success_at=CASE WHEN excluded.error='' THEN excluded.success_at
-                ELSE long_history_sync.success_at END,error=excluded.error""", (asset["id"], timestamp, 0 if error else timestamp, error))
-        publish(now)
+        record_sync(asset['id'], timestamp, error)
         time.sleep(0.25)
     publish(now)
     return {"checked": len(pending), "errors": errors}
+
+
+def record_sync(key: str, timestamp: int, error: str = '') -> None:
+    with get_conn() as conn:
+        conn.execute("""INSERT INTO long_history_sync VALUES (?,?,?,?) ON CONFLICT(asset_id) DO UPDATE SET
+            checked_at=excluded.checked_at,success_at=CASE WHEN excluded.error='' THEN excluded.success_at
+            ELSE long_history_sync.success_at END,error=excluded.error""", (key, timestamp, 0 if error else timestamp, error))
+
+
+def refresh_monthly_archives(now: datetime | None = None) -> dict[str, Any]:
+    """Fill missing completed months serially; retry provider failures once daily."""
+    from .metal_archives import sync_metals
+    from .index_archives import sync_indices
+    now = now or datetime.now(ZoneInfo('Asia/Shanghai'))
+    timestamp = int(now.timestamp() * 1000)
+    checked = 0
+    errors = []
+    for asset in assets():
+        key = asset['id']
+        if key not in {*OFFLINE_METALS, 'RUT', 'OEX'}:
+            continue
+        points = read_points(key)
+        cutoff = completed_cutoff(asset, now)
+        if points and points[-1]['period'] == cutoff[:7] and not missing_months(points, cutoff):
+            continue
+        with get_conn() as conn:
+            state = conn.execute('SELECT checked_at FROM long_history_sync WHERE asset_id=?', (f'monthly:{key}',)).fetchone()
+        if state and timestamp - state[0] < 24 * 3600 * 1000:
+            continue
+        checked += 1
+        error = ''
+        try:
+            result = (sync_metals(now, asset_ids=[key], force_refresh=True)['metals'] if key in OFFLINE_METALS
+                      else sync_indices(now=now, symbols=[key], force_refresh=True)['indices'])[0]
+            error = result.get('error', '')
+        except Exception as exc:
+            error = str(exc)[:240]
+        record_sync(f'monthly:{key}', timestamp, error)
+        if error:
+            errors.append(f'{key}: {error}')
+    if checked:
+        publish(now)
+    return {'checked': checked, 'errors': errors}
 
 
 def main() -> None:

@@ -10,6 +10,18 @@ export default defineCompany({
   "currency": "USD",
   "sourceName": "Micron Investor Relations",
   "sourceUrl": "https://investors.micron.com/quarterly-results",
+  "latestReport": {
+    "period": "FY2026 Q4",
+    "publishedAt": "2026-09-30",
+    "sourceLabel": "Micron FY2026 Q4 业绩公告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312526000018/a2026q4ex991-pressrelease.htm"
+  },
+  "reportReferences": [{
+    "period": "FY2026",
+    "publishedAt": "2026-09-30",
+    "sourceLabel": "Micron FY2026 全年业绩公告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312526000018/a2026q4ex991-pressrelease.htm"
+  }],
   "employeeScope": "财年末员工（公司披露约数）",
   "moneyScale": MILLION,
   "researchAndDevelopment": {
@@ -21,7 +33,8 @@ export default defineCompany({
       "FY2022": 3116,
       "FY2023": 3114,
       "FY2024": 3430,
-      "FY2025": 3798
+      "FY2025": 3798,
+      "FY2026": 5650
     },
     "quarterly": {
       "FY2018 Q1": 448,
@@ -58,7 +71,8 @@ export default defineCompany({
       "FY2025 Q4": 1047,
       "FY2026 Q1": 1171,
       "FY2026 Q2": 1250,
-      "FY2026 Q3": 1316
+      "FY2026 Q3": 1316,
+      "FY2026 Q4": 1913
     }
   },
   "annual": [
@@ -117,6 +131,12 @@ export default defineCompany({
       37378,
       9770,
       53000
+    ],
+    [
+      "FY2026",
+      "2026-09-03",
+      133188,
+      99340
     ]
   ],
   "quarterly": [
@@ -329,6 +349,12 @@ export default defineCompany({
       "2026-05-28",
       41456,
       33318
+    ],
+    [
+      "FY2026 Q4",
+      "2026-09-03",
+      54229,
+      43751
     ]
   ]
 });

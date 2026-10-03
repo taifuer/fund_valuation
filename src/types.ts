@@ -278,7 +278,7 @@ export interface SystemStatus {
   workerLastSuccessAt: number;
   marketQuoteIssueCount?: number;
   holdingQuoteIssueCount?: number;
-  reasons?: Array<'worker-stale' | 'market-quotes' | 'holding-quotes'>;
+  reasons?: Array<'worker-stale' | 'market-quotes' | 'holding-quotes' | 'status-stale'>;
 }
 
 export type HistoryRangeKey = '1w' | '1m' | '3m' | '6m' | '1y' | '3y' | '5y' | 'ytd' | 'all';

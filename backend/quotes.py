@@ -23,15 +23,6 @@ def beijing_datetime(captured_at: int) -> str:
     return datetime.fromtimestamp(captured_at / 1000, ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def stale_date(value: str, captured_at: int, max_days: int = 2) -> bool:
-    try:
-        quote_date = datetime.fromisoformat(value[:10]).date()
-        current_date = datetime.fromtimestamp(captured_at / 1000, ZoneInfo("Asia/Shanghai")).date()
-    except (ValueError, OSError):
-        return True
-    return abs((quote_date - current_date).days) > max_days
-
-
 def max_reasonable_change(symbol: str) -> float:
     if symbol.startswith(("jp", "kr")):
         return 80
@@ -156,16 +147,14 @@ def normalize_quote_line(symbol: str, line: str, captured_at: int) -> dict[str, 
     if abs(change_percent) > max_reasonable_change(symbol):
         return None
 
+    # Freshness and timestamp provenance are independent: a holiday close can
+    # be several days old without making its exchange-supplied date unreliable.
     date_reliable = bool(quote_time)
     if not quote_time:
         if symbol == "int_nikkei":
             return None
         quote_time = beijing_datetime(captured_at)
         date_reliable = False
-    elif stale_date(quote_time, captured_at):
-        date_reliable = False
-        if not (symbol.startswith("int_") or symbol.startswith("b_")):
-            quote_time = beijing_datetime(captured_at)
     return {
         "symbol": symbol,
         "price": round(price, 4),

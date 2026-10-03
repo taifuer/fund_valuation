@@ -1,4 +1,4 @@
-"""Explicit offline imports for USD gold/silver futures; no live or worker requests."""
+"""Verified monthly USD gold/silver archives, never fetched by page requests."""
 from __future__ import annotations
 
 import math
@@ -81,12 +81,14 @@ def store_metal_archive(asset_id: str, rows: list[dict], now: datetime) -> int:
     return len(values)
 
 
-def sync_metals(now: datetime | None = None) -> dict:
+def sync_metals(now: datetime | None = None, *, asset_ids: list[str] | None = None, force_refresh: bool = False) -> dict:
     from .server import decode_body, fetch_upstream
     now = now or datetime.now(ZoneInfo('Asia/Shanghai'))
     universe = {asset['id']: asset for asset in assets()}
     results = []
     for asset_id, symbol in OFFLINE_METALS.items():
+        if asset_ids is not None and asset_id not in asset_ids:
+            continue
         try:
             asset = universe[asset_id]
             cutoff = completed_cutoff(asset, now)
@@ -102,7 +104,7 @@ def sync_metals(now: datetime | None = None) -> dict:
                     'interval': '1d', 'period1': start, 'period2': stop})
                 status, _, body = fetch_upstream(url, referer='https://finance.yahoo.com/', content_type='application/json',
                     cache_key=f'longhistory-metals:{symbol}:{cutoff[:7]}:daily:{window}', kind='longhistory',
-                    ttl_seconds=30 * 24 * 3600, use_requests=True)
+                    ttl_seconds=30 * 24 * 3600, use_requests=True, force_refresh=force_refresh)
                 if status >= 400:
                     raise ValueError(f'Yahoo {window} archive HTTP {status}')
                 series[window] = parse_yahoo(decode_body(body), symbol, url, interval='1d')

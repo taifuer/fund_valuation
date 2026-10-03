@@ -467,6 +467,7 @@ describe('company fundamentals offline dataset', () => {
       ['broadcom', 'FY2026 Q3', '2026-08-02', 29591, 15955, 2895, '2026-09-10'],
       ['oracle', 'FY2027 Q1', '2026-08-31', 19345, 6728, 2401, '2026-09-11'],
       ['adbe', 'FY2026 Q3', '2026-08-28', 6760, 2354, 1288, '2026-09-10'],
+      ['micron', 'FY2026 Q4', '2026-09-03', 54229, 43751, 1913, '2026-09-30'],
     ] as const;
     for (const [id, period, periodEnd, revenue, profit, research, publishedAt] of expected) {
       const company = companyFundamentalsDataset.companies.find(item => item.id === id)!;
@@ -475,6 +476,17 @@ describe('company fundamentals offline dataset', () => {
         researchAndDevelopment: research * 1_000_000, employees: null,
       });
       expect(company.latestReport).toMatchObject({ period, publishedAt });
+    }
+  });
+
+  it('keeps Micron FY2026 annual totals reconciled and undisclosed staff blank', () => {
+    const company = companyFundamentalsDataset.companies.find(item => item.id === 'micron')!;
+    const year = company.annual[company.annual.length - 1];
+    expect(year).toMatchObject({ period: 'FY2026', revenue: 133188e6, operatingProfit: 99340e6,
+      researchAndDevelopment: 5650e6, employees: null });
+    const quarters = company.quarterly.filter(point => point.period.startsWith('FY2026 '));
+    for (const metric of ['revenue', 'operatingProfit', 'researchAndDevelopment'] as const) {
+      expect(quarters.reduce((sum, point) => sum + (point[metric] ?? 0), 0)).toBe(year[metric]);
     }
   });
 

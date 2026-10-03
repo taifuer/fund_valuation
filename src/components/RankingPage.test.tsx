@@ -387,6 +387,21 @@ describe('cash-index ranking rows', () => {
 });
 
 describe('pending history updates', () => {
+  it('does not label a legacy undated holiday quote with the fetch date', async () => {
+    const summary = marketSummary('sh000001');
+    summary.latest = { ...summary.latest!, endDate: '2026-09-30' };
+    vi.mocked(fetchMarketReturnSummaries).mockResolvedValue(new Map([['sina-cn:sh000001', summary]]));
+    const quote: QuoteData = { symbol: 'sh000001', name: '上证指数', price: 102, previousClose: 100,
+      change: 2, changePercent: 2, time: '2026-10-03 12:00:00', fetchedAt: 1, dateReliable: false };
+    render(<RankingPage funds={[]} marketLoading={false} quotes={new Map([['sh000001', quote]])}
+      marketStates={new Map([['sh000001', { symbol: 'sh000001', market: 'cn', state: 'holiday', source: 'calendar',
+        lastTradingDay: '2026-09-30' }]])} />);
+    const row = (await screen.findByText('上证指数')).closest('tr')!;
+    await within(row).findByText('2026-09-30');
+    expect(row).not.toHaveTextContent('2026-10-03');
+    expect(row).toHaveTextContent('+2.00%');
+  });
+
   function summaries() {
     const stale = { ...marketSummary('SOX'), source: 'yahoo-index' as const,
       freshness: { latestDate: '2026-09-15', expectedDate: '2026-09-18', stale: true } };

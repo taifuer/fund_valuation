@@ -40,6 +40,7 @@ function statusLabel(status: SystemStatus | null) {
     reasons.includes('worker-stale') ? '后台刷新延迟' : '',
     reasons.includes('market-quotes') ? '市场行情待更新' : '',
     reasons.includes('holding-quotes') ? '持仓行情大面积延迟' : '',
+    reasons.includes('status-stale') ? '状态检查待更新' : '',
   ].filter(Boolean);
   return labels.length ? labels.join('；') : `数据刷新存在延迟（${status.quoteIssueCount} 项）`;
 }

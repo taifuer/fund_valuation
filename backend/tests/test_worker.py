@@ -1,14 +1,36 @@
 from __future__ import annotations
 
 import threading
+import sqlite3
 import unittest
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
-from backend.worker import CoalescingMaintenanceQueue, latest_fund_history_refresh_delay
+from backend.worker import CoalescingMaintenanceQueue, latest_fund_history_refresh_delay, coordinate_worker
 
 
 class WorkerSchedulingTests(unittest.TestCase):
+    def test_lease_contention_retries_then_recovers(self):
+        action = Mock(side_effect=[sqlite3.OperationalError('database is locked'), True])
+        with patch('backend.worker.time.sleep'):
+            self.assertTrue(coordinate_worker(action))
+        self.assertEqual(action.call_count, 2)
+
+    def test_lease_contention_is_bounded_and_other_errors_remain_visible(self):
+        action = Mock(side_effect=sqlite3.OperationalError('database is locked'))
+        with patch('backend.worker.time.sleep'), patch('builtins.print'):
+            self.assertIsNone(coordinate_worker(action))
+        self.assertEqual(action.call_count, 3)
+        with self.assertRaisesRegex(sqlite3.OperationalError, 'disk full'):
+            coordinate_worker(Mock(side_effect=sqlite3.OperationalError('disk full')))
+
+    def test_stop_interrupts_lease_retry(self):
+        stop = threading.Event()
+        stop.set()
+        action = Mock(side_effect=sqlite3.OperationalError('database is locked'))
+        self.assertIsNone(coordinate_worker(action, stop))
+        self.assertEqual(action.call_count, 1)
+
     def test_latest_fund_history_uses_half_hour_evening_window(self) -> None:
         self.assertEqual(
             latest_fund_history_refresh_delay(datetime.fromisoformat("2026-08-03T16:00:00+08:00")),

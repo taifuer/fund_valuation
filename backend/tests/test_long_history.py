@@ -101,6 +101,16 @@ class MonthlyDrawdownTests(unittest.TestCase):
 
 
 class AnnualCalculationTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='fund-annual-test-')
+        self.addCleanup(temporary.cleanup)
+        path = Path(temporary.name) / 'test.db'
+        self.assertTrue(path.is_relative_to(Path(tempfile.gettempdir())))
+        patcher = patch.object(storage, 'DB_PATH', path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        storage.migrate_database(path)
+
     def test_annualized_change_compounds_over_elapsed_months_not_number_of_observations(self):
         rows = [point('2023-08', 100), point('2025-08', 121)]
         result = period_performance(rows, '2023-08', '2025-08')
@@ -304,6 +314,36 @@ class AnnualCalculationTests(unittest.TestCase):
         rows = [dict(point('1991-12-31', 134.3), monthComplete=True), point('1993-01-29', 1198.48)]
         result = completed_months(rows, asset, datetime.fromisoformat('2026-09-15T22:00:00+08:00'))
         self.assertEqual([row['period'] for row in result], ['1993-01'])
+
+    def test_legacy_daily_sse_history_cannot_reintroduce_unverified_early_prices(self):
+        asset = next(item for item in assets() if item['id'] == 'SH000001')
+        verified = dict(point('1990-12-31', 127.61, 'eastmoney'), monthComplete=True)
+        save_points('SH000001', [verified], 1)
+        with storage.get_conn() as conn:
+            conn.executemany('INSERT INTO market_history VALUES (?,?,?,?,?)', [
+                ('sina-cn', 'sh000001', '1990-12-31', 99, 1),
+                ('sina-cn', 'sh000001', '2026-09-30', 3800, 1),
+            ])
+        rows = stored_daily_points(asset, datetime.fromisoformat('2026-10-03T12:00:00+08:00'))
+        save_points('SH000001', rows, 2)
+        self.assertEqual(read_points('SH000001')[0]['close'], 127.61)
+        self.assertEqual(read_points('SH000001')[-1]['period'], '2026-09')
+
+    def test_failed_daily_merge_is_persisted_throttled_and_not_erased_by_provider_success(self):
+        asset = next(item for item in assets() if item['id'] == 'SH000001')
+        save_points('SH000001', [point('2025-12-31', 100, 'eastmoney')], 1)
+        now = datetime.fromisoformat('2026-10-03T12:00:00+08:00')
+        with patch('backend.long_history.assets', return_value=[asset]), \
+                patch('backend.long_history.stored_daily_points', return_value=[point('2025-12-31', 150, 'sina')]) as daily, \
+                patch('backend.long_history.fetch_rows', return_value=[point('2025-12-31', 100, 'eastmoney')]), \
+                patch('backend.long_history.time.sleep'):
+            self.assertTrue(refresh(now=now)['errors'])
+            refresh(now=now)
+            self.assertEqual(daily.call_count, 1)
+            with storage.get_conn() as conn:
+                payload = json.loads(conn.execute("SELECT payload FROM dashboard_snapshots WHERE name='long-history:SH000001'").fetchone()[0])
+                self.assertTrue(conn.execute("SELECT error FROM long_history_sync WHERE asset_id='daily:SH000001'").fetchone()[0])
+            self.assertTrue(payload['asset']['refreshFailed'])
 
     def test_monthly_coverage_reports_internal_and_trailing_gaps_without_interpolation(self):
         points = [point('2026-01-30'), point('2026-03-31')]

@@ -94,17 +94,7 @@ function combineBeijingDateTime(date: string, time: string): string {
   if (/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate) && /^\d{2}:\d{2}(:\d{2})?$/.test(normalizedTime)) {
     return `${normalizedDate} ${normalizedTime}`;
   }
-  return normalizedDate || beijingDate();
-}
-
-// Reject dates that differ from Beijing date by more than this many days (stale Sina data)
-function isStale(dateStr: string, referenceTimestamp: number, maxDiffDays = 2): boolean {
-  const datePart = dateStr.slice(0, 10);
-  if (!datePart) return true;
-  const d = new Date(datePart + 'T00:00:00+08:00');
-  const bj = new Date(beijingDate(referenceTimestamp) + 'T00:00:00+08:00');
-  const diff = Math.abs(d.getTime() - bj.getTime()) / (1000 * 60 * 60 * 24);
-  return diff > maxDiffDays;
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalizedDate) ? normalizedDate : '';
 }
 
 function usExtendedBeijingDatetime(raw: string, fallbackYear: string): string {
@@ -182,7 +172,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
       previousClose = parseFloat(fields[26]) || price;
       changePct = parseFloat(fields[2]) || 0;
       // fields[3] is already Beijing time for Sina US quotes.
-      date = fields[3] || beijingDatetimeFromTimestamp(fetchedAt);
+      date = fields[3] || '';
       session = 'regular';
       regularPrice = price;
       regularChangePercent = changePct;
@@ -206,8 +196,6 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
       if (!date) {
         date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
-      } else if (isStale(date, fetchedAt)) {
-        dateReliable = false;
       }
       break;
     case 'cn_index':
@@ -221,7 +209,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
           break;
         }
       }
-      if (!date || isStale(date, fetchedAt)) {
+      if (!date) {
         date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
@@ -250,10 +238,8 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
           }
         }
       }
-      if (!date || isStale(date, fetchedAt)) {
-        if (hasExplicitIntlDate) {
-          dateReliable = false;
-        } else {
+      if (!date) {
+        if (!hasExplicitIntlDate) {
           if (rawSymbol === 'int_nikkei') return null;
           date = beijingDatetimeFromTimestamp(fetchedAt);
           dateReliable = false;
@@ -266,7 +252,8 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
       previousClose = price - (parseFloat(fields[2]) || 0);
       changePct = parseFloat(fields[3]) || 0;
       date = combineBeijingDateTime(fields[4] || '', fields[5] || '');
-      if (!date || isStale(date, fetchedAt)) {
+      if (!date) {
+        date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
       break;
@@ -277,7 +264,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
       changePct = parseFloat(fields[8]) || 0;
       // fields[17] = "2026/04/29", fields[18] = "16:10" (Hong Kong time, same as Beijing time)
       date = combineBeijingDateTime(fields[17] || '', fields[18] || '');
-      if (isStale(date, fetchedAt)) {
+      if (!date) {
         date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
@@ -288,7 +275,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
       previousClose = globalFutureReferencePrice(fields[7], fields[8], price);
       changePct = previousClose ? ((price - previousClose) / previousClose) * 100 : 0;
       date = combineBeijingDateTime(fields[12] || '', fields[6] || '');
-      if (isStale(date, fetchedAt)) {
+      if (!date) {
         date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
@@ -304,7 +291,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
         [...fields].reverse().find((field) => /^\d{4}-\d{2}-\d{2}$/.test(field)) ?? '',
         fields[0] || '',
       );
-      if (isStale(date, fetchedAt)) {
+      if (!date) {
         date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
@@ -324,7 +311,7 @@ export function parseSinaVar(line: string, fetchedAt: number): { symbol: string;
           break;
         }
       }
-      if (!date || isStale(date, fetchedAt)) {
+      if (!date) {
         date = beijingDatetimeFromTimestamp(fetchedAt);
         dateReliable = false;
       }
@@ -768,7 +755,7 @@ export async function fetchSystemStatus(): Promise<SystemStatus> {
       marketQuoteIssueCount: Number(raw.marketQuoteIssueCount) || 0,
       holdingQuoteIssueCount: Number(raw.holdingQuoteIssueCount) || 0,
       reasons: Array.isArray(raw.reasons)
-        ? raw.reasons.filter((reason: unknown) => ['worker-stale', 'market-quotes', 'holding-quotes'].includes(String(reason)))
+        ? raw.reasons.filter((reason: unknown) => ['worker-stale', 'market-quotes', 'holding-quotes', 'status-stale'].includes(String(reason)))
         : [],
     };
   } catch {

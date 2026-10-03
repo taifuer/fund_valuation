@@ -26,7 +26,7 @@ class QuoteNormalizationTests(unittest.TestCase):
         self.assertTrue(record["dateReliable"])
         self.assertAlmostEqual(record["changePercent"], 2.0)
 
-    def test_stale_cn_quote_uses_capture_time_and_marks_date_unreliable(self) -> None:
+    def test_old_cn_quote_keeps_source_date_instead_of_fabricating_a_new_trade(self) -> None:
         fields = ["测试", "10", "10", "10.2", *(["0"] * 26), "2026-06-20", "15:00:00", "00"]
         record = normalize_quote_line(
             "sz159326",
@@ -36,8 +36,8 @@ class QuoteNormalizationTests(unittest.TestCase):
 
         self.assertIsNotNone(record)
         assert record is not None
-        self.assertEqual(record["time"], "2026-07-01 09:00:00")
-        self.assertFalse(record["dateReliable"])
+        self.assertEqual(record["time"], "2026-06-20 15:00:00")
+        self.assertTrue(record["dateReliable"])
 
     def test_undated_nikkei_short_quote_is_not_promoted_to_structured_data(self) -> None:
         record = normalize_quote_line(
@@ -59,7 +59,7 @@ class QuoteNormalizationTests(unittest.TestCase):
         assert record is not None
         self.assertEqual(record["price"], 64140.9)
         self.assertEqual(record["time"], "2026-07-17 14:30:01")
-        self.assertFalse(record["dateReliable"])
+        self.assertTrue(record["dateReliable"])
 
     def test_implausible_index_change_is_rejected(self) -> None:
         record = normalize_quote_line(

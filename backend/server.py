@@ -5481,6 +5481,31 @@ def build_public_status_payload(
     }
 
 
+def publish_public_status_snapshot() -> dict[str, Any]:
+    payload = build_public_status_payload()
+    store_dashboard_snapshot(payload, 'public-status')
+    return payload
+
+
+def read_public_status_payload() -> dict[str, Any]:
+    snapshot = read_dashboard_snapshot('public-status')
+    worker = background_refresh_state_snapshot()
+    if snapshot:
+        payload = build_public_status_payload({**snapshot, 'total': snapshot['quoteTotal'],
+                                              'issueCount': snapshot['quoteIssueCount']}, worker)
+        # Recompute heartbeat freshness even when the persisted quote check is old.
+        if not 0 <= now_ms() - int(snapshot.get('generatedAt', 0)) <= 20 * 60_000:
+            payload['reasons'].append('status-stale')
+            payload['status'] = 'degraded'
+        payload['updatedAt'] = snapshot.get('updatedAt', snapshot['generatedAt'])
+        return payload
+    return {
+        'status': 'degraded', 'reasons': ['status-stale'], 'updatedAt': 0,
+        'quoteIssueCount': 0, 'quoteTotal': 0,
+        'workerLastSuccessAt': int(worker.get('lastSuccessAt', 0) or 0),
+    }
+
+
 def mark_background_refresh(owner: str, **updates: Any) -> None:
     with _BACKGROUND_REFRESH_GUARD:
         _BACKGROUND_REFRESH_STATE.update(updates)
@@ -5774,7 +5799,7 @@ def data_health() -> Response:
 @app.get("/api/status")
 def public_status() -> Response:
     enforce_rate_limit("status")
-    return cached_json_response("api:status", 30, build_public_status_payload)
+    return cached_json_response("api:status:snapshot", 30, read_public_status_payload)
 
 
 @app.get("/api/diagnostics/quotes")

@@ -16,7 +16,13 @@ export default defineCompany({
     "sourceLabel": "Adobe FY2026 Q3 · SEC 8-K 业绩公告",
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634326000147/adbeex991q326.htm"
   },
-  "methodologyNote": "财年为截至 11 月末附近周五的 52 或 53 周；营业收入、营业利润与研发费用采用 U.S. GAAP，第四季度由全年减去前三季度。FY2026 Q3 采用公司业绩公告，后续以正式 10-Q 复核。",
+  "reportReferences": [{
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-09-22",
+    "sourceLabel": "Adobe FY2026 Q3 · 已复核 SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634326000156/adbe-20260828.htm"
+  }],
+  "methodologyNote": "财年为截至 11 月末附近周五的 52 或 53 周；营业收入、营业利润与研发费用采用 U.S. GAAP，第四季度由全年减去前三季度。FY2026 Q3 已按正式 10-Q 复核。",
   "employeeScope": "财年末全球员工",
   "metricMarkers": [
     {

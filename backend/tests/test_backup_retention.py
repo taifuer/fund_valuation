@@ -70,6 +70,20 @@ class BackupRetentionTests(unittest.TestCase):
         create.assert_not_called()
         self.assertEqual(len(list(self.backups.glob('fund-*.db'))), 2)
 
+    def test_default_keeps_one_daily_and_does_not_touch_deployment_backup(self):
+        database = self.root / 'fund.db'
+        migrate_database(database)
+        current = datetime(2026, 10, 3, 10, tzinfo=ZoneInfo('Asia/Shanghai'))
+        daily = [self.backup(f'fund-2026100{day}-090000.db') for day in (1, 2, 3)]
+        deployed = self.backup('pre-deploy-20260922-090000.db')
+        for path in daily:
+            os.utime(path, (current.timestamp() - 3600, current.timestamp() - 3600))
+        with patch('backend.db_admin.backup_database') as create:
+            ensure_recent_backup(database, backup_dir=self.backups, now=current)
+        create.assert_not_called()
+        self.assertEqual(list(self.backups.glob('fund-*.db')), [daily[-1]])
+        self.assertTrue(deployed.exists())
+
     def test_invalid_retained_backup_blocks_all_deletion(self):
         older = self.backup('pre-deploy-20260920-090000.db')
         corrupt = self.backups / 'pre-deploy-20260922-090000.db'
@@ -78,6 +92,18 @@ class BackupRetentionTests(unittest.TestCase):
             prune_backups(self.backups, prefix='pre-deploy', max_files=1)
         self.assertTrue(older.exists())
         self.assertTrue(corrupt.exists())
+
+    def test_new_daily_backup_replaces_old_daily_only_after_verification(self):
+        database = self.root / 'fund.db'
+        migrate_database(database)
+        older = self.backup('fund-20261001-090000.db')
+        deployed = self.backup('pre-deploy-20261001-080000.db')
+        os.utime(older, (1, 1))
+        result = ensure_recent_backup(database, backup_dir=self.backups,
+            now=datetime(2026, 10, 3, 10, tzinfo=ZoneInfo('Asia/Shanghai')))
+        self.assertEqual(result, self.backups / 'fund-20261003-100000.db')
+        self.assertEqual(list(self.backups.glob('fund-*.db')), [result])
+        self.assertTrue(deployed.exists())
 
     def test_failed_new_backup_does_not_prune_existing_copies(self):
         database = self.root / 'fund.db'

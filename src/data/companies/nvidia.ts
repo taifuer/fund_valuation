@@ -17,6 +17,12 @@ export default defineCompany({
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000073/nvda-20260826.htm"
   },
   "employeeScope": "财年末员工",
+  "reportReferences": [{
+    "period": "FY2027 Q2",
+    "publishedAt": "2026-08-26",
+    "sourceLabel": "NVIDIA FY2027 Q2 · 已复核 SEC 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000075/nvda-20260726.htm"
+  }],
   "moneyScale": MILLION,
   "researchAndDevelopment": {
     "annual": {

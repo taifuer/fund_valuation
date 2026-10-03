@@ -72,59 +72,64 @@ def optimize_database(
     snapshot_cutoff_ms = int((current - timedelta(days=max(snapshot_retention_days, 1))).timestamp() * 1000)
     with sqlite3.connect(path, timeout=10.0) as conn:
         conn.execute("PRAGMA busy_timeout = 10000")
-        deleted_cache_rows = conn.execute(
-            "DELETE FROM response_cache WHERE fetched_at < ?",
-            (response_cutoff_ms,),
-        ).rowcount
-        deleted_snapshot_rows = conn.execute(
-            "DELETE FROM market_quote_snapshots WHERE captured_at < ?",
-            (snapshot_cutoff_ms,),
-        ).rowcount
-        conn.execute("DELETE FROM dashboard_snapshots WHERE name LIKE 'fund-detail:%' AND generated_at < ?", (snapshot_cutoff_ms,))
-        duplicate_snapshot = conn.execute(
-            """
-            SELECT COUNT(*), COALESCE(SUM(length(raw_line)), 0)
-            FROM market_quote_snapshots
-            WHERE raw_line <> '' AND raw_line = sanitized_line
-            """
-        ).fetchone()
-        deduplicated_snapshot_rows = int(duplicate_snapshot[0])
-        deduplicated_snapshot_bytes = int(duplicate_snapshot[1])
-        if deduplicated_snapshot_rows:
-            conn.execute(
-                """
-                UPDATE market_quote_snapshots
-                SET raw_line = ''
-                WHERE raw_line <> '' AND raw_line = sanitized_line
-                """
-            )
-        cache_rows = conn.execute(
-            """
-            SELECT cache_key, body
-            FROM response_cache
-            WHERE length(body) >= ?
-              AND substr(body, 1, ?) <> ?
-            """,
-            (
-                CACHE_BODY_COMPRESSION_MIN_BYTES,
-                len(CACHE_BODY_COMPRESSION_MAGIC),
-                CACHE_BODY_COMPRESSION_MAGIC,
-            ),
-        ).fetchall()
-        compressed_rows: list[tuple[bytes, str]] = []
+        # Commit each bounded write before scanning/compressing the next batch.
+        # CPU work under a write transaction used to starve the worker's lease.
+        def delete_batches(table: str, predicate: str, cutoff: int) -> int:
+            total = 0
+            while True:
+                count = conn.execute(
+                    f"DELETE FROM {table} WHERE rowid IN (SELECT rowid FROM {table} WHERE {predicate} LIMIT 500)",
+                    (cutoff,),
+                ).rowcount
+                conn.commit()
+                total += count
+                if count < 500:
+                    return total
+
+        deleted_cache_rows = delete_batches('response_cache', 'fetched_at < ?', response_cutoff_ms)
+        deleted_snapshot_rows = delete_batches('market_quote_snapshots', 'captured_at < ?', snapshot_cutoff_ms)
+        delete_batches('dashboard_snapshots', "name LIKE 'fund-detail:%' AND generated_at < ?", snapshot_cutoff_ms)
+        deduplicated_snapshot_rows = 0
+        deduplicated_snapshot_bytes = 0
+        cursor = 0
+        while True:
+            rows = conn.execute(
+                "SELECT rowid,raw_line FROM market_quote_snapshots WHERE rowid>? "
+                "AND raw_line<>'' AND raw_line=sanitized_line ORDER BY rowid LIMIT 500", (cursor,),
+            ).fetchall()
+            if not rows:
+                break
+            for row_id, line in rows:
+                count = conn.execute(
+                    "UPDATE market_quote_snapshots SET raw_line='' WHERE rowid=? AND raw_line=? AND raw_line=sanitized_line",
+                    (row_id, line),
+                ).rowcount
+                deduplicated_snapshot_rows += count
+                deduplicated_snapshot_bytes += count * len(line)
+            conn.commit()
+            cursor = rows[-1][0]
+
+        compressed_cache_rows = 0
         compressed_cache_bytes_saved = 0
-        for cache_key, body in cache_rows:
-            original = bytes(body)
-            encoded = encode_cache_body(original)
-            if encoded != original:
-                compressed_rows.append((encoded, str(cache_key)))
-                compressed_cache_bytes_saved += len(original) - len(encoded)
-        if compressed_rows:
-            conn.executemany(
-                "UPDATE response_cache SET body = ? WHERE cache_key = ?",
-                compressed_rows,
-            )
-        conn.commit()
+        cursor = 0
+        while True:
+            rows = conn.execute(
+                "SELECT rowid,cache_key,body FROM response_cache WHERE rowid>? AND length(body)>=? "
+                "AND substr(body,1,?)<>? ORDER BY rowid LIMIT 25",
+                (cursor, CACHE_BODY_COMPRESSION_MIN_BYTES, len(CACHE_BODY_COMPRESSION_MAGIC), CACHE_BODY_COMPRESSION_MAGIC),
+            ).fetchall()
+            if not rows:
+                break
+            compressed = [(key, bytes(body), encode_cache_body(bytes(body))) for _, key, body in rows]
+            for key, original, encoded in compressed:
+                if encoded != original:
+                    # A refresh may have replaced this cache entry while we compressed it.
+                    count = conn.execute("UPDATE response_cache SET body=? WHERE cache_key=? AND body=?",
+                                         (encoded, key, original)).rowcount
+                    compressed_cache_rows += count
+                    compressed_cache_bytes_saved += count * (len(original) - len(encoded))
+            conn.commit()
+            cursor = rows[-1][0]
         conn.execute("PRAGMA optimize")
         checkpoint = tuple(int(value) for value in conn.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone())
         if vacuum:
@@ -138,7 +143,7 @@ def optimize_database(
         "deletedQuoteSnapshotRows": max(deleted_snapshot_rows, 0),
         "deduplicatedQuoteSnapshotRows": deduplicated_snapshot_rows,
         "deduplicatedQuoteSnapshotBytes": deduplicated_snapshot_bytes,
-        "compressedResponseCacheRows": len(compressed_rows),
+        "compressedResponseCacheRows": compressed_cache_rows,
         "compressedResponseCacheBytesSaved": compressed_cache_bytes_saved,
         "raw": raw_result,
         "checkpoint": checkpoint,
@@ -243,7 +248,7 @@ def ensure_recent_backup(
     backup_dir: Path | None = None,
     interval_hours: int = 24,
     retention_days: int = 7,
-    max_files: int | None = None,
+    max_files: int = 1,
     now: datetime | None = None,
 ) -> Path | None:
     current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
@@ -253,12 +258,12 @@ def ensure_recent_backup(
     if existing:
         latest_age = current.timestamp() - existing[0].stat().st_mtime
         if latest_age < max(interval_hours, 1) * 60 * 60:
-            prune_backups(directory, prefix=source.stem, max_files=max_files or max(len(existing), 1),
+            prune_backups(directory, prefix=source.stem, max_files=max_files,
                           retention_days=retention_days, now=current)
             return None
     destination = directory / f"{source.stem}-{current.strftime('%Y%m%d-%H%M%S')}.db"
     backup_database(source, destination)
-    prune_backups(directory, prefix=source.stem, max_files=max_files or len(existing) + 1,
+    prune_backups(directory, prefix=source.stem, max_files=max_files,
                   retention_days=retention_days, now=current)
     return destination
 

@@ -17,8 +17,9 @@ import {
 } from './lib/sec';
 import { probeCompanyReleaseSource } from './lib/company-releases';
 import { probeSecAnnouncement } from './lib/sec-announcements';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, appendFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { companyReviewMarkdown, summarizeCompanyReview, type CompanyReviewRun } from './lib/company-review-summary';
 
 const args = new Set(process.argv.slice(2));
 const asOfArg = [...args].find((arg) => arg.startsWith('--as-of='));
@@ -32,7 +33,7 @@ const output = [...args].find(arg => arg.startsWith('--output='))?.slice('--outp
 const ids = [...args].find(arg => arg.startsWith('--companies='))?.slice('--companies='.length).split(',');
 const selected = companyFundamentalsDataset.companies.filter(company => !ids || ids.includes(company.id));
 if (!selected.length) throw new Error('No matching companies');
-const report: Record<string, unknown> = { asOf, datasetUpdatedAt: companyFundamentalsDataset.updatedAt, offline, reviewOnly: true };
+const report: CompanyReviewRun = { asOf, datasetUpdatedAt: companyFundamentalsDataset.updatedAt, offline, reviewOnly: true };
 
 const localCandidates = selected
   .map((company) => ({ company, freshness: assessCompanyReportFreshness(company, asOf) }))
@@ -162,11 +163,20 @@ if (!offline) {
         .join(', ')}`,
     );
   }
-  if (strict && (nonUsCandidates.length > 0 || sourceFailures.length > 0)) {
-    process.exitCode = sourceFailures.length > 0 ? 1 : process.exitCode || 2;
+  if (strict && (nonUsCandidates.length > 0 || sourceFailures.length > 0 || restrictedSources.length > 0)) {
+    process.exitCode = sourceFailures.length > 0 || restrictedSources.length > 0 ? 1 : process.exitCode || 2;
   }
 }
 report.calendarCandidates = localCandidates;
+report.summary = summarizeCompanyReview(report);
+if (strict && report.summary.coverage === 'partial') process.exitCode = 1;
+console.log(companyReviewMarkdown(report));
+if (process.env.GITHUB_STEP_SUMMARY) {
+  await appendFile(process.env.GITHUB_STEP_SUMMARY, companyReviewMarkdown(report));
+  if (report.summary.coverage === 'partial') {
+    console.warn(`::warning::Company report check is partial: ${report.summary.unverifiedSources.length} source(s) were not verified. See the job summary.`);
+  }
+}
 if (output) {
   await mkdir(dirname(output), { recursive: true });
   await writeFile(output, `${JSON.stringify(report, null, 2)}\n`);

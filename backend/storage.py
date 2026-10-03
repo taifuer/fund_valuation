@@ -11,7 +11,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("FUND_VALUATION_DATA_DIR", ROOT_DIR / "data"))
 DB_PATH = DATA_DIR / "fund_valuation.db"
 RAW_DIR = DATA_DIR / "raw"
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 CACHE_BODY_COMPRESSION_MAGIC = b"\x00FVCZ1"
 CACHE_BODY_COMPRESSION_MIN_BYTES = 16 * 1024
 
@@ -241,6 +241,24 @@ MIGRATIONS: dict[int, str] = {
           PRIMARY KEY (symbol, date)
         );
     """,
+    17: """
+        CREATE TABLE IF NOT EXISTS fund_nav_details (
+          code TEXT NOT NULL, date TEXT NOT NULL, accumulated_nav REAL,
+          change_source TEXT NOT NULL, fetched_at INTEGER NOT NULL,
+          PRIMARY KEY (code, date)
+        );
+        CREATE TABLE IF NOT EXISTS market_adjustment_factors (
+          symbol TEXT NOT NULL, date TEXT NOT NULL, factor REAL NOT NULL,
+          shares REAL NOT NULL, cash REAL NOT NULL, source TEXT NOT NULL,
+          fetched_at INTEGER NOT NULL, PRIMARY KEY (symbol, date)
+        );
+        CREATE TABLE IF NOT EXISTS fund_disclosure_metadata (
+          code TEXT NOT NULL, report_date TEXT NOT NULL,
+          equity_weight REAL, holdings_count INTEGER, holdings_weight REAL,
+          source_url TEXT NOT NULL DEFAULT '', revision TEXT NOT NULL DEFAULT '',
+          checked_at INTEGER NOT NULL, PRIMARY KEY (code, report_date)
+        );
+    """,
 }
 
 
@@ -328,6 +346,28 @@ def migrate_database(path: Path | None = None) -> int:
                         script += f"\nALTER TABLE fund_estimate_snapshots ADD COLUMN {column} {declaration};"
             if version == 12 and conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'response_cache'").fetchone():
                 script += "\nDELETE FROM response_cache WHERE cache_key LIKE 'api:fundreturns:%' OR cache_key LIKE 'api:marketreturns:%' OR cache_key LIKE 'api:overview:%';"
+            if version == 17:
+                # Some legacy development DBs report v12+ without its NAV schema.
+                # Repair that variant without rewriting any deployed migration.
+                columns = conn.execute('PRAGMA table_info(fund_nav_history)').fetchall()
+                if any(row[1] == 'change_percent' and row[3] for row in columns):
+                    script += """
+                        ALTER TABLE fund_nav_history RENAME TO fund_nav_history_v16;
+                        CREATE TABLE fund_nav_history (
+                          code TEXT NOT NULL, date TEXT NOT NULL, nav REAL NOT NULL,
+                          change_percent REAL, fetched_at INTEGER NOT NULL, PRIMARY KEY (code, date)
+                        );
+                        INSERT INTO fund_nav_history SELECT code,date,nav,change_percent,fetched_at FROM fund_nav_history_v16;
+                        DROP TABLE fund_nav_history_v16;
+                        UPDATE fund_nav_history AS current SET change_percent=NULL
+                        WHERE change_percent=0 AND ABS(nav / (
+                          SELECT previous.nav FROM fund_nav_history AS previous
+                          WHERE previous.code=current.code AND previous.date<current.date
+                          ORDER BY previous.date DESC LIMIT 1
+                        ) - 1) > 0.0002;
+                    """
+                    if conn.execute("SELECT 1 FROM sqlite_master WHERE name='response_cache'").fetchone():
+                        script += "\nDELETE FROM response_cache WHERE cache_key LIKE 'api:fundreturns:%' OR cache_key LIKE 'api:marketreturns:%' OR cache_key LIKE 'api:overview:%';"
             conn.executescript(
                 "BEGIN IMMEDIATE;\n"
                 + script
