@@ -318,9 +318,9 @@
 
 .metricTabs {
   display: flex;
-  gap: 17px;
+  flex-wrap: wrap;
+  gap: 4px 17px;
   min-width: 0;
-  overflow-x: auto;
 }
 
 .metricButton {
@@ -530,8 +530,13 @@
 }
 
 .detailTable {
-  min-width: 880px;
+  min-width: 960px;
 }
+
+.detailTable th sup { margin-left: 2px; font-size: 10px; }
+
+.companyNote a,
+.chartNotes a { color: inherit; text-underline-offset: 3px; }
 
 .detailTable td {
   color: var(--ink-muted);
@@ -749,7 +754,7 @@
   }
 
   .detailTable {
-    min-width: 680px;
+    min-width: 804px;
   }
 
   .detailTable th,
@@ -784,6 +789,8 @@
   .detailTable th:nth-child(7) {
     width: 124px;
   }
+
+  .detailTable th:nth-child(8) { width: 124px; }
 
   .detailTable th:nth-child(2),
   .detailTable td:nth-child(2) {
@@ -823,7 +830,7 @@
   }
 
   .metricTabs {
-    gap: 15px;
+    gap: 4px 15px;
     width: 100%;
   }
 

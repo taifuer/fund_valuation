@@ -2,10 +2,48 @@ from __future__ import annotations
 
 import unittest
 
-from backend.estimation import estimate_cumulative_return, linear_fit, select_calibration
+from backend.estimation import estimate_aligned_returns, estimate_cumulative_return, linear_fit, select_calibration
 
 
 class EstimateCalculationTests(unittest.TestCase):
+    def test_missing_benchmark_at_either_endpoint_cannot_manufacture_a_daily_move(self):
+        for missing_day in ('b', 'c'):
+            with self.subTest(missing_day=missing_day):
+                current, previous = estimate_aligned_returns(
+                    [{'sinaSymbol': 'stock', 'weight': 0.5, 'currency': 'CNY'}],
+                    base_date='a', target_date='c', previous_date='b',
+                    price_lookup=lambda symbol, day: 100 if day == 'a' else 110,
+                    fx_lookup=lambda currency, day: 1,
+                    benchmark={'source': 'sina-us', 'symbol': '.NDX', 'currency': 'CNY'},
+                    benchmark_lookup=lambda source, symbol, day: None if day == missing_day else 100,
+                )
+                self.assertEqual(current['model'], previous['model'])
+                self.assertEqual(current['benchmarkSymbol'], '.NDX')
+                self.assertAlmostEqual((1 + current['return']) / (1 + previous['return']) - 1, 0)
+
+    def test_missing_previous_day_is_not_a_daily_return(self):
+        self.assertEqual(estimate_aligned_returns(
+            [{'sinaSymbol': 'stock', 'weight': 0.5, 'currency': 'CNY'}],
+            base_date='a', target_date='c', previous_date='b',
+            price_lookup=lambda symbol, day: None if day == 'b' else 100,
+            fx_lookup=lambda currency, day: 1,
+        ), (None, None))
+
+    def test_disjoint_holdings_and_tiny_fallback_coverage_are_unavailable(self):
+        self.assertIsNone(estimate_cumulative_return(
+            [{'sinaSymbol': 'stock', 'weight': 0.001, 'currency': 'CNY'}],
+            base_date='a', target_date='b', price_lookup=lambda symbol, day: 100 if day == 'a' else 110,
+            fx_lookup=lambda currency, day: 1,
+        ))
+        current, previous = estimate_aligned_returns(
+            [{'sinaSymbol': 'A', 'weight': 0.5, 'currency': 'CNY'}, {'sinaSymbol': 'B', 'weight': 0.5, 'currency': 'CNY'}],
+            base_date='a', target_date='c', previous_date='b',
+            price_lookup=lambda symbol, day: None if (symbol, day) in {('A', 'b'), ('B', 'c')} else 100,
+            fx_lookup=lambda currency, day: 1,
+        )
+        self.assertIsNone(current)
+        self.assertIsNone(previous)
+
     def test_disclosed_equity_weight_does_not_treat_cash_as_stocks(self) -> None:
         result = estimate_cumulative_return(
             [{"sinaSymbol": "gb_a", "weight": 0.6, "currency": "CNY"}],

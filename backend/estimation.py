@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import json
 import math
 from typing import Any
 
@@ -9,6 +10,29 @@ PriceLookup = Callable[[str, str], float | None]
 FxLookup = Callable[[str, str], float | None]
 BenchmarkLookup = Callable[[str, str, str], float | None]
 PriceReturnLookup = Callable[[str, str, str, float, float], float | None]
+# A safety ceiling, not a statistically validated confidence threshold.
+MAX_COVERAGE_NORMALIZATION = 5.0
+
+
+def eligible_daily_sample(row: Any) -> bool:
+    """One rule for calibration, reconciliation errors and observation reports."""
+    try:
+        details = json.loads(row['details_json']) if 'details_json' in row.keys() and row['details_json'] else {}
+        reasons = (details.get('quality') or {}).get('reasons', [])
+        finite_returns = math.isfinite(float(row['raw_change'])) and math.isfinite(float(row['actual_change']))
+        usable_inputs = isinstance(reasons, list) and not any(
+            reason in ('stalePrice', 'staleBenchmark') for reason in reasons
+        )
+    except (TypeError, ValueError, AttributeError, KeyError, IndexError):
+        return False
+    return bool(
+        row['complete'] and row['input_signature']
+        and row['previous_nav_date']
+        and row['comparison_date'] == row['previous_nav_date']
+        and row['actual_change'] is not None
+        and finite_returns
+        and usable_inputs
+    )
 
 
 def compounded_return(price_return: float, fx_return: float) -> float:
@@ -229,6 +253,8 @@ def estimate_cumulative_return(
     elif benchmark_source == "composite":
         return None
     else:
+        if equity_weight / covered_weight > MAX_COVERAGE_NORMALIZATION:
+            return None
         estimated_return = contribution / covered_weight * equity_weight
         model = "coverageNormalizedFallback"
         for component in components:
@@ -270,6 +296,9 @@ def estimate_aligned_returns(holdings: list[dict[str, Any]], *, target_date: str
                              previous_date: str | None, **kwargs) -> tuple[dict | None, dict | None]:
     current = estimate_cumulative_return(holdings, target_date=target_date, **kwargs)
     previous = estimate_cumulative_return(holdings, target_date=previous_date, **kwargs) if previous_date else None
+    if previous_date and (current is None or previous is None):
+        # A missing comparison day cannot silently become a multi-day return.
+        return None, None
     if current and previous:
         current_symbols = {row['sinaSymbol'] for row in current['components']}
         previous_symbols = {row['sinaSymbol'] for row in previous['components']}
@@ -279,6 +308,14 @@ def estimate_aligned_returns(holdings: list[dict[str, Any]], *, target_date: str
             aligned = [row for row in holdings if row.get('sinaSymbol') in common]
             current = estimate_cumulative_return(aligned, target_date=target_date, **kwargs)
             previous = estimate_cumulative_return(aligned, target_date=previous_date, **kwargs)
+            holdings = aligned
+        if current and previous and current['model'] != previous['model']:
+            # Preserve benchmark identity but use the same fallback at BOTH ends.
+            policy = {**kwargs, 'benchmark_lookup': lambda *_: None}
+            current = estimate_cumulative_return(holdings, target_date=target_date, **policy)
+            previous = estimate_cumulative_return(holdings, target_date=previous_date, **policy)
+        if not current or not previous:
+            return None, None
     return current, previous
 
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { quoteDisplayState, quoteIsFresh } from './displayStatus';
+import { quoteDisplayState, quoteDisplayTime, quoteIsFresh } from './displayStatus';
 import type { QuoteData } from './types';
 
 const NOW = new Date('2026-07-18T00:10:00+08:00').getTime();
@@ -36,5 +36,16 @@ describe('quote freshness', () => {
     const staleFuture = quote('hf_NQ', 4.1);
     expect(quoteIsFresh(staleCash, NOW)).toBe(false);
     expect(quoteDisplayState({ quote: staleFuture, marketState: 'live', futuresLive: true })).toBe('stale');
+  });
+});
+
+describe('actual quote timestamps', () => {
+  it.each([
+    ['2026-07-31 04:00:00', '07/31 04:00'],
+    ['2026-12-01 05:00:00', '12/01 05:00'],
+    ['2026-11-28 02:00:00', '11/28 02:00'],
+    ['2026-10-09', '10/09'],
+  ])('does not fabricate a closing time for %s', (time, label) => {
+    expect(quoteDisplayTime({ symbol: 'gb_aapl', time } as QuoteData).label).toBe(label);
   });
 });

@@ -140,7 +140,7 @@ describe('FundCard valuation labels', () => {
     expect(screen.getByText('代理准备中')).toBeInTheDocument();
     expect(screen.queryByText('1.0800')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /展开详情/ }));
-    expect(await screen.findByText('复合代理数据准备中，暂不生成估值。')).toBeInTheDocument();
+    expect(await screen.findByText('估算输入不足或无法对齐，暂不生成估值。')).toBeInTheDocument();
   });
 
   it.each(['017091', '161128'])('ignores legacy pending and preview estimates for index fund %s', (code) => {

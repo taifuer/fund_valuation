@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 
 from backend.storage import migrate_database
+from backend.estimation import eligible_daily_sample
 from backend.valuation_quality import valuation_quality_report
 
 
@@ -31,8 +32,23 @@ class ValuationQualityTests(unittest.TestCase):
             group = report['groups'][0]
             self.assertEqual(group['maePp'], 1.5)
             self.assertEqual(group['biasPp'], -0.5)
+            self.assertEqual(group['p95AbsoluteErrorPp'], 2)
+            self.assertEqual(group['maxAbsoluteErrorPp'], 2)
+            self.assertEqual(group['averageCoveragePct'], 80)
             self.assertEqual(group['averageMissingDisclosedWeightPp'], 10)
             self.assertFalse(group['calibrationEligible'])
+
+    def test_daily_sample_gate_rejects_bad_inputs_but_keeps_zero_and_holiday_fx(self):
+        sample = {'raw_change': 0, 'actual_change': 0, 'complete': True, 'input_signature': 'sig',
+                  'previous_nav_date': '2026-09-01', 'comparison_date': '2026-09-01', 'details_json': '{}'}
+        self.assertTrue(eligible_daily_sample(sample))
+        for details in ['not-json', '[]', '{"quality":{"reasons":null}}',
+                        '{"quality":{"reasons":["stalePrice"]}}', '{"quality":{"reasons":["staleBenchmark"]}}']:
+            with self.subTest(details=details):
+                self.assertFalse(eligible_daily_sample({**sample, 'details_json': details}))
+        self.assertTrue(eligible_daily_sample({**sample, 'details_json':
+            '{"quality":{"reasons":[],"fxCarried":true}}'}))
+        self.assertFalse(eligible_daily_sample({**sample, 'raw_change': float('nan')}))
 
     def test_missing_database_is_not_created(self):
         with tempfile.TemporaryDirectory() as directory:

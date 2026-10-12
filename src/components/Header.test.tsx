@@ -86,8 +86,12 @@ describe('Header', () => {
     expect(screen.queryByRole('button', { name: '风险' })).not.toBeInTheDocument();
   });
 
-  it('shows an offline status before the first status response', () => {
-    render(<Header fxRates={new Map()} activePage="overview" onPageChange={vi.fn()} />);
+  it('distinguishes the first status check from a failed check', () => {
+    const props = { fxRates: new Map(), activePage: 'overview' as const, onPageChange: vi.fn() };
+    const { rerender } = render(<Header {...props} />);
+    expect(screen.getByLabelText('服务状态检查中')).toHaveClass(/liveChecking/);
+    expect(screen.queryByLabelText('服务状态暂不可用')).not.toBeInTheDocument();
+    rerender(<Header {...props} systemStatus={{ status: 'offline', updatedAt: 0, quoteTotal: 0, quoteIssueCount: 0, workerLastSuccessAt: 0 }} />);
     expect(screen.getByLabelText('服务状态暂不可用')).toHaveClass(/liveOffline/);
   });
 

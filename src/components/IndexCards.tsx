@@ -125,7 +125,7 @@ function Card({
   const datedQuote = displayData.dateReliable === false && lastTradingDay
     ? { ...displayData, time: lastTradingDay }
     : displayData;
-  const displayTime = quoteDisplayTime(datedQuote, displayState, { useCloseTimeWhenClosed: true });
+  const displayTime = quoteDisplayTime(datedQuote);
 
   function stateClassName(currentState: QuoteDisplayState): string {
     if (currentState === 'futuresLive') return styles.stateFutures;

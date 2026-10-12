@@ -64,6 +64,34 @@ npm run data:companies:sources -- --company=apple --write
 
 工具串行读取 SEC 当前及历史申报索引，按真实财年截止日和报告类型精确匹配，生成 `src/data/companyReportSources.sec.ts`。失败时不改写索引；既有来源保留，人工核验的 `reportReferences` 优先。它只补来源链接，不核验或改写每个财务数值，不把推导的 Q4 自动指向单个报告，也不自动覆盖重述口径。非美公司继续以逐期官方报告人工核验，无法精确匹配的明确显示“归档”。
 
+## 期末市值
+
+`src/data/companyMarketCaps.json` 单独保存市值、币种、财报截止日、来源 URL 和采集时间，不改变官方财报原始数据。公司页新增可选指标和明细最后一列，默认仍显示营业收入；不增加市盈率。数据随前端发布，页面不请求行情接口。
+
+主来源为 [Stock Analysis 财务比率页](https://stockanalysis.com/stocks/aapl/financials/ratios/?p=quarterly) 的历史 Market Capitalization 字段（页面注明的数据供应商为 S&P Global）。公开窗口通常为最近 20 个季度和 5 个年度。更早时期通过该站的 [Market Cap 历史页](https://stockanalysis.com/stocks/aapl/market-cap/) 与 [CompaniesMarketCap](https://companiesmarketcap.com/apple/marketcap/) 补充，仅收录公开且通过交叉核验的数据；不是公司官方披露指标，也不保证覆盖全部历史。
+
+- 按 `periodEnd` 精确匹配，不按财报发布日或自然季度近似匹配；苹果等非自然季度公司也使用真实财季末。
+- 市值是存量，半年/年度取对应期末值，不能像收入一样相加。同比只匹配上一财年同期间。
+- 财务比率页未给出实际交易日，不伪造该日期。历史页额外保存 `observationDate`，表示来源记录的参考日，不保证是交易日。仅取精确期末记录、明确的年度/季度收盘记录，或美股财季末为周末时紧邻的前一交易日；不把较早周采样或未来点当成期末数据。
+- 保留该市值字段的原始币种，可能不同于营收币种，例如腾讯市值为 HKD，财务报表为 CNY；ADR 公司使用供应商公司级市值，不再叠加另一上市地的相同权益。
+- 补充来源必须与原始财务比率页至少 3 个期末重合，偏差中位数不超过 2%、最大偏差不超过 5%；不以此前补数自证。通过后只补缺失日期，不替换原始值。存在明显股本口径差异的来源整组拒绝，而不是放宽阈值。
+- 宁德时代、恒瑞医药采用东方财富 `RPT_VALUEANALYSIS_DET` 的完整日频总市值历史，仅限港股上市前（分别为 [2025-05-20](https://www.catl.com/en/news/6451.html)、[2025-05-23](https://www.hengrui.com/media/detail-773.html)）。逐条校验总市值等于收盘价乘总股本，取期末之前最近交易日；港股上市后不把 A 股价格乘总股本当作 A/H 股合计市值。
+- 三星采用包含普通股和优先股的来源口径。核验样本：2024 年末普通股 5,969,782,550 股、优先股 822,886,700 股，2024-12-30 收盘价分别为 53,200 和 44,200 韩元，合计 353,964,023,800,000 韩元，与来源一致。股本见[三星上市信息](https://www.samsung.com/global/ir/stock-information/listing-Info/)，历史收盘价由 NAVER `siseJson.naver` 的 005930、005935 日线复核；不重复加计存托凭证。
+- 华为未上市；比亚迪、中芯国际、百济神州的多地上市合计口径尚未核验，暂留空，具体原因见 `marketCapUnavailable`。其他公司也可能缺少早期或上市前的记录。缺失不表示零市值，不插值、不沿用相邻期、不用当前股本倒推。
+
+离线维护命令：
+
+```bash
+npm run data:companies:market-cap -- --company=apple --write
+npm run data:companies:market-cap -- --write
+npm run data:companies:market-cap -- --offline --write
+npm run data:companies:market-cap:backfill -- --write
+npm run data:companies:market-cap:backfill -- --companies=apple,tencent --write
+npm run data:companies:market-cap:backfill -- --offline --write
+```
+
+脚本串行访问，两项维护命令也应依次运行。原始响应分别缓存于 git 忽略的 `data/company-market-caps/` 和 `data/company-market-cap-history/`；后者生成 `coverage.json`，列出覆盖数、缺失日期和拒绝原因。没有 `--write` 时仅校验。只解析 JSON 或 JavaScript 字面量，不执行上游代码，不读取付费墙后数据。校验来源路径、币种、日期、值和年度/季度同日期一致性。主来源任一所选公司失败时不覆盖正式文件；补历史按来源隔离失败，仅合并核验通过的新增记录。两者保留已保存的较早历史，`--offline` 使用缓存复核。更新后执行 `npm run test:unit`、`npm run data:companies:audit` 和 `npm run build`，审阅差异后再发布；不是 worker 自动更新任务。
+
 ## 财报日历
 
 日历与公司数据一样离线维护，日期分为两类：

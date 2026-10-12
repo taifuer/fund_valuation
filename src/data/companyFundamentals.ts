@@ -4,6 +4,7 @@ import type {
   CompanyFundamentalsDataset,
 } from '../types';
 import { companies } from './companies';
+import { companyMarketCaps, withCompanyMarketCaps } from './companyMarketCaps';
 
 export const COMPANIES_WITHOUT_COMPARABLE_RESEARCH_DISCLOSURE = {
   amazon: '将技术与基础设施合并披露，无法拆出可比研发费用。',
@@ -69,13 +70,14 @@ export function deriveHalfYear(pointsToCombine: readonly CompanyFundamentalPoint
 }
 
 export function companySeries(companyData: CompanyFundamentals, frequency: 'annual' | 'half' | 'quarterly') {
-  if (frequency === 'annual') return companyData.annual;
-  if (frequency === 'quarterly') return companyData.quarterly;
+  const attach = (points: readonly CompanyFundamentalPoint[]) => withCompanyMarketCaps(points, companyMarketCaps[companyData.id] ?? []);
+  if (frequency === 'annual') return attach(companyData.annual);
+  if (frequency === 'quarterly') return attach(companyData.quarterly);
   const byPeriod = new Map(
     deriveHalfYear(companyData.quarterly).map((point) => [point.period, point]),
   );
   companyData.halfYear.forEach((point) => byPeriod.set(point.period, point));
-  return [...byPeriod.values()].sort((left, right) => (
+  return attach([...byPeriod.values()].sort((left, right) => (
     left.periodEnd.localeCompare(right.periodEnd) || left.period.localeCompare(right.period)
-  ));
+  )));
 }

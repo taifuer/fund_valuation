@@ -4,6 +4,7 @@ import {
   companyFundamentalsDataset,
 } from '../src/data/companyFundamentals';
 import { resolveCompanyReportReference } from '../src/data/companyReportSources';
+import { companyMarketCaps, marketCapUnavailable } from '../src/data/companyMarketCaps';
 
 const noComparableResearch = new Set(
   Object.keys(COMPANIES_WITHOUT_COMPARABLE_RESEARCH_DISCLOSURE),
@@ -28,6 +29,23 @@ const rows = companyFundamentalsDataset.companies.map((company) => {
   const allowedPartialPeriods = new Set(PARTIAL_RESEARCH_DISCLOSURE_PERIODS[company.id] ?? []);
   const disclosurePoints = [...company.annual, ...company.halfYear, ...company.quarterly];
   const disclosurePeriods = new Set(disclosurePoints.map((point) => point.period));
+  const disclosureDates = new Set(disclosurePoints.map(point => point.periodEnd));
+  const marketCaps = companyMarketCaps[company.id] ?? [];
+  if (marketCaps.length && (marketCapUnavailable[company.id]
+    || new Set(marketCaps.map(point => point.currency)).size !== 1
+    || new Set(marketCaps.map(point => point.periodEnd)).size !== marketCaps.length)) {
+    sourceReferenceErrors.push(`${company.id}: inconsistent market cap scope/currency/dates`);
+  }
+  for (const point of marketCaps) {
+    if (!disclosureDates.has(point.periodEnd) || !Number.isFinite(point.value) || point.value <= 0
+      || !['stockanalysis.com', 'companiesmarketcap.com', 'datacenter-web.eastmoney.com'].includes(new URL(point.sourceUrl).hostname)
+      || (point.observationDate != null && (!/^\d{4}-\d{2}-\d{2}$/.test(point.observationDate)
+        || !Number.isFinite(Date.parse(point.observationDate)) || point.observationDate > point.periodEnd
+        || (Date.parse(point.periodEnd) - Date.parse(point.observationDate)) / 86400000 > 7))
+      || !Number.isFinite(Date.parse(point.retrievedAt)) || point.periodEnd > point.retrievedAt.slice(0, 10)) {
+      sourceReferenceErrors.push(`${company.id}: invalid market cap for ${point.periodEnd}`);
+    }
+  }
   const exactSources = disclosurePoints.filter(
     (point) => resolveCompanyReportReference(company, point).exact,
   ).length;
@@ -80,6 +98,7 @@ const rows = companyFundamentalsDataset.companies.map((company) => {
     annualEmployees: `${annualEmployees}/${company.annual.length}`,
     quarterlyEmployees,
     exactSources: `${exactSources}/${disclosurePoints.length}`,
+    marketCapDates: `${marketCaps.length}/${disclosureDates.size}`,
   };
 });
 

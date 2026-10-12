@@ -133,4 +133,18 @@ describe('HoldingsTable projection details', () => {
 
     expect(screen.getByText('未披露仓位暂无稳定基准，本次估算按已覆盖持仓权重归一化。')).toBeInTheDocument();
   });
+
+  it('uses the selected price input time instead of the unrelated live quote time', () => {
+    render(<HoldingsTable {...props} holdings={[holding]} projection={{ ...projection,
+      holdingContributions: projection.holdingContributions.map(row => ({ ...row,
+        priceInput: { date: '2026-11-30', time: '2026-12-01 05:00:00', source: 'stock-history', session: 'closed' },
+        fxInput: { date: '2026-11-27', time: '2026-11-27', source: 'fx-history' },
+      })),
+    }} />);
+    expect(screen.getByText('12/01 05:00')).toBeInTheDocument();
+    expect(screen.queryByText('08/05 04:00')).not.toBeInTheDocument();
+    expect(screen.queryByText('08/05 07:59')).not.toBeInTheDocument();
+    expect(screen.getByTitle('汇率参考日期 2026-11-27')).toBeInTheDocument();
+    expect(screen.getByText('已收盘')).toBeInTheDocument();
+  });
 });

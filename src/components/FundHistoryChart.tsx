@@ -273,6 +273,9 @@ export default function FundHistoryChart({ fundCode, initialRange = '3m', asOf }
           </div>
 
           <div className={styles.chartWrap}>
+            <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+              {activePoint ? `${activePoint.date}，净值 ${activePoint.nav.toFixed(4)}，区间 ${formatReturn(activeReturn)}` : ''}
+            </span>
             <svg
               ref={chartRef}
               className={styles.chart}

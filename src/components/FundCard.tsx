@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useState } from 'react';
+import { lazy, memo, Suspense, useEffect, useState } from 'react';
 import type {
   Fund,
   FundEstimateProjection,
@@ -6,7 +6,8 @@ import type {
   QuoteData,
 } from '../types';
 import type { FundEstimate } from '../hooks/useQuotes';
-import { quoteDisplayState, quoteDisplayTime, quoteMarketState } from '../displayStatus';
+import { quoteDisplayTime } from '../displayStatus';
+import { choiceFromSearch, expandedFundCodeFromPathname, replaceSearchParams } from '../routing';
 import styles from './FundCard.module.css';
 
 const HoldingsTable = lazy(() => import('./HoldingsTable'));
@@ -151,25 +152,10 @@ function formatAsOf(timestamp: number): string {
   return `${value('month')}/${value('day')} ${value('hour')}:${value('minute')}`;
 }
 
-function quoteTimeCandidate(
-  quote: QuoteData,
-  closed: boolean,
-  marketStates: Map<string, MarketStateData>,
-): { label: string; sort: string } | null {
-  const marketState = quoteMarketState(quote.symbol, marketStates);
-  const state = quoteDisplayState({ quote, marketState });
-  const displayTime = quoteDisplayTime(quote, state, { useCloseTimeWhenClosed: closed && state !== 'break' });
-  return displayTime.label ? { label: displayTime.label, sort: displayTime.sort } : null;
-}
-
-function estimateTimeLabel(
-  quotes: QuoteData[],
-  closed: boolean,
-  marketStates: Map<string, MarketStateData>,
-): string | null {
+function estimateTimeLabel(quotes: QuoteData[]): string | null {
   const candidates = quotes
-    .map((quote) => quoteTimeCandidate(quote, closed, marketStates))
-    .filter((item): item is { label: string; sort: string } => item != null)
+    .map(quoteDisplayTime)
+    .filter(item => item.label)
     .sort((a, b) => b.sort.localeCompare(a.sort));
   return candidates[0]?.label ?? null;
 }
@@ -187,9 +173,25 @@ const FundCard = memo(function FundCard({
 }: Props) {
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = controlledExpanded ?? internalExpanded;
-  const [activeTab, setActiveTab] = useState<FundTab>(
-    fund.estimateMode === 'official' ? 'nav' : 'holdings',
-  );
+  const defaultTab = fund.estimateMode === 'official' ? 'nav' : 'holdings';
+  const readTab = () => expandedFundCodeFromPathname(window.location.pathname) === fund.code
+    ? choiceFromSearch(window.location.search, 'tab', fund.estimateMode === 'official'
+      ? ['nav', 'trend', 'profile'] as const : ['holdings', 'nav', 'trend', 'profile'] as const, defaultTab)
+    : defaultTab;
+  const [activeTab, setActiveTab] = useState<FundTab>(readTab);
+  useEffect(() => {
+    if (!expanded) return;
+    const sync = () => setActiveTab(readTab());
+    sync();
+    window.addEventListener('popstate', sync);
+    return () => window.removeEventListener('popstate', sync);
+  }, [expanded, fund.code, fund.estimateMode]);
+  function changeTab(tab: FundTab) {
+    setActiveTab(tab);
+    if (expandedFundCodeFromPathname(window.location.pathname) === fund.code) {
+      replaceSearchParams({ tab });
+    }
+  }
   function toggleExpanded() {
     const next = !expanded;
     if (controlledExpanded == null) setInternalExpanded(next);
@@ -266,7 +268,7 @@ const FundCard = memo(function FundCard({
             estimate={estimate}
             projection={null}
             activeTab={activeTab}
-            onTabChange={setActiveTab}
+            onTabChange={changeTab}
             marketStates={marketStates}
             estimateEnabled={!officialOnly}
             projectionRequired={compositeBenchmark}
@@ -322,7 +324,7 @@ const FundCard = memo(function FundCard({
   }[displayState];
   const timeLabel = projection
     ? (projection.kind === 'preview' ? formatAsOf(projection.quoteAsOf ?? projection.asOf) : '')
-    : estimateTimeLabel(estimate.holdingsQuotes, displayState === 'CLOSED', marketStates);
+    : estimateTimeLabel(estimate.holdingsQuotes);
   return (
     <div id={`fund-${fund.code}`} className={cardClassName}>
       <div
@@ -351,7 +353,10 @@ const FundCard = memo(function FundCard({
               role="group"
               aria-label={`${estimateKindLabel}（含汇率），状态${estimateStateLabel}`}
             >
-              <span className={`${styles.navKindLabel} ${styles.estimateKindLabel}`}>{estimateKindLabel}</span>
+              <span className={`${styles.navKindLabel} ${styles.estimateKindLabel}`}>{estimateKindLabel}
+                {projection?.quality?.status === 'limited' && <sup className={styles.qualityNote}
+                  title="部分估算输入受限，详情见持仓说明" aria-label="估算输入受限">*</sup>}
+              </span>
               <span className={`${styles.navBoxValue} ${up ? styles.up : styles.down}`}>
                 {displayNav !== null ? displayNav.toFixed(4) : '--'}
               </span>
@@ -361,7 +366,7 @@ const FundCard = memo(function FundCard({
                   : unavailableEstimateLabel}
               </span>
               <span className={`${styles.estLiveTag} ${tagCls}`}>{estimateStateLabel}</span>
-              <span className={styles.navDataTime} title={projection ? `快照计算时间 ${formatAsOf(projection.asOf)}（北京时间）` : undefined}>{timeLabel ?? ''}</span>
+              <span className={styles.navDataTime} title={projection ? `行情时间为北京时间；快照计算时间 ${formatAsOf(projection.asOf)}` : '北京时间'}>{timeLabel ?? ''}</span>
             </div>
           )}
 
@@ -404,7 +409,7 @@ const FundCard = memo(function FundCard({
           estimate={estimate}
           projection={projection}
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={changeTab}
           marketStates={marketStates}
           estimateEnabled={!officialOnly}
           projectionRequired={compositeBenchmark}

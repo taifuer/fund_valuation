@@ -29,7 +29,8 @@ interface Props {
 const FX_ORDER = ['USD', 'EUR'];
 
 function statusLabel(status: SystemStatus | null) {
-  if (!status || status.status === 'offline') return '服务状态暂不可用';
+  if (!status) return '服务状态检查中';
+  if (status.status === 'offline') return '服务状态暂不可用';
   if (status.status === 'ok') {
     return status.holdingQuoteIssueCount
       ? `服务运行正常（${status.holdingQuoteIssueCount} 项持仓行情待更新）`
@@ -132,7 +133,7 @@ export default function Header({
             <div className={styles.datetime}>
               <span>
                 <span
-                  className={`${styles.live} ${systemStatus?.status === 'degraded' ? styles.liveDegraded : ''} ${!systemStatus || systemStatus.status === 'offline' ? styles.liveOffline : ''}`}
+                  className={`${styles.live} ${!systemStatus ? styles.liveChecking : ''} ${systemStatus?.status === 'degraded' ? styles.liveDegraded : ''} ${systemStatus?.status === 'offline' ? styles.liveOffline : ''}`}
                   title={freshnessLabel}
                   aria-label={freshnessLabel}
                 />

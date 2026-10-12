@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FundEstimateProjection, Holding, MarketStateData, QuoteData } from '../types';
 import {
   displayStateLabel,
+  formatQuoteTime,
   quoteDisplayState,
   quoteDisplayTime,
   quoteMarketState,
@@ -111,7 +112,7 @@ export default function HoldingsTable({
             <th>股票</th>
             <th className={styles.right}>权重</th>
             <th className={styles.right}>币种</th>
-            <th className={styles.right}>日期</th>
+            <th className={styles.right} title="行情时间（北京时间）">日期</th>
             <th className={styles.right}>现价</th>
             <th className={styles.right}>涨跌幅</th>
             <th className={styles.right}>汇率</th>
@@ -136,12 +137,14 @@ export default function HoldingsTable({
               : null;
             const marketState = quoteMarketState(h.sinaSymbol, marketStates);
             const displayState = q ? quoteDisplayState({ quote: q, marketState }) : marketState;
-            const contributionIsClosed = Boolean(contribution && projection?.complete);
-            const effectiveState: QuoteDisplayState = contributionIsClosed ? 'closed' : displayState;
-            const displayTime = contributionIsClosed
-              ? { label: shortDate(projection?.targetDate ?? ''), estimated: false }
+            const input = contribution?.priceInput;
+            const effectiveState: QuoteDisplayState = contribution
+              ? input?.stale ? 'stale' : input?.session ?? 'closed'
+              : displayState;
+            const displayTime = contribution
+              ? { label: input?.time ? formatQuoteTime(input.time) : shortDate(projection?.targetDate ?? ''), estimated: !input?.time }
               : q && quoteSupported
-              ? quoteDisplayTime(q, displayState, { useCloseTimeWhenClosed: true })
+              ? quoteDisplayTime(q)
               : null;
             const displayPrice = contribution?.targetPrice ?? q?.price ?? null;
             const hasValue = contribution != null || q != null;
@@ -155,14 +158,16 @@ export default function HoldingsTable({
                 </td>
                 <td className={styles.right}>{(h.weight * 100).toFixed(h.weight < 0.01 ? 2 : 1)}%</td>
                 <td className={styles.right}>{h.currency || '--'}</td>
-                <td className={`${styles.right} ${displayTime?.estimated ? styles.estimatedDate : ''}`}>
+                <td className={`${styles.right} ${displayTime?.estimated ? styles.estimatedDate : ''}`}
+                  title={input?.time ? `${input.time}（北京时间）；来源 ${input.source ?? '--'}` : contribution ? '旧快照未记录实际行情时间，仅显示估值目标日' : '北京时间'}>
                   {displayTime?.label ?? '-'}
                 </td>
                 <td className={styles.right}>{displayPrice ?? '-'}</td>
                 <td className={`${styles.right} ${up ? styles.up : styles.down}`}>
                   {priceChange == null ? '-' : signedPercent(priceChange)}
                 </td>
-                <td className={`${styles.right} ${fxChange >= 0 ? styles.up : styles.down}`}>
+                <td className={`${styles.right} ${fxChange >= 0 ? styles.up : styles.down}`}
+                  title={contribution?.fxInput?.date ? `汇率参考日期 ${contribution.fxInput.date}` : undefined}>
                   {h.currency === 'CNY' || excluded ? '-' : signedPercent(fxChange)}
                 </td>
                 <td className={`${styles.right} ${(contrib ?? 0) >= 0 ? styles.up : styles.down}`}>
@@ -186,7 +191,7 @@ export default function HoldingsTable({
         </button>
       </div>}
       {estimateEnabled && projectionRequired && !projection ? (
-        <div className={styles.footer}>复合代理数据准备中，暂不生成估值。</div>
+        <div className={styles.footer}>估算输入不足或无法对齐，暂不生成估值。</div>
       ) : estimateEnabled ? (
         <div className={styles.footer}>
           估算涨跌
@@ -207,6 +212,13 @@ export default function HoldingsTable({
       )}
       <div className={styles.notes}>
         <div>{holdingPeriod}</div>
+        <div>行情时间为北京时间，价格与时间取自同一估算输入。</div>
+        {projection?.quality?.oldestPriceTime && projection.quality.status === 'limited' && (
+          <div>部分输入受限，最早持仓行情：{projection.quality.oldestPriceTime}。</div>
+        )}
+        {projection?.quality?.fxCarried && (
+          <div>部分汇率沿用最近可用参考值，最早参考日期：{projection.quality.oldestFxDate}；折算口径可能与基金实际采用值不同。</div>
+        )}
         {projection?.model === 'coverageNormalizedFallback' && (
           <div>未披露仓位暂无稳定基准，本次估算按已覆盖持仓权重归一化。</div>
         )}
@@ -224,7 +236,7 @@ export default function HoldingsTable({
           <div>{staleQuoteCount} 项行情不晚于最新已出净值日，已从本次估算中剔除。</div>
         )}
         {missingFxCount > 0 && (
-          <div>{missingFxCount} 项外币持仓缺少汇率，暂按汇率变动 0 计算。</div>
+          <div>{missingFxCount} 项外币持仓缺少汇率，未参与本次估算。</div>
         )}
       </div>
     </div>

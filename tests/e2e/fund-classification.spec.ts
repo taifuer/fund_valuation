@@ -125,7 +125,7 @@ test('slow fund loading and failures stay below the toolbar without replacing th
   try {
     await page.goto('/funds');
     await expect(page.getByRole('heading', { name: 'QDII 基金', exact: true })).toBeVisible();
-    await expect(page.getByText('估算包含汇率影响，不代表官方净值。')).toBeVisible();
+    await expect(page.getByText('估算包含汇率影响，不代表官方净值；时间均为北京时间。')).toBeVisible();
     await expect(page.getByLabel('基金列表')).toHaveAttribute('aria-busy', 'true');
     await expect(page.getByRole('status')).toHaveText('基金数据加载中...');
     await expect(page.locator('header [role="status"]')).toHaveCount(0);
@@ -134,7 +134,7 @@ test('slow fund loading and failures stay below the toolbar without replacing th
     await expect(page.getByRole('alert')).toBeVisible();
     await expect(page.getByRole('alert')).not.toBeEmpty();
     await expect(page.getByRole('status')).toHaveCount(0);
-    await expect(page.getByText('估算包含汇率影响，不代表官方净值。')).toBeVisible();
+    await expect(page.getByText('估算包含汇率影响，不代表官方净值；时间均为北京时间。')).toBeVisible();
   } finally { release(); }
 });
 

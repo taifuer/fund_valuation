@@ -23,6 +23,7 @@ import {
   expandedFundCodeFromPathname,
   fundExpansionPath,
   replaceSearchParams,
+  choiceFromSearch,
   pageFromPathname,
   type PageKey,
 } from './routing';
@@ -115,6 +116,7 @@ export default function App() {
     return expandedFundCodeFromPathname(window.location.pathname);
   });
   const pendingFundScrollRef = useRef<string | null>(expandedFundCodeFromPathname(window.location.pathname));
+  const fundToolbarRef = useRef<HTMLDivElement>(null);
 
   const handleFundExpandedChange = useCallback((code: string, expanded: boolean) => {
     const targetPath = `${fundExpansionPath(code, expanded)}${window.location.search}`;
@@ -144,8 +146,8 @@ export default function App() {
   const showMarketMeta = activePage === 'overview';
   const marketPageData = useRankingMarketData(activePage === 'ranking');
   const systemStatus = useSystemStatus(showMarketMeta);
-  const [sortMode, setSortMode] = useState<FundSortMode>('preview');
-  const [sortDirection, setSortDirection] = useState<FundSortDirection>('desc');
+  const [sortMode, setSortMode] = useState<FundSortMode>(() => choiceFromSearch(window.location.search, 'mode', ['preview', 'pending', 'official'], 'preview'));
+  const [sortDirection, setSortDirection] = useState<FundSortDirection>(() => choiceFromSearch(window.location.search, 'order', ['desc', 'asc'], 'desc'));
   const [fundFilter, setFundFilter] = useState<FundFilter>(() => (
     readFundPageFilter(window.location.search)
   ));
@@ -243,7 +245,11 @@ export default function App() {
     function handlePopState() {
       const page = canonicalizePageLocation();
       setActivePage(page);
-      if (page === 'funds') setFundFilter(readFundPageFilter(window.location.search));
+      if (page === 'funds') {
+        setFundFilter(readFundPageFilter(window.location.search));
+        setSortMode(choiceFromSearch<FundSortMode>(window.location.search, 'mode', ['preview', 'pending', 'official'], 'preview'));
+        setSortDirection(choiceFromSearch<FundSortDirection>(window.location.search, 'order', ['desc', 'asc'], 'desc'));
+      }
       setExpandedCode(page === 'funds' ? expandedFundCodeFromPathname(window.location.pathname) : null);
     }
     window.addEventListener('popstate', handlePopState);
@@ -256,7 +262,8 @@ export default function App() {
     const frame = window.requestAnimationFrame(() => {
       const target = document.getElementById(`fund-${code}`);
       if (!target) return;
-      target.scrollIntoView({ block: 'start', behavior: 'auto' });
+      const inset = (fundToolbarRef.current?.getBoundingClientRect().height ?? 72) + 8;
+      window.scrollTo({ top: window.scrollY + target.getBoundingClientRect().top - inset, behavior: 'auto' });
       pendingFundScrollRef.current = null;
     });
     return () => window.cancelAnimationFrame(frame);
@@ -269,9 +276,10 @@ export default function App() {
       setFundFilter('all');
       return;
     }
-    replaceSearchParams({ strategy: fundFilter });
+    replaceSearchParams({ strategy: fundFilter, mode: sortMode === 'preview' ? null : sortMode, order: sortDirection === 'desc' ? null : sortDirection,
+      ...(expandedCode ? {} : { tab: null }) });
     storeFundPageFilter(fundFilter);
-  }, [activePage, expandedCode, fundFilter, funds]);
+  }, [activePage, expandedCode, fundFilter, funds, sortMode, sortDirection]);
 
   function navigatePage(page: PageKey) {
     rememberPageSearch();
@@ -280,7 +288,11 @@ export default function App() {
       window.history.pushState({}, '', path);
     }
     setActivePage(page);
-    if (page === 'funds') setFundFilter(readFundPageFilter(window.location.search));
+    if (page === 'funds') {
+      setFundFilter(readFundPageFilter(window.location.search));
+      setSortMode(choiceFromSearch<FundSortMode>(window.location.search, 'mode', ['preview', 'pending', 'official'], 'preview'));
+      setSortDirection(choiceFromSearch<FundSortDirection>(window.location.search, 'order', ['desc', 'asc'], 'desc'));
+    }
     setExpandedCode(null);
     window.scrollTo({ top: 0, behavior: 'auto' });
   }
@@ -451,8 +463,8 @@ export default function App() {
       ) : activePage === 'funds' ? (
         <>
           <div className={styles.fundSection}>
-            <PageHeading title="QDII 基金" description="估算包含汇率影响，不代表官方净值。" />
-            <div className={styles.fundToolbar}>
+            <PageHeading title="QDII 基金" description="估算包含汇率影响，不代表官方净值；时间均为北京时间。" />
+            <div className={styles.fundToolbar} ref={fundToolbarRef}>
               <p className={styles.fundSortLabel}>{filteredFunds.length} · {sortLabel}</p>
               <div className={`${styles.fundControls} ${fundFilter === 'index' ? styles.fundControlsOfficial : ''}`}>
                 <div className={styles.sortToggle} role="group" aria-label="基金类型筛选">

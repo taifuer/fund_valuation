@@ -5,6 +5,7 @@ import { companyPlotSeries } from '../companyChart';
 import { useChartWidth } from '../hooks/useChartWidth';
 import { companyFundamentalsDataset, companySeries } from '../data/companyFundamentals';
 import { resolveCompanyReportReference } from '../data/companyReportSources';
+import { companyMarketCaps, companyMarketCapCurrency, marketCapUnavailable, marketCapNotes, marketCapSourceName } from '../data/companyMarketCaps';
 import { choiceFromSearch, replaceSearchParams } from '../routing';
 import type {
   CompanyFrequency,
@@ -16,7 +17,7 @@ import CompanyReportCalendar from './CompanyReportCalendar';
 import styles from './CompaniesPage.module.css';
 import PageHeading from './PageHeading';
 
-type MetricKey = 'revenue' | 'operatingProfit' | 'margin' | 'researchAndDevelopment' | 'employees';
+type MetricKey = 'revenue' | 'operatingProfit' | 'margin' | 'researchAndDevelopment' | 'employees' | 'marketCap';
 type TrendMode = 'value' | 'yoy';
 type CompanyPageMode = 'trend' | 'calendar';
 
@@ -47,6 +48,7 @@ const METRICS: Array<{ key: MetricKey; label: string }> = [
   { key: 'margin', label: '营业利润率' },
   { key: 'researchAndDevelopment', label: '研发费用' },
   { key: 'employees', label: '员工人数' },
+  { key: 'marketCap', label: '期末市值' },
 ];
 
 function metricLabel(company: CompanyFundamentals, metric: MetricKey) {
@@ -65,6 +67,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   INR: '₹',
   TWD: 'NT$',
   KRW: '₩',
+  HKD: 'HK$',
 };
 
 const FREQUENCY_KEYS = FREQUENCIES.map((item) => item.key);
@@ -169,12 +172,14 @@ function changeClass(value: number | null) {
 
 function metricValue(point: CompanyFundamentalPoint, metric: MetricKey) {
   if (metric === 'margin') return operatingMargin(point);
+  if (metric === 'marketCap') return point.marketCap?.value ?? null;
   return point[metric];
 }
 
 function metricDisplay(value: number | null, metric: MetricKey, company: CompanyFundamentals) {
   if (metric === 'employees') return formatEmployees(value);
   if (metric === 'margin') return formatPercent(value);
+  if (metric === 'marketCap') return formatMoney(value, companyMarketCapCurrency(company.id));
   return formatMoney(value, company.currency);
 }
 
@@ -423,9 +428,18 @@ function TrendChart({ company, points, frequency, metric, mode }: TrendChartProp
             x={label.x} y={height - 17} textAnchor={label.anchor}>{label.label}</text>)}
         </svg>
       </div>
-      {(mode === 'yoy' || metric === 'employees' || metric === 'researchAndDevelopment'
+      {(mode === 'yoy' || metric === 'employees' || metric === 'researchAndDevelopment' || metric === 'marketCap'
         || methodologyMarkers.length > 0) && (
         <div className={styles.chartNotes} role="note">
+          {metric === 'marketCap' && (
+            <p><strong>*</strong><span>
+              市值币种：{companyMarketCapCurrency(company.id)}。按财报截止日匹配历史期末市值，非财报披露日；不以当前股本倒推，缺失期间不补值。
+              {activePoint.marketCap && <> 来源：<a href={activePoint.marketCap.sourceUrl} target="_blank" rel="noreferrer">{marketCapSourceName(activePoint.marketCap.sourceUrl)}</a>。
+                {activePoint.marketCap.observationDate && activePoint.marketCap.observationDate !== activePoint.periodEnd
+                  && <> 参考日：{compactDate(activePoint.marketCap.observationDate)}。</>}
+              </>}
+            </span></p>
+          )}
           {mode === 'yoy' && (
             <p><strong>*</strong><span>同比按上一财年相同季度、半年或年度计算，不使用相邻期间环比。</span></p>
           )}
@@ -667,7 +681,7 @@ export default function CompaniesPage() {
           )}
         </section>
 
-        <div
+        {filteredCompanies.length > 0 && <div
           id="company-trend-panel"
           className={styles.trendContent}
         >
@@ -733,6 +747,8 @@ export default function CompaniesPage() {
                   key={item.key}
                   type="button"
                   disabled={!hasMetricData(selectedCompany, item.key)}
+                  title={item.key === 'marketCap' && !hasMetricData(selectedCompany, item.key)
+                    ? marketCapUnavailable[selectedCompany.id] ?? '暂无足够的可核验期末市值数据' : undefined}
                   className={`${styles.metricButton} ${effectiveMetric === item.key ? styles.metricButtonActive : ''}`}
                   aria-pressed={effectiveMetric === item.key}
                   onClick={() => setMetric(item.key)}
@@ -812,13 +828,14 @@ export default function CompaniesPage() {
               >
                 <thead>
                   <tr>
-                    <th>期间</th>
-                    <th>截止日期</th>
-                    <th>营业收入</th>
-                    <th>{metricLabel(selectedCompany, 'operatingProfit')}</th>
-                    <th>{metricLabel(selectedCompany, 'researchAndDevelopment')}</th>
-                    <th>{metricLabel(selectedCompany, 'margin')}</th>
-                    <th>员工人数</th>
+                    <th scope="col">期间</th>
+                    <th scope="col">截止日期</th>
+                    <th scope="col">营业收入</th>
+                    <th scope="col">{metricLabel(selectedCompany, 'operatingProfit')}</th>
+                    <th scope="col">{metricLabel(selectedCompany, 'researchAndDevelopment')}</th>
+                    <th scope="col">{metricLabel(selectedCompany, 'margin')}</th>
+                    <th scope="col">员工人数</th>
+                    <th scope="col">期末市值<sup>*</sup></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -873,6 +890,14 @@ export default function CompaniesPage() {
                             change={metricChange(trendPoints, point, 'employees')}
                           />
                         </td>
+                        <td title={point.marketCap
+                          ? `${point.marketCap.currency} · 期末 ${point.marketCap.periodEnd} · ${marketCapSourceName(point.marketCap.sourceUrl)}${point.marketCap.observationDate ? ` · 参考日 ${point.marketCap.observationDate}` : ''}`
+                          : marketCapUnavailable[selectedCompany.id] ?? '该期间暂无可核验市值'}>
+                          <DetailMetric
+                            value={point.marketCap ? formatMoney(point.marketCap.value, point.marketCap.currency) : '--'}
+                            change={metricChange(trendPoints, point, 'marketCap')}
+                          />
+                        </td>
                       </tr>
                     );
                   })}
@@ -896,10 +921,18 @@ export default function CompaniesPage() {
             )}
           </details>
 
+          <p className={styles.companyNote}>
+            * 期末市值{companyMarketCaps[selectedCompany.id]?.length
+              ? <>来源：{[...new Map(companyMarketCaps[selectedCompany.id].map(point => [marketCapSourceName(point.sourceUrl), point.sourceUrl])).entries()].map(([name, url], index) => (
+                <span key={name}>{index > 0 && '、'}<a href={url} target="_blank" rel="noreferrer">{name}</a></span>
+              ))}（{companyMarketCapCurrency(selectedCompany.id)}）。年度、半年均取期末值，不相加；缺失不补值。不同来源的股本统计及汇率口径可能有小幅差异。{marketCapNotes[selectedCompany.id]}</>
+              : `：${marketCapUnavailable[selectedCompany.id] ?? '暂无可核验数据，不推算。'}`}
+          </p>
+
           {selectedCompany.methodologyNote && (
             <p className={styles.companyNote}>* {selectedCompany.methodologyNote}</p>
           )}
-        </div>
+        </div>}
         </section>
 
         <footer className={styles.methodology}>

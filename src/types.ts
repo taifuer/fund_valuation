@@ -86,6 +86,15 @@ export interface FundValuationBasis {
 
 export type FundEstimatePhase = 'LIVE' | 'PRE' | 'POST' | 'PARTIAL' | 'CLOSED';
 
+export interface EstimateInput {
+  date?: string;
+  time?: string;
+  source?: string;
+  fetchedAt?: number;
+  session?: 'live' | 'pre' | 'post' | 'closed';
+  stale?: boolean;
+}
+
 export interface FundHoldingContribution {
   sinaSymbol: string;
   symbol: string;
@@ -100,6 +109,10 @@ export interface FundHoldingContribution {
   fxChangePercent: number;
   combinedChangePercent: number;
   contributionPercent: number;
+  priceInput?: EstimateInput;
+  comparisonPriceInput?: EstimateInput;
+  fxInput?: EstimateInput;
+  comparisonFxInput?: EstimateInput;
 }
 
 export interface FundEstimateProjection {
@@ -136,6 +149,13 @@ export interface FundEstimateProjection {
   quoteAsOf?: number;
   inputSignature?: string;
   snapshotId?: string;
+  quality?: {
+    status: 'ok' | 'limited';
+    reasons: string[];
+    oldestPriceTime: string;
+    oldestFxDate: string;
+    fxCarried: boolean;
+  };
 }
 
 export interface FundEstimateResult {
@@ -322,7 +342,17 @@ export interface CompanyFundamentalPoint {
   operatingProfit: number;
   researchAndDevelopment: number | null;
   employees: number | null;
+  marketCap?: CompanyMarketCapObservation;
   derived?: boolean;
+}
+
+export interface CompanyMarketCapObservation {
+  periodEnd: string;
+  observationDate?: string;
+  value: number;
+  currency: string;
+  sourceUrl: string;
+  retrievedAt: string;
 }
 
 export interface CompanyEmployeeMethodologyMarker {

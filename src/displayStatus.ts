@@ -46,21 +46,6 @@ export function quoteIsFresh(quote: QuoteData, now = Date.now()): boolean {
   return beijingTimestamp(quote.time) != null;
 }
 
-export function closeTime(symbol: string): string | null {
-  if (symbol.startsWith('s_')) return '15:00';
-  if (symbol.startsWith('gb_')) return '04:00';
-  if (symbol.startsWith('hk')) return '16:10';
-  if (symbol.startsWith('kr')) return '14:30';
-  if (symbol.startsWith('sh') || symbol.startsWith('sz')) return '15:00';
-  if (symbol === 'int_nikkei') return '14:30';
-  if (symbol === 'b_KOSPI') return '14:30';
-  if (symbol === 'b_TWSE') return '13:30';
-  if (symbol === 'hf_HSI') return '03:00';
-  if (symbol === 'hf_NK') return '04:15';
-  if (symbol.startsWith('hf_')) return '05:00';
-  return null;
-}
-
 export function quoteMarketState(
   symbol: string,
   marketStates: Map<string, MarketStateData>,
@@ -103,27 +88,9 @@ export function rankingStateLabel(state: MarketState): string {
   return displayStateLabel(state);
 }
 
-export function shouldUseCloseTime(state: QuoteDisplayState): boolean {
-  return state === 'closed' || state === 'holiday' || state === 'weekend';
-}
-
 export function quoteDisplayTime(
   quote: QuoteData,
-  state: QuoteDisplayState,
-  options: { useCloseTimeWhenClosed?: boolean } = {},
 ): { label: string; sort: string; estimated: boolean } {
-  if (options.useCloseTimeWhenClosed && shouldUseCloseTime(state)) {
-    const time = closeTime(quote.symbol);
-    const match = quote.time.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (time && match) {
-      return {
-        label: `${match[2]}/${match[3]} ${time}`,
-        sort: `${match[1]}-${match[2]}-${match[3]} ${time}:00`,
-        estimated: quote.dateReliable === false,
-      };
-    }
-  }
-
   return {
     label: formatQuoteTime(quote.time),
     sort: quote.time || String(quote.fetchedAt),

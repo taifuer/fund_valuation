@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sqlite3
 from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
+
+from .estimation import eligible_daily_sample
 
 
 def valuation_quality_report(path: Path, *, days: int = 90, as_of: date | None = None) -> dict:
@@ -25,7 +28,7 @@ def valuation_quality_report(path: Path, *, days: int = 90, as_of: date | None =
         """, (start, end.isoformat())).fetchall()
     seen = set()
     for row in rows:
-        if not row['complete'] or row['actual_change'] is None or row['comparison_date'] != row['previous_nav_date'] or not row['input_signature']:
+        if not eligible_daily_sample(row):
             excluded += 1
             continue
         identity = (row['code'], row['target_date'], row['model_version'], row['input_signature'])
@@ -36,6 +39,7 @@ def valuation_quality_report(path: Path, *, days: int = 90, as_of: date | None =
     summaries = []
     for (code, model, signature), samples in sorted(groups.items()):
         errors = [float(row['estimated_change']) - float(row['actual_change']) for row in samples]
+        absolute_errors = sorted(map(abs, errors))
         missing = []
         for row in samples:
             details = json.loads(row['details_json'])
@@ -47,6 +51,10 @@ def valuation_quality_report(path: Path, *, days: int = 90, as_of: date | None =
             'sampleCount': len(samples), 'startDate': samples[0]['target_date'], 'endDate': samples[-1]['target_date'],
             'maePp': round(sum(map(abs, errors)) / len(errors), 4),
             'biasPp': round(sum(errors) / len(errors), 4),
+            'p95AbsoluteErrorPp': round(absolute_errors[max(0, math.ceil(len(errors) * 0.95) - 1)], 4),
+            'maxAbsoluteErrorPp': round(absolute_errors[-1], 4),
+            'estimateModel': samples[0]['estimate_model'],
+            'averageCoveragePct': round(sum(row['coverage'] for row in samples) / len(samples) * 100, 2),
             'averageMissingDisclosedWeightPp': round(sum(missing) / len(missing), 4) if missing else None,
             'missingWeightSampleCount': len(missing),
             'calibrationEligible': len(samples) >= 30,

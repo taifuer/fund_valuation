@@ -357,3 +357,8 @@
 }
 
 .disclosureNote a { color: inherit; text-underline-offset: 3px; }
+.qualityNote {
+  margin-left: 3px;
+  color: var(--text-secondary, #64748b);
+  font-size: 11px;
+}

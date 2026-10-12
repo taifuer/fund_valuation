@@ -9,6 +9,28 @@ describe('CompaniesPage', () => {
     window.scrollTo = () => undefined;
   });
 
+  it('shows offline period-end market caps in a separate metric and the final table column', () => {
+    window.history.replaceState({}, '', '/companies?company=apple&metric=marketCap');
+    render(<CompaniesPage />);
+    expect(screen.getByRole('img', { name: '苹果期末市值趋势' })).toBeInTheDocument();
+    const table = screen.getByRole('table', { name: '苹果披露明细' });
+    const headers = within(table).getAllByRole('columnheader');
+    expect(headers[headers.length - 1]).toHaveTextContent('期末市值');
+    expect(within(table).getAllByRole('columnheader')[2]).toHaveTextContent('营业收入');
+    expect(screen.getByText(/市值币种：USD/)).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Stock Analysis' }).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: '同比' }));
+    expect(screen.getByRole('img', { name: '苹果期末市值同比趋势' })).toBeInTheDocument();
+  });
+
+  it('does not invent a market cap for Huawei or confuse it with current valuation', () => {
+    window.history.replaceState({}, '', '/companies?company=huawei&metric=marketCap');
+    render(<CompaniesPage />);
+    expect(screen.getByRole('button', { name: '期末市值' })).toBeDisabled();
+    expect(screen.getByRole('img', { name: '华为营业收入趋势' })).toBeInTheDocument();
+    expect(screen.getByText(/未上市，不展示推测估值/)).toBeInTheDocument();
+  });
+
   it('renders one focused trend with the complete restrained company roster', () => {
     render(<CompaniesPage />);
 
