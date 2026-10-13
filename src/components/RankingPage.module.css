@@ -144,51 +144,24 @@
   min-width: 0;
 }
 
+.nameDetails {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  min-width: 0;
+}
+
 .nameContent {
   align-items: flex-start;
   display: flex;
+  max-width: 100%;
   min-width: 0;
 }
 
 .nameContent .nameButton {
   min-width: 0;
   width: auto;
-}
-
-.freshnessMark {
-  background: transparent;
-  border: 0;
-  color: var(--ink-muted);
-  cursor: pointer;
-  flex: 0 0 24px;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  height: 24px;
-  line-height: 16px;
-  margin: -3px 0 -3px 2px;
-  padding: 0;
-  text-align: left;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.freshnessMark:focus-visible {
-  outline: 2px solid var(--focus-color);
-  outline-offset: 1px;
-}
-
-.table .freshnessRow td {
-  background: #f8fafc;
-  text-align: left;
-}
-
-.freshnessNote {
-  color: var(--ink-muted);
-  font-size: 12px;
-  line-height: 1.7;
-  max-width: 720px;
-  white-space: normal;
-  width: calc(100cqw - 32px);
 }
 
 .historyRow {
@@ -228,12 +201,29 @@
   white-space: nowrap;
 }
 
-.nameCell span {
+.symbol {
   display: block;
-  margin-top: 2px;
+  flex-basis: 100%;
+  min-width: 0;
+  order: 2;
 }
 
-.nameCell span,
+.liveBadge {
+  background: #f0fdf4;
+  border: 1px solid #dcfce7;
+  border-radius: 3px;
+  color: #15803d;
+  flex: 0 0 auto;
+  font-size: 9px;
+  font-weight: 600;
+  height: 16px;
+  line-height: 14px;
+  order: 1;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.symbol,
 .dateRange,
 .source,
 .value,
@@ -368,14 +358,21 @@
     white-space: normal;
   }
 
-  .freshnessMark {
-    margin-right: -8px;
+  .nameContent {
+    flex-basis: 100%;
   }
 
-  .nameCell span {
+  .symbol {
+    flex-basis: auto;
+    max-width: 100%;
+    order: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .liveBadge {
+    order: 2;
   }
 
   .table th:first-child,

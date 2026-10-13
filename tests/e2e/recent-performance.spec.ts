@@ -39,6 +39,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('SOX latest requests and displays spot quotes while historical ranges keep confirmed closes', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-21T23:17:00+08:00'));
   const requestedSymbols: string[] = [];
   await page.route('**/api/dashboard*', route => {
     requestedSymbols.push(...(new URL(route.request().url()).searchParams.get('symbols') ?? '').split(','));
@@ -62,6 +63,7 @@ test('SOX latest requests and displays spot quotes while historical ranges keep 
   await expect(row).toContainText('+3.41%');
   await expect(row).toContainText('12,328.23');
   await expect(row).toContainText('开盘中');
+  await expect(row.getByLabel('实时行情')).toBeVisible();
   await expect(row).toContainText('2026-09-21');
   expect(requestedSymbols).toContain('gb_sox');
   expect(requestedSymbols).not.toContain('gb_rut');
@@ -70,7 +72,74 @@ test('SOX latest requests and displays spot quotes while historical ranges keep 
   await expect(row).toContainText('+1.56%');
   await expect(row).toContainText('11,921.69');
   await expect(row).toContainText('收盘价');
+  await expect(row.getByLabel('实时行情')).toHaveCount(0);
   await expect(row).toContainText('2026-09-18');
+});
+
+test('live badges fit names and codes without widening recent table columns', async ({ page, isMobile }, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const now = new Date('2026-10-13T10:02:00+08:00');
+  await page.clock.setFixedTime(now);
+  await page.route('**/api/dashboard*', route => route.fulfill({ json: {
+    schemaVersion: 1, generatedAt: now.getTime(), quotesText: '', fxText: '',
+    quotes: Object.fromEntries(['sh000001', 'sz159558'].map(symbol => [symbol, {
+      symbol, price: 101, previousClose: 100, change: 1, changePercent: 1,
+      time: '2026-10-13 10:01:00', fetchedAt: now.getTime(), dateReliable: true,
+    }])),
+    marketStates: Object.fromEntries(['sh000001', 'sz159558'].map(symbol => [symbol, {
+      symbol, market: 'cn', state: 'live', source: 'calendar',
+    }])),
+  } }));
+  for (const category of ['index', 'etf']) {
+    await page.goto(`/returns?category=${category}`);
+    const row = page.getByRole('row').filter({ has: page.getByRole('button', {
+      name: category === 'index' ? '上证指数走势' : '半导体设备ETF走势', exact: true,
+    }) });
+    const badge = row.getByLabel('实时行情');
+    await expect(badge).toBeVisible();
+    await expect(row).toContainText('开盘中');
+    await expect(badge).toHaveCSS('animation-name', 'none');
+    for (const width of isMobile ? [320, 360, 390, 430, 720] : [1280, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      const geometry = await row.evaluate(element => {
+        const cell = element.querySelectorAll('td')[1];
+        const name = cell.querySelector('strong')!.getBoundingClientRect();
+        const badge = cell.querySelector('[aria-label="实时行情"]')!.getBoundingClientRect();
+        const symbol = cell.querySelector('[class*="_symbol_"]')!.getBoundingClientRect();
+        const table = element.closest('table')!;
+        const cells = [...table.querySelectorAll('th, td')];
+        return { name: name.toJSON(), badge: badge.toJSON(), symbol: symbol.toJSON(),
+          cell: cell.getBoundingClientRect().toJSON(),
+          overflow: document.documentElement.scrollWidth - innerWidth,
+          clipped: cells.filter(item => item.scrollWidth > item.clientWidth + 1).map(item => item.textContent),
+          fourthRight: element.querySelectorAll('td')[3].getBoundingClientRect().right,
+          scrollerRight: table.parentElement!.getBoundingClientRect().right,
+        };
+      });
+      expect(geometry.overflow).toBeLessThanOrEqual(1);
+      expect(geometry.clipped).toEqual([]);
+      expect(geometry.badge.left).toBeGreaterThanOrEqual(geometry.cell.left);
+      expect(geometry.badge.right).toBeLessThanOrEqual(geometry.cell.right);
+      expect(geometry.badge.bottom).toBeLessThanOrEqual(geometry.cell.bottom);
+      if (isMobile) {
+        expect(geometry.badge.top).toBeGreaterThanOrEqual(geometry.name.bottom);
+        expect(geometry.badge.left >= geometry.symbol.right || geometry.badge.top >= geometry.symbol.bottom).toBe(true);
+        expect(geometry.fourthRight).toBeLessThanOrEqual(geometry.scrollerRight + 1);
+      } else {
+        expect(geometry.badge.left).toBeGreaterThan(geometry.name.right);
+        expect(Math.abs(geometry.badge.top - geometry.name.top)).toBeLessThan(5);
+      }
+      if ([390, 1440].includes(width)) {
+        await row.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: testInfo.outputPath(`recent-live-${category}-${width}.png`) });
+      }
+    }
+    await chooseRecentRange(page, '1m', '近1月');
+    await expect(badge).toHaveCount(0);
+    await expect(row).toContainText('收盘价');
+  }
+  expect(errors).toEqual([]);
 });
 
 test('populated recent tables fit four mobile columns and keep the rest scrollable', async ({ page }, testInfo) => {
@@ -155,7 +224,7 @@ test('archive-only indices never appear or request summaries in recent categorie
   expect(items).not.toContain('yahoo-index:OEX');
 });
 
-test('stale histories remain readable but unranked with an accessible mobile disclosure', async ({ page, isMobile }, testInfo) => {
+test('stale histories keep status and dates with one footnote instead of row markers', async ({ page, isMobile }, testInfo) => {
   const errors: string[] = [];
   const historyRequests: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -190,37 +259,23 @@ test('stale histories remain readable but unranked with an accessible mobile dis
       const titleGeometry = await row.evaluate(element => {
         const title = element.querySelector('strong')!;
         const name = title.closest('button')!;
-        const mark = name.nextElementSibling!;
         const symbol = name.parentElement!.nextElementSibling!;
-        const range = document.createRange();
-        range.selectNodeContents(title);
         return {
-          gap: mark.getBoundingClientRect().left - name.getBoundingClientRect().right,
-          textGap: mark.getBoundingClientRect().left - range.getBoundingClientRect().right,
-          markTop: mark.getBoundingClientRect().top,
-          titleTop: title.getBoundingClientRect().top,
           symbolTop: symbol.getBoundingClientRect().top,
           titleBottom: title.getBoundingClientRect().bottom,
-          width: mark.getBoundingClientRect().width,
-          height: mark.getBoundingClientRect().height,
           titleHeight: title.clientHeight,
           fullTitleHeight: title.scrollHeight,
         };
       });
-      expect(titleGeometry.gap).toBeGreaterThanOrEqual(0);
-      expect(titleGeometry.gap).toBeLessThanOrEqual(3);
-      if (width >= 390) expect(titleGeometry.textGap).toBeLessThanOrEqual(3);
-      expect(titleGeometry.markTop).toBeLessThanOrEqual(titleGeometry.titleTop);
       expect(titleGeometry.symbolTop).toBeGreaterThanOrEqual(titleGeometry.titleBottom);
-      expect(titleGeometry.width).toBeGreaterThanOrEqual(24);
-      expect(titleGeometry.height).toBeGreaterThanOrEqual(24);
       expect(titleGeometry.fullTitleHeight).toBeLessThanOrEqual(titleGeometry.titleHeight);
+      await expect(row.getByRole('button')).toHaveCount(1);
     }
-    const mark = table.getByRole('button', { name: '纳指100数据待更新说明' });
-    if (isMobile) await mark.tap(); else { await mark.focus(); await page.keyboard.press('Enter'); }
-    await expect(mark).toHaveAttribute('aria-expanded', 'true');
+    await expect(table).not.toContainText('*');
     const note = page.getByRole('note');
-    await expect(note).toContainText('数据截至 2026-09-15，应更新至 2026-09-18');
+    await expect(note).toHaveCount(1);
+    await expect(note).toContainText('待更新数据保留实际数值和日期，不参与排名');
+    expect(await note.evaluate(element => element.closest('table') === null)).toBe(true);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     expect(historyRequests).toEqual([]);
     const geometry = await note.evaluate(element => ({
@@ -233,9 +288,6 @@ test('stale histories remain readable but unranked with an accessible mobile dis
     expect(geometry.noteRight).toBeLessThanOrEqual(geometry.viewport);
     expect(geometry.overflow).toBeLessThanOrEqual(1);
     await page.screenshot({ path: testInfo.outputPath(`pending-history-${width}.png`), fullPage: true });
-    if (isMobile) await mark.tap(); else await page.keyboard.press('Enter');
-    await expect(note).toHaveCount(0);
-    await expect(mark).toHaveAttribute('aria-expanded', 'false');
     await table.getByRole('button', { name: '涨跌幅 ↓' }).click();
     await expect(table.locator('tbody tr').first()).not.toContainText('待更新');
   }

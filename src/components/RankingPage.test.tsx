@@ -1,7 +1,8 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchFundHistorySeries, fetchMarketHistory, fetchMarketReturnSummaries } from '../api';
-import type { MarketRangeReturn, MarketReturnSummary, QuoteData } from '../types';
+import type { MarketRangeReturn, MarketReturnSummary, MarketStateData, QuoteData } from '../types';
+import { startAdaptivePolling } from '../polling';
 import { useFundReturnData } from '../hooks/usePageData';
 import type { FundEstimate } from '../hooks/useQuotes';
 import { FUNDS } from '../constants';
@@ -9,9 +10,10 @@ import RankingPage from './RankingPage';
 
 vi.mock('../api', () => ({ fetchMarketReturnSummaries: vi.fn(), fetchMarketHistory: vi.fn(), fetchFundHistorySeries: vi.fn() }));
 vi.mock('../hooks/usePageData', () => ({ useFundReturnData: vi.fn() }));
-vi.mock('../polling', () => ({ startAdaptivePolling: () => () => undefined }));
+vi.mock('../polling', () => ({ startAdaptivePolling: vi.fn(() => () => undefined) }));
 
 beforeEach(() => {
+  vi.mocked(startAdaptivePolling).mockClear();
   window.history.replaceState({}, '', '/returns');
   vi.mocked(fetchMarketReturnSummaries).mockReset();
   vi.mocked(fetchMarketHistory).mockReset().mockResolvedValue([
@@ -326,7 +328,10 @@ describe('combined recent returns and risk', () => {
     expect(fetchMarketReturnSummaries).not.toHaveBeenCalled();
   });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('cash-index ranking rows', () => {
   it('falls back to confirmed closes when SOX quotes are missing, excluding archive-only indices and requests', async () => {
@@ -353,6 +358,7 @@ describe('cash-index ranking rows', () => {
   });
 
   it('uses SOX spot prices for latest during trading without changing historical returns', async () => {
+    vi.setSystemTime(new Date('2026-09-21T23:17:00+08:00'));
     const latest: NonNullable<MarketReturnSummary['latest']> = { key: 'latest', label: '最新', returnPercent: 2.78, startDate: '2026-09-17',
       endDate: '2026-09-18', startClose: 11599.49, endClose: 11921.69 };
     vi.mocked(fetchMarketReturnSummaries).mockResolvedValue(new Map([['yahoo-index:SOX', {
@@ -361,7 +367,7 @@ describe('cash-index ranking rows', () => {
       ranges: { '1m': { ...latest, key: '1m', label: '近1月', returnPercent: 1.56 } },
     }]]));
     const quote: QuoteData = { symbol: 'gb_sox', name: '费城半导体', price: 12328.23, previousClose: 11921.69,
-      change: 406.54, changePercent: 3.41, time: '2026-09-21 23:16:17', fetchedAt: 1, dateReliable: true };
+      change: 406.54, changePercent: 3.41, time: '2026-09-21 23:16:17', fetchedAt: Date.now(), dateReliable: true };
     render(<RankingPage funds={[]} marketLoading={false} quotes={new Map([['gb_sox', quote]])}
       marketStates={new Map([['gb_sox', { symbol: 'gb_sox', market: 'us', state: 'live', source: 'calendar' }]])} />);
     const row = (await screen.findByText('费城半导体')).closest('tr')!;
@@ -369,12 +375,14 @@ describe('cash-index ranking rows', () => {
     expect(row).toHaveTextContent('12,328.23');
     expect(row).toHaveTextContent('2026-09-21');
     expect(row).toHaveTextContent('开盘中');
+    expect(within(row).getByLabelText('实时行情')).toHaveTextContent('LIVE');
     expect(row).not.toHaveTextContent('收盘价');
     fireEvent.click(screen.getByRole('button', { name: '近1月' }));
     await within(row).findByText('+1.56%');
     expect(row).toHaveTextContent('11,921.69');
     expect(row).toHaveTextContent('2026-09-18');
     expect(row).toHaveTextContent('收盘价');
+    expect(within(row).queryByLabelText('实时行情')).not.toBeInTheDocument();
   });
 
   it('keeps unavailable histories blank instead of using a stale quote or zero', async () => {
@@ -382,7 +390,105 @@ describe('cash-index ranking rows', () => {
     render(<RankingPage funds={[]} marketLoading={false} quotes={new Map()} />);
     const row = (await screen.findByText('费城半导体')).closest('tr')!;
     expect(row).not.toHaveTextContent('0.00%');
-    expect(within(row).getAllByText('--')).toHaveLength(4);
+    expect(within(row).getAllByText('--')).toHaveLength(5);
+  });
+});
+
+describe('latest live indicators', () => {
+  const now = new Date('2026-10-13T10:02:00+08:00');
+  const quote: QuoteData = {
+    symbol: 'sh000001', name: '上证指数', price: 3030, previousClose: 3000, change: 30, changePercent: 1,
+    time: '2026-10-13 10:01:00', fetchedAt: now.getTime(), dateReliable: true,
+  };
+  const marketState = (state: MarketStateData['state']): Map<string, MarketStateData> => new Map([
+    [quote.symbol, { symbol: quote.symbol, market: 'cn', state, source: 'calendar' }],
+  ]);
+
+  beforeEach(() => {
+    vi.setSystemTime(now);
+    vi.mocked(fetchMarketReturnSummaries).mockResolvedValue(new Map());
+  });
+
+  it.each<[{ quote?: Partial<QuoteData>; state?: MarketStateData['state'] }, string]>([
+    [{}, '开盘中'],
+    [{ quote: { time: '2026-10-13 10:00:00', fetchedAt: now.getTime() - 120_000 } }, '开盘中'],
+    [{ quote: { time: '2026-10-13 09:55:00' } }, '延迟'],
+    [{ quote: { fetchedAt: now.getTime() - 240_000 } }, '延迟'],
+    [{ quote: { time: '2026-10-12 15:00:00' } }, '延迟'],
+    [{ quote: { dateReliable: false } }, '待更新'],
+    [{ quote: { time: '2026-10-13' } }, '待更新'],
+    [{ quote: { time: '' } }, '待更新'],
+    [{ quote: { fetchedAt: NaN } }, '待更新'],
+    [{ quote: { price: 0 } }, '待更新'],
+    [{ quote: { changePercent: NaN } }, '待更新'],
+    [{ quote: { session: 'pre' } }, '盘前'],
+    [{ quote: { session: 'post' } }, '盘后'],
+    [{ state: 'break' }, '午间休市'],
+    [{ state: 'closed' }, '收盘价'],
+    [{ state: 'holiday' }, '收盘价'],
+    [{ state: 'weekend' }, '收盘价'],
+  ])('keeps badge and status consistent for %j', async (input, label) => {
+    render(<RankingPage funds={[]} marketLoading={false}
+      quotes={new Map([[quote.symbol, { ...quote, ...input.quote }]])}
+      marketStates={marketState(input.state ?? 'live')} />);
+    await waitFor(() => expect(fetchMarketReturnSummaries).toHaveBeenCalled());
+    const row = screen.getByRole('button', { name: '上证指数走势' }).closest('tr')!;
+    expect(within(row).getAllByRole('cell')[4]).toHaveTextContent(label);
+    expect(within(row).queryByLabelText('实时行情') !== null).toBe(label === '开盘中');
+  });
+
+  it('does not infer live quotes from an open market or a historical fallback', async () => {
+    const summary = marketSummary('sh000001');
+    vi.mocked(fetchMarketReturnSummaries).mockResolvedValue(new Map([['sina-cn:sh000001', summary]]));
+    render(<RankingPage funds={[]} marketLoading={false} quotes={new Map()} marketStates={marketState('live')} />);
+    const row = (await screen.findByRole('button', { name: '上证指数走势' })).closest('tr')!;
+    await within(row).findByText('+2.00%');
+    expect(row).toHaveTextContent('收盘价');
+    expect(within(row).queryByLabelText('实时行情')).not.toBeInTheDocument();
+    const missing = screen.getByRole('button', { name: '深证成指走势' }).closest('tr')!;
+    expect(within(missing).getAllByRole('cell')[4]).toHaveTextContent('--');
+  });
+
+  it('expires LIVE locally without fetching history again, and restores it for a fresh quote', async () => {
+    const props = { funds: [], marketLoading: false, marketStates: marketState('live') };
+    const view = render(<RankingPage {...props} quotes={new Map([[quote.symbol, quote]])} />);
+    await waitFor(() => expect(fetchMarketReturnSummaries).toHaveBeenCalledTimes(1));
+    const row = screen.getByRole('button', { name: '上证指数走势' }).closest('tr')!;
+    expect(within(row).getByLabelText('实时行情')).toBeInTheDocument();
+    vi.setSystemTime(new Date('2026-10-13T10:06:00+08:00'));
+    const localClock = vi.mocked(startAdaptivePolling).mock.calls.find(([, delay]) => delay() === 60_000)!;
+    await act(async () => { await localClock[0](); });
+    expect(within(row).queryByLabelText('实时行情')).not.toBeInTheDocument();
+    expect(row).toHaveTextContent('延迟');
+    expect(fetchMarketReturnSummaries).toHaveBeenCalledTimes(1);
+    view.rerender(<RankingPage {...props} quotes={new Map([[quote.symbol, {
+      ...quote, fetchedAt: Date.now(), time: '2026-10-13 10:05:00',
+    }]])} />);
+    expect(within(row).getByLabelText('实时行情')).toBeInTheDocument();
+    expect(row).toHaveTextContent('开盘中');
+  });
+
+  it('never marks a confirmed fund NAV as live', () => {
+    window.history.replaceState({}, '', '/returns?category=fund');
+    vi.mocked(useFundReturnData).mockReturnValue({ loading: false, error: null, fundEstimates: [{
+      fund: FUNDS[0], officialNAV: { nav: 1.2, officialChange: 1, navDate: '2026-10-12' },
+    } as FundEstimate] });
+    render(<RankingPage funds={FUNDS} marketLoading={false} quotes={new Map([[quote.symbol, quote]])}
+      marketStates={marketState('live')} />);
+    expect(screen.getByText('确认净值')).toBeInTheDocument();
+    expect(screen.queryByLabelText('实时行情')).not.toBeInTheDocument();
+  });
+
+  it('does not substitute an index future for its cash close', async () => {
+    const summary = marketSummary('.NDX');
+    vi.mocked(fetchMarketReturnSummaries).mockResolvedValue(new Map([['sina-us:.NDX', summary]]));
+    render(<RankingPage funds={[]} marketLoading={false}
+      quotes={new Map([['hf_NQ', { ...quote, symbol: 'hf_NQ' }]])}
+      marketStates={new Map([['hf_NQ', { symbol: 'hf_NQ', market: 'us', state: 'live', source: 'calendar' }]])} />);
+    const row = (await screen.findByRole('button', { name: '纳指100走势' })).closest('tr')!;
+    await within(row).findByText('+2.00%');
+    expect(row).toHaveTextContent('收盘价');
+    expect(within(row).queryByLabelText('实时行情')).not.toBeInTheDocument();
   });
 });
 
@@ -436,24 +542,22 @@ describe('pending history updates', () => {
     expect(row).toHaveTextContent('3.00'); // Retain the actual return/drawdown ratio.
   });
 
-  it('offers a tap/keyboard disclosure without opening or fetching history', async () => {
-    vi.mocked(fetchMarketReturnSummaries).mockResolvedValue(summaries());
+  it.each([false, true])('explains pending data once without row markers (all pending: %s)', async (allPending) => {
+    const data = summaries();
+    if (allPending) data.get('sina-cn:sh000001')!.freshness = data.get('yahoo-index:SOX')!.freshness;
+    vi.mocked(fetchMarketReturnSummaries).mockResolvedValue(data);
     render(<RankingPage funds={[]} quotes={new Map()} marketLoading={false} />);
-    const mark = await screen.findByRole('button', { name: '费城半导体数据待更新说明' });
+    const note = await screen.findByRole('note');
     const nameButton = screen.getByRole('button', { name: '费城半导体走势' });
-    expect(mark.previousElementSibling).toBe(nameButton);
-    expect(mark.parentElement).toHaveTextContent('费城半导体*');
-    expect(mark.parentElement).not.toHaveTextContent('SOX');
-    expect(within(mark.closest('td')!).getByText('SOX')).toBeInTheDocument();
-    fireEvent.click(mark);
-    expect(mark).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByRole('note')).toHaveTextContent('数据截至 2026-09-15，应更新至 2026-09-18');
+    expect(screen.getAllByRole('note')).toHaveLength(1);
+    expect(note.closest('table')).toBeNull();
+    expect(note).toHaveTextContent('待更新数据保留实际数值和日期，不参与排名');
+    expect(screen.getByRole('table')).not.toHaveTextContent('*');
+    expect(within(nameButton.closest('tr')!).getAllByRole('button')).toHaveLength(1);
+    expect(within(nameButton.closest('td')!).getByText('SOX')).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(fetchMarketHistory).not.toHaveBeenCalled();
-    fireEvent.click(mark);
-    expect(mark).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByRole('note')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '费城半导体走势' }));
+    fireEvent.click(nameButton);
     await screen.findByRole('dialog', { name: '费城半导体历史走势' });
   });
 
@@ -478,7 +582,7 @@ describe('pending history updates', () => {
     const data = summaries();
     vi.mocked(fetchMarketReturnSummaries).mockResolvedValue(data);
     const view = render(<RankingPage funds={[]} quotes={new Map()} marketLoading={false} />);
-    await screen.findByRole('button', { name: '费城半导体数据待更新说明' });
+    await screen.findByRole('note');
     view.unmount();
     const updated = { ...data.get('yahoo-index:SOX')!, freshness: {
       latestDate: '2026-09-18', expectedDate: '2026-09-18', stale: false,
@@ -488,7 +592,7 @@ describe('pending history updates', () => {
     render(<RankingPage funds={[]} quotes={new Map()} marketLoading={false} />);
     await waitFor(() => expect(screen.getAllByRole('row')[1]).toHaveTextContent('费城半导体'));
     expect(screen.getAllByRole('row')[1]).toHaveTextContent('#1');
-    expect(screen.queryByRole('button', { name: '费城半导体数据待更新说明' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
     expect(within(screen.getByText('科创50').closest('tr')!).getAllByRole('cell')[0]).toHaveTextContent('--');
   });
 
@@ -500,11 +604,11 @@ describe('pending history updates', () => {
     const quote: QuoteData = { symbol: 'sh000001', name: '上证指数', price: 3100, previousClose: 3000,
       change: 100, changePercent: 3.33, time: '2026-09-16 15:00:00', fetchedAt: 1, dateReliable: true };
     render(<RankingPage funds={[]} quotes={new Map([['sh000001', quote]])} marketLoading={false} />);
-    const mark = await screen.findByRole('button', { name: '上证指数数据待更新说明' });
-    const row = mark.closest('tr')!;
+    await screen.findByRole('note');
+    const row = screen.getByRole('button', { name: '上证指数走势' }).closest('tr')!;
     expect(within(row).getAllByRole('cell')[0]).toHaveTextContent('--');
     expect(row).toHaveTextContent('+3.33%');
-    fireEvent.click(mark);
-    expect(screen.getByRole('note')).toHaveTextContent('数据截至 2026-09-16，应更新至 2026-09-18');
+    expect(row).toHaveTextContent('2026-09-16');
+    expect(row).toHaveTextContent('待更新');
   });
 });

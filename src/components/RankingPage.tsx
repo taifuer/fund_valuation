@@ -1,9 +1,9 @@
-import { Fragment, useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { fetchMarketReturnSummaries } from '../api';
 import { MARKET_ASSETS, RANKING_ETFS, RANKING_INDEX_ETFS, RANKING_INDICES, RANKING_SECTOR_ETFS } from '../constants';
 import { getMarketState, marketLocalDate } from '../marketHours';
 import { startAdaptivePolling } from '../polling';
-import { rankingStateLabel } from '../displayStatus';
+import { displayStateLabel, quoteDisplayState } from '../displayStatus';
 import TableSkeleton from './TableSkeleton';
 import DataNotice from './DataNotice';
 import RecentHistoryModal, { type RecentHistoryTarget } from './RecentHistoryModal';
@@ -42,6 +42,7 @@ interface RankingItem {
   startDate?: string;
   endDate?: string;
   sourceLabel: string;
+  isLive: boolean;
   freshness?: MarketReturnSummary['freshness'];
   historyTarget: RecentHistoryTarget;
 }
@@ -119,8 +120,16 @@ function shouldUseLatestCloseReturn(item: IndexConfig, quote: QuoteData | undefi
   return Math.abs(quote.changePercent) < 0.005;
 }
 
-function latestSourceLabel(state: MarketStateData['state']) {
-  if (state === 'live' || state === 'break') return rankingStateLabel(state);
+function latestSourceLabel(quote: QuoteData | undefined, state: MarketStateData['state']) {
+  if (!quote) return '--';
+  if (quote.dateReliable === false || !Number.isFinite(quote.price) || quote.price <= 0
+    || !Number.isFinite(quote.changePercent)) return '待更新';
+  // A fetch timestamp or date-only close cannot establish a live observation.
+  if (state === 'live' && (!Number.isFinite(quote.fetchedAt)
+    || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?$/.test(quote.time))) return '待更新';
+  const displayState = quoteDisplayState({ quote, marketState: state });
+  if (displayState === 'live') return '开盘中';
+  if (['stale', 'break', 'pre', 'post'].includes(displayState)) return displayStateLabel(displayState);
   return '收盘价';
 }
 
@@ -151,6 +160,10 @@ function makeMarketItems(
       expectedDate: summary.freshness.expectedDate,
       stale: Boolean(summary.freshness.expectedDate && quoteDate < summary.freshness.expectedDate),
     } : undefined;
+    const sourceLabel = freshness?.stale ? '待更新'
+      : range !== 'today' ? '收盘价'
+      : usesHistory ? (latestReturn ? '收盘价' : '--')
+      : latestSourceLabel(quote, state);
     return {
       id: `${category}:${item.sinaSymbol}`,
       name: item.name,
@@ -173,11 +186,8 @@ function makeMarketItems(
       endDate: range === 'today'
         ? (useLatestCloseReturn ? latestReturn.endDate : quoteDate ?? latestReturn?.endDate)
         : rangeReturn?.endDate,
-      sourceLabel: freshness?.stale ? '待更新' : range === 'today' && (useLatestCloseReturn || item.quoteMode === 'close')
-        ? '收盘价'
-        : range === 'today'
-          ? latestSourceLabel(state)
-          : '收盘价',
+      sourceLabel,
+      isLive: sourceLabel === '开盘中',
     };
   });
 }
@@ -204,6 +214,7 @@ function makeFundItems(
       startDate: range === 'today' ? officialNAV?.navDate : rangeReturn?.startDate,
       endDate: range === 'today' ? officialNAV?.navDate : rangeReturn?.endDate,
       sourceLabel: '确认净值',
+      isLive: false,
     };
   });
 }
@@ -286,16 +297,21 @@ export default function RankingPage({
   });
   const [marketReturns, setMarketReturns] = useState<Map<string, MarketReturnSummary>>(new Map());
   const [returnsLoading, setReturnsLoading] = useState(true);
-  const [expandedFreshness, setExpandedFreshness] = useState<string | null>(null);
-  const freshnessNoteId = useId();
   const [selectedHistory, setSelectedHistory] = useState<{
     target: RecentHistoryTarget; initialRange: HistoryRangeKey; asOf?: string;
   } | null>(null);
   const tableRef = useRef<HTMLElement>(null);
   const gesture = useRef<{ x: number; y: number; scrollLeft: number; moved: boolean } | null>(null);
   const refreshTick = useMarketReturnRefreshTick();
+  const [quoteClock, setQuoteClock] = useState(Date.now);
   const shouldLoadFunds = category === 'fund';
   const fundData = useFundReturnData(funds, shouldLoadFunds);
+
+  useEffect(() => {
+    if (range !== 'today' || category === 'fund') return;
+    // Expire LIVE even when quote refreshes fail; this never fetches data.
+    return startAdaptivePolling(() => setQuoteClock(Date.now()), () => 60_000);
+  }, [range, category]);
 
   useEffect(() => {
     replaceSearchParams({
@@ -360,7 +376,7 @@ export default function RankingPage({
         if (bValue == null) return -1;
         return sortDirection === 'desc' ? bValue - aValue : aValue - bValue;
       });
-  }, [category, etfFilter, fundFilter, fundData.fundEstimates, marketReturns, marketStates, quotes, range, sortDirection, sortKey]);
+  }, [category, etfFilter, fundFilter, fundData.fundEstimates, marketReturns, marketStates, quotes, quoteClock, range, sortDirection, sortKey]);
 
   const loading = category === 'fund'
     ? fundData.loading
@@ -527,27 +543,20 @@ export default function RankingPage({
             {!showSkeleton && items.map((item, index) => {
               const up = (item.returnPercent ?? 0) >= 0;
               const ranked = rankingValue(item, sortKey) != null;
-              const stale = item.freshness?.stale;
-              const expanded = stale && expandedFreshness === item.id;
               return (
-                <Fragment key={item.id}>
-                <tr className={styles.historyRow} onClick={event => openHistory(event, item)}>
+                <tr key={item.id} className={styles.historyRow} onClick={event => openHistory(event, item)}>
                   <td><span className={`${styles.rank} ${ranked ? rankStyle(index) : ''}`}>{ranked ? `#${index + 1}` : '--'}</span></td>
                   <td className={styles.nameCell}>
-                    <div className={styles.nameContent}>
-                      <button type="button" className={styles.nameButton} aria-label={`${item.name}走势`} aria-haspopup="dialog" title={item.name}>
-                        <strong>{item.name}</strong>
-                      </button>
-                      {stale && <button type="button" className={styles.freshnessMark}
-                        aria-label={`${item.name}数据待更新说明`} aria-expanded={expanded}
-                        aria-controls={expanded ? freshnessNoteId : undefined}
-                        title="数据待更新，不参与排名"
-                        onClick={event => {
-                          event.stopPropagation();
-                          setExpandedFreshness(expanded ? null : item.id);
-                        }}>*</button>}
+                    <div className={styles.nameDetails}>
+                      <div className={styles.nameContent}>
+                        <button type="button" className={styles.nameButton} aria-label={`${item.name}走势`} aria-haspopup="dialog" title={item.name}>
+                          <strong>{item.name}</strong>
+                        </button>
+                      </div>
+                      <span className={styles.symbol}>{item.symbol}</span>
+                      {item.isLive && <span className={styles.liveBadge} aria-label="实时行情"
+                        title="盘中行情，可能存在短时延迟">LIVE</span>}
                     </div>
-                    <span>{item.symbol}</span>
                   </td>
                   <td className={`${styles.numericCell} ${styles.percent} ${up ? styles.up : styles.down}`}>{formatPercent(item.returnPercent)}</td>
                   <td className={`${styles.numericCell} ${styles.value}`}>{formatValue(item.currentValue)}</td>
@@ -560,15 +569,6 @@ export default function RankingPage({
                   <td className={styles.categoryCell}><span className={styles.category}>{item.categoryLabel}</span></td>
                   <td className={`${styles.numericCell} ${styles.dateRange}`}>{formatAsOf(item)}</td>
                 </tr>
-                {expanded && <tr className={styles.freshnessRow}>
-                  <td colSpan={showRisk ? 10 : 7}>
-                    <div id={freshnessNoteId} role="note" className={styles.freshnessNote}>
-                      {item.name}数据截至 {item.freshness!.latestDate}，应更新至 {item.freshness!.expectedDate}（市场当地交易日）。
-                      已排除休市日并预留收盘后两小时；当前数值仅供参考，不参与排名，更新后自动恢复。
-                    </div>
-                  </td>
-                </tr>}
-                </Fragment>
               );
             })}
           </tbody>
@@ -579,7 +579,7 @@ export default function RankingPage({
           ? '* 涨跌幅与风险指标使用同区间历史收盘价或官方净值；缺失数据以 -- 显示，数据以官方披露为准。'
           : '* 最新涨跌幅可能包含盘中行情；基金涨跌幅使用已披露官方净值。数据可能存在延迟或误差，以官方披露为准。'}
       </p>
-      {items.some(item => item.freshness?.stale) && <p className={styles.note}>* 待更新数据保留实际数值和日期，不参与排名。</p>}
+      {items.some(item => item.freshness?.stale) && <p role="note" className={styles.note}>* 待更新数据保留实际数值和日期，不参与排名；更新后自动恢复。</p>}
       {selectedHistory && <RecentHistoryModal {...selectedHistory} onClose={() => setSelectedHistory(null)} />}
     </main>
   );
