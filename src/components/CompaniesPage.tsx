@@ -4,6 +4,7 @@ import { nextChartIndex } from '../chartKeyboard';
 import { companyPlotSeries } from '../companyChart';
 import { useChartWidth } from '../hooks/useChartWidth';
 import { companyFundamentalsDataset, companySeries } from '../data/companyFundamentals';
+import { COMPANY_INDUSTRIES, companyIndustry, type CompanyIndustry } from '../data/companyIndustries';
 import { resolveCompanyReportReference } from '../data/companyReportSources';
 import { companyMarketCaps, companyMarketCapCurrency, marketCapUnavailable, marketCapNotes, marketCapSourceName } from '../data/companyMarketCaps';
 import { choiceFromSearch, replaceSearchParams } from '../routing';
@@ -41,6 +42,10 @@ const REGIONS = [
 
 const REGION_FILTERS = [{ key: 'all', label: '全部' }, ...REGIONS] as const;
 type RegionFilter = 'all' | CompanyRegion;
+const DEFAULT_REGION: CompanyRegion = 'usa';
+type IndustryFilter = 'all' | CompanyIndustry;
+const REGION_KEYS = REGION_FILTERS.map(item => item.key);
+const INDUSTRY_KEYS: IndustryFilter[] = ['all', ...COMPANY_INDUSTRIES.map(item => item.key)];
 
 const METRICS: Array<{ key: MetricKey; label: string }> = [
   { key: 'revenue', label: '营业收入' },
@@ -463,6 +468,7 @@ export default function CompaniesPage() {
     () => [...companies].sort((left, right) => COMPANY_NAME_COLLATOR.compare(left.nameEn, right.nameEn)),
     [companies],
   );
+  const defaultCompany = orderedCompanies.find(company => company.region === DEFAULT_REGION) ?? companies[0];
   const [frequency, setFrequency] = useState<CompanyFrequency>(() => (
     choiceFromSearch(window.location.search, 'period', FREQUENCY_KEYS, 'quarterly')
   ));
@@ -476,26 +482,41 @@ export default function CompaniesPage() {
     choiceFromSearch(window.location.search, 'panel', COMPANY_PAGE_MODE_KEYS, 'trend')
   ));
   const [selectedId, setSelectedId] = useState(
-    () => new URLSearchParams(window.location.search).get('company') ?? 'alibaba',
+    () => new URLSearchParams(window.location.search).get('company') ?? defaultCompany.id,
   );
   const [selectedRegion, setSelectedRegion] = useState<RegionFilter>(() => {
-    const requestedId = new URLSearchParams(window.location.search).get('company') ?? 'alibaba';
-    return companies.find((company) => company.id === requestedId)?.region ?? 'china';
+    const requestedId = new URLSearchParams(window.location.search).get('company') ?? defaultCompany.id;
+    const fallback = companies.find((company) => company.id === requestedId)?.region ?? DEFAULT_REGION;
+    return choiceFromSearch(window.location.search, 'region', REGION_KEYS, fallback);
   });
-  const [companyQuery, setCompanyQuery] = useState('');
+  const [selectedIndustry, setSelectedIndustry] = useState<IndustryFilter>(() => (
+    choiceFromSearch(window.location.search, 'industry', INDUSTRY_KEYS, 'all')
+  ));
+  const [companyQuery, setCompanyQuery] = useState(() => new URLSearchParams(window.location.search).get('q') ?? '');
   const [showAllDisclosures, setShowAllDisclosures] = useState(false);
 
-  const selectedCompany = companies.find((company) => company.id === selectedId) ?? companies[0];
-  const filteredCompanies = useMemo(() => {
+  const searchCompanies = useMemo(() => {
     const query = companyQuery.trim().toLocaleLowerCase();
-    const regionCompanies = selectedRegion === 'all'
-      ? orderedCompanies
-      : orderedCompanies.filter((company) => company.region === selectedRegion);
-    if (!query) return regionCompanies;
-    return regionCompanies.filter((company) => (
-      `${company.name} ${company.nameEn} ${company.ticker}`.toLocaleLowerCase().includes(query)
+    return orderedCompanies.filter((company) => (
+      !query || `${company.name} ${company.nameEn} ${company.ticker}`.toLocaleLowerCase().includes(query)
     ));
-  }, [companyQuery, orderedCompanies, selectedRegion]);
+  }, [companyQuery, orderedCompanies]);
+  const industrySearchCompanies = useMemo(() => (
+    selectedIndustry === 'all' ? searchCompanies
+      : searchCompanies.filter(company => companyIndustry(company.id) === selectedIndustry)
+  ), [searchCompanies, selectedIndustry]);
+  const regionSearchCompanies = useMemo(() => (
+    selectedRegion === 'all' ? searchCompanies
+      : searchCompanies.filter(company => company.region === selectedRegion)
+  ), [searchCompanies, selectedRegion]);
+  const filteredCompanies = useMemo(() => (
+    selectedRegion === 'all' ? industrySearchCompanies
+      : industrySearchCompanies.filter(company => company.region === selectedRegion)
+  ), [industrySearchCompanies, selectedRegion]);
+  const selectedCompany = filteredCompanies.find(company => company.id === selectedId)
+    ?? filteredCompanies[0]
+    ?? companies.find(company => company.id === selectedId)
+    ?? defaultCompany;
   const companyListLabel = companyQuery.trim()
     ? '公司搜索结果'
     : selectedRegion === 'all'
@@ -536,34 +557,18 @@ export default function CompaniesPage() {
     setShowAllDisclosures(false);
   }, [effectiveFrequency, selectedCompany.id]);
 
-  const selectCompany = (company: CompanyFundamentals, clearSearch = false) => {
+  useEffect(() => {
+    setSelectedId(selectedCompany.id);
+  }, [selectedCompany.id]);
+
+  const selectCompany = (company: CompanyFundamentals) => {
     setSelectedId(company.id);
-    if (clearSearch) {
-      setCompanyQuery('');
-      setSelectedRegion(company.region);
-    }
   };
 
-  const selectRegion = (region: RegionFilter) => {
+  const clearFilters = () => {
     setCompanyQuery('');
-    setSelectedRegion(region);
-    if (region === 'all' || selectedCompany.region === region) return;
-    const firstCompany = orderedCompanies.find((company) => company.region === region);
-    if (firstCompany) setSelectedId(firstCompany.id);
-  };
-
-  const updateCompanyQuery = (value: string) => {
-    setCompanyQuery(value);
-    const query = value.trim().toLocaleLowerCase();
-    if (!query) {
-      setSelectedRegion(selectedCompany.region);
-      return;
-    }
     setSelectedRegion('all');
-    const firstMatch = orderedCompanies.find((company) => (
-      `${company.name} ${company.nameEn} ${company.ticker}`.toLocaleLowerCase().includes(query)
-    ));
-    if (firstMatch) setSelectedId(firstMatch.id);
+    setSelectedIndustry('all');
   };
 
   const handleCompanyOptionKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -584,14 +589,17 @@ export default function CompaniesPage() {
   useEffect(() => {
     replaceSearchParams({
       view: null,
-      region: null,
-      company: selectedCompany.id !== 'alibaba' ? selectedCompany.id : null,
+      region: selectedRegion === selectedCompany.region ? null : selectedRegion,
+      industry: selectedIndustry === 'all' ? null : selectedIndustry,
+      q: companyQuery.trim() || null,
+      company: selectedCompany.id !== defaultCompany.id ? selectedCompany.id : null,
       period: effectiveFrequency === 'quarterly' ? null : effectiveFrequency,
       metric: effectiveMetric !== 'revenue' ? effectiveMetric : null,
       trend: trendMode === 'value' ? null : trendMode,
       panel: pageMode === 'calendar' ? 'calendar' : null,
     });
-  }, [effectiveFrequency, effectiveMetric, pageMode, selectedCompany.id, trendMode]);
+  }, [companyQuery, defaultCompany.id, effectiveFrequency, effectiveMetric, pageMode, selectedCompany.id,
+    selectedCompany.region, selectedIndustry, selectedRegion, trendMode]);
 
   return (
     <main className={styles.page}>
@@ -624,15 +632,15 @@ export default function CompaniesPage() {
             <div className={styles.regionSwitcher} aria-label="地区筛选">
               {REGION_FILTERS.map((regionItem) => {
                 const count = regionItem.key === 'all'
-                  ? companies.length
-                  : companies.filter((company) => company.region === regionItem.key).length;
+                  ? industrySearchCompanies.length
+                  : industrySearchCompanies.filter((company) => company.region === regionItem.key).length;
                 return (
                   <button
                     key={regionItem.key}
                     type="button"
                     className={`${styles.regionButton} ${selectedRegion === regionItem.key ? styles.regionButtonActive : ''}`}
                     aria-pressed={selectedRegion === regionItem.key}
-                    onClick={() => selectRegion(regionItem.key)}
+                    onClick={() => setSelectedRegion(regionItem.key)}
                   >
                     <span>{regionItem.label}</span>
                     <small>{count}</small>
@@ -640,17 +648,37 @@ export default function CompaniesPage() {
                 );
               })}
             </div>
-            <label className={styles.companySearch}>
-              <span>搜索公司</span>
-              <input
-                type="search"
-                className={styles.searchInput}
-                value={companyQuery}
-                placeholder="搜索名称或代码"
-                autoComplete="off"
-                onChange={(event) => updateCompanyQuery(event.target.value)}
-              />
-            </label>
+            <div className={styles.pickerFilters}>
+              <div className={styles.industryPicker}>
+                <select
+                  className={styles.industrySelect}
+                  aria-label="行业筛选"
+                  value={selectedIndustry}
+                  onPointerDown={event => { event.currentTarget.dataset.pointerFocus = 'true'; }}
+                  onKeyDown={event => { if (event.key !== 'Escape') delete event.currentTarget.dataset.pointerFocus; }}
+                  onBlur={event => { delete event.currentTarget.dataset.pointerFocus; }}
+                  onChange={event => setSelectedIndustry(event.target.value as IndustryFilter)}
+                >
+                  <option value="all">全部行业</option>
+                  {COMPANY_INDUSTRIES.map(industry => (
+                    <option key={industry.key} value={industry.key}>
+                      {industry.label} · {regionSearchCompanies.filter(company => companyIndustry(company.id) === industry.key).length}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <label className={styles.companySearch}>
+                <span>搜索公司</span>
+                <input
+                  type="search"
+                  className={styles.searchInput}
+                  value={companyQuery}
+                  placeholder="搜索名称或代码"
+                  autoComplete="off"
+                  onChange={(event) => setCompanyQuery(event.target.value)}
+                />
+              </label>
+            </div>
           </div>
           {filteredCompanies.length > 0 ? (
             <div
@@ -668,7 +696,7 @@ export default function CompaniesPage() {
                     className={styles.companyOption}
                     aria-pressed={active}
                     aria-controls="company-trend-panel"
-                    onClick={() => selectCompany(company, Boolean(companyQuery.trim()))}
+                    onClick={() => selectCompany(company)}
                     onKeyDown={(event) => handleCompanyOptionKeyDown(event, index)}
                   >
                     <strong>{company.name}</strong>
@@ -677,7 +705,10 @@ export default function CompaniesPage() {
               })}
             </div>
           ) : (
-            <p className={styles.pickerEmpty}>未找到匹配公司</p>
+            <div className={styles.pickerEmpty} role="status">
+              <p>未找到匹配公司</p>
+              <button type="button" className={styles.clearFilters} onClick={clearFilters}>清除筛选</button>
+            </div>
           )}
         </section>
 

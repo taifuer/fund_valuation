@@ -111,8 +111,26 @@
 }
 
 .companySearch {
-  flex: 0 1 220px;
-  min-width: 160px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.pickerFilters {
+  align-items: center;
+  display: flex;
+  flex: 0 1 372px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.industryPicker {
+  composes: selectWrap from './AnalysisBase.module.css';
+  flex: 0 0 160px;
+}
+
+.industrySelect {
+  composes: select from './AnalysisBase.module.css';
+  width: 100%;
 }
 
 .companySearch > span {
@@ -162,6 +180,9 @@
   padding: 14px 12px 15px;
   text-align: center;
 }
+
+.pickerEmpty p { margin: 0 0 8px; }
+.clearFilters { composes: actionButton from './AnalysisBase.module.css'; }
 
 .trendContent {
   margin-top: 14px;
@@ -682,7 +703,7 @@
   .pickerToolbar {
     display: grid;
     gap: 8px;
-    grid-template-columns: minmax(0, 1fr) 135px;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .regionSwitcher {
@@ -696,9 +717,7 @@
     padding: 0 5px;
   }
 
-  .companySearch {
-    min-width: 0;
-  }
+  .pickerFilters { width: 100%; }
 }
 
 @media (max-width: 640px) {

@@ -59,7 +59,7 @@ test('filters and date controls share dimensions across routes and breakpoints',
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
     }
     await page.goto('/companies');
-    await controlsFit(['[aria-label="地区筛选"]', '[aria-label="趋势口径"]', '[aria-label="趋势周期"]', 'input[type="search"]']);
+    await controlsFit(['[aria-label="地区筛选"]', '[aria-label="行业筛选"]', '[aria-label="趋势口径"]', '[aria-label="趋势周期"]', 'input[type="search"]']);
     await page.getByRole('button', { name: '财报日历', exact: true }).click();
     await controlsFit(['select[aria-label="选择财报月份"]', '[aria-label="月份切换"]']);
     const month = page.getByRole('combobox', { name: '选择财报月份' });

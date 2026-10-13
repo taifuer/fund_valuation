@@ -5,8 +5,27 @@ import { axisLabelWidth } from '../chartLayout';
 
 describe('CompaniesPage', () => {
   beforeEach(() => {
-    window.history.replaceState({}, '', '/companies');
+    window.history.replaceState({}, '', '/companies?company=alibaba');
     window.scrollTo = () => undefined;
+  });
+
+  it('defaults to the United States with all industries and the first alphabetical company', () => {
+    window.history.replaceState({}, '', '/companies');
+    const { unmount } = render(<CompaniesPage />);
+    expect(within(screen.getByLabelText('地区筛选')).getByRole('button', { name: /美国/ }))
+      .toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('combobox', { name: '行业筛选' })).toHaveValue('all');
+    expect(within(screen.getByRole('group', { name: '美国公司' })).getAllByRole('button')).toHaveLength(27);
+    expect(screen.getByRole('heading', { name: 'Adobe' })).toBeInTheDocument();
+    expect(window.location.search).toBe('');
+    fireEvent.click(within(screen.getByLabelText('地区筛选')).getByRole('button', { name: /中国/ }));
+    expect(screen.getByRole('heading', { name: '阿里巴巴' })).toBeInTheDocument();
+    expect(window.location.search).toContain('company=alibaba');
+    unmount();
+    render(<CompaniesPage />);
+    expect(within(screen.getByLabelText('地区筛选')).getByRole('button', { name: /中国/ }))
+      .toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('heading', { name: '阿里巴巴' })).toBeInTheDocument();
   });
 
   it('shows offline period-end market caps in a separate metric and the final table column', () => {
@@ -105,6 +124,7 @@ describe('CompaniesPage', () => {
 
   it('filters the company picker by name or ticker', () => {
     render(<CompaniesPage />);
+    fireEvent.click(within(screen.getByLabelText('地区筛选')).getByRole('button', { name: /全部/ }));
 
     fireEvent.change(screen.getByRole('searchbox', { name: '搜索公司' }), { target: { value: 'QCOM' } });
 
@@ -112,6 +132,138 @@ describe('CompaniesPage', () => {
     expect(within(searchResults).getAllByRole('button')).toHaveLength(1);
     expect(within(searchResults).getByRole('button', { name: /高通/ })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('heading', { name: '高通' })).toBeInTheDocument();
+  });
+
+  it('intersects industry and region filters and updates the region counts', () => {
+    render(<CompaniesPage />);
+    const industry = screen.getByRole('combobox', { name: '行业筛选' });
+    expect(industry).toHaveValue('all');
+    fireEvent.change(industry, { target: { value: 'semiconductors' } });
+    const chinese = screen.getByRole('group', { name: '中国公司' });
+    expect(within(chinese).getAllByRole('button').map(button => button.textContent)).toEqual([
+      '联发科', '中芯国际', '台积电',
+    ]);
+    const regions = screen.getByLabelText('地区筛选');
+    expect(within(regions).getByRole('button', { name: /全部/ })).toHaveTextContent('14');
+    expect(within(regions).getByRole('button', { name: /中国/ })).toHaveTextContent('3');
+    fireEvent.click(within(regions).getByRole('button', { name: /亚太/ }));
+    const asia = screen.getByRole('group', { name: '亚太公司' });
+    expect(within(asia).getAllByRole('button')).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: 'SK 海力士' })).toBeInTheDocument();
+    expect(industry).toHaveValue('semiconductors');
+  });
+
+  it('retains the selected company if it matches a new industry or region', () => {
+    window.history.replaceState({}, '', '/companies?company=tencent');
+    render(<CompaniesPage />);
+    fireEvent.change(screen.getByRole('combobox', { name: '行业筛选' }), { target: { value: 'internet' } });
+    fireEvent.click(within(screen.getByLabelText('地区筛选')).getByRole('button', { name: /全部/ }));
+    expect(screen.getByRole('heading', { name: '腾讯' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '腾讯' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('counts industry options within the region and query, independent of the active industry', () => {
+    render(<CompaniesPage />);
+    const industry = screen.getByRole('combobox', { name: '行业筛选' });
+    const options = within(industry);
+    expect(options.getByRole('option', { name: '全部行业' })).toHaveTextContent(/^全部行业$/);
+    expect(options.getByRole('option', { name: '半导体 · 3' })).toBeInTheDocument();
+    expect(options.getByRole('option', { name: '工业电气 · 0' })).toBeInTheDocument();
+    const regions = screen.getByLabelText('地区筛选');
+    fireEvent.click(within(regions).getByRole('button', { name: /全部/ }));
+    fireEvent.change(industry, { target: { value: 'semiconductors' } });
+    expect(options.getByRole('option', { name: '全部行业' })).toHaveTextContent(/^全部行业$/);
+    expect(options.getByRole('option', { name: '半导体 · 14' })).toBeInTheDocument();
+    expect(options.getByRole('option', { name: '互联网与电商 · 10' })).toBeInTheDocument();
+    const counts = options.getAllByRole('option').slice(1).map(option => Number(option.textContent!.split(' · ')[1]));
+    expect(counts.reduce((total, count) => total + count, 0)).toBe(52);
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索公司' }), { target: { value: 'QCOM' } });
+    expect(options.getByRole('option', { name: '全部行业' })).toHaveTextContent(/^全部行业$/);
+    expect(options.getByRole('option', { name: '半导体 · 1' })).toBeInTheDocument();
+    expect(options.getByRole('option', { name: '互联网与电商 · 0' })).toBeInTheDocument();
+    fireEvent.click(within(regions).getByRole('button', { name: /中国/ }));
+    expect(options.getAllByRole('option').slice(1).every(option => option.textContent!.endsWith(' · 0'))).toBe(true);
+    expect(screen.getByText('未找到匹配公司')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
+    expect(options.getByRole('option', { name: '全部行业' })).toHaveTextContent(/^全部行业$/);
+  });
+
+  it('does not silently reset filters when searching or selecting a matching company', () => {
+    window.history.replaceState({}, '', '/companies?company=apple&industry=semiconductors');
+    render(<CompaniesPage />);
+    const search = screen.getByRole('searchbox', { name: '搜索公司' });
+    fireEvent.change(search, { target: { value: 'qcom' } });
+    const match = screen.getByRole('button', { name: '高通' });
+    fireEvent.click(match);
+    expect(search).toHaveValue('qcom');
+    expect(screen.getByRole('combobox', { name: '行业筛选' })).toHaveValue('semiconductors');
+    expect(within(screen.getByLabelText('地区筛选')).getByRole('button', { name: /美国/ }))
+      .toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('heading', { name: '高通' })).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: '' } });
+    expect(within(screen.getByRole('group', { name: '美国公司' })).getAllByRole('button')).toHaveLength(8);
+    expect(screen.getByRole('heading', { name: '高通' })).toBeInTheDocument();
+  });
+
+  it('hides unrelated details for empty intersections and offers a reset', () => {
+    render(<CompaniesPage />);
+    fireEvent.change(screen.getByRole('combobox', { name: '行业筛选' }), { target: { value: 'industrial' } });
+    expect(screen.getByText('未找到匹配公司')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '阿里巴巴' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
+    expect(screen.getByRole('combobox', { name: '行业筛选' })).toHaveValue('all');
+    expect(screen.getByRole('searchbox', { name: '搜索公司' })).toHaveValue('');
+    expect(within(screen.getByRole('group', { name: '全部公司' })).getAllByRole('button')).toHaveLength(52);
+    expect(screen.getByRole('heading', { name: '阿里巴巴' })).toBeInTheDocument();
+  });
+
+  it('keeps all three filter values and the selected company on remount', () => {
+    window.history.replaceState({}, '', '/companies?region=all&industry=semiconductors&q=QCOM&company=qualcomm');
+    const { unmount } = render(<CompaniesPage />);
+    expect(screen.getByRole('heading', { name: '高通' })).toBeInTheDocument();
+    unmount();
+    render(<CompaniesPage />);
+    expect(screen.getByRole('combobox', { name: '行业筛选' })).toHaveValue('semiconductors');
+    expect(screen.getByRole('searchbox', { name: '搜索公司' })).toHaveValue('QCOM');
+    expect(within(screen.getByLabelText('地区筛选')).getByRole('button', { name: /全部/ }))
+      .toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('heading', { name: '高通' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '财报日历' }));
+    fireEvent.click(screen.getByRole('button', { name: '经营趋势' }));
+    expect(screen.getByRole('combobox', { name: '行业筛选' })).toHaveValue('semiconductors');
+    expect(screen.getByRole('heading', { name: '高通' })).toBeInTheDocument();
+  });
+
+  it('preserves empty searches after reload instead of dropping filters', () => {
+    window.history.replaceState({}, '', '/companies?company=apple&region=europe&industry=payments&q=visa');
+    const { unmount } = render(<CompaniesPage />);
+    expect(screen.getByText('未找到匹配公司')).toBeInTheDocument();
+    unmount();
+    render(<CompaniesPage />);
+    expect(screen.getByText('未找到匹配公司')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '行业筛选' })).toHaveValue('payments');
+    expect(screen.getByRole('searchbox', { name: '搜索公司' })).toHaveValue('visa');
+    fireEvent.click(within(screen.getByLabelText('地区筛选')).getByRole('button', { name: /全部/ }));
+    expect(screen.getByRole('heading', { name: 'Visa' })).toBeInTheDocument();
+  });
+
+  it('normalizes invalid filter URLs and incompatible company selections', () => {
+    window.history.replaceState({}, '', '/companies?company=missing&region=invalid&industry=missing');
+    const { unmount } = render(<CompaniesPage />);
+    expect(screen.getByRole('combobox', { name: '行业筛选' })).toHaveValue('all');
+    expect(screen.getByRole('heading', { name: 'Adobe' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '阿里巴巴' })).not.toBeInTheDocument();
+    expect(window.location.search).not.toMatch(/invalid|missing/);
+    unmount();
+    window.history.replaceState({}, '', '/companies?company=apple&region=europe&industry=semiconductors');
+    render(<CompaniesPage />);
+    expect(screen.getByRole('heading', { name: 'Arm' })).toBeInTheDocument();
+    const arm = screen.getByRole('button', { name: 'Arm' });
+    fireEvent.keyDown(arm, { key: 'ArrowRight' });
+    expect(screen.getByRole('heading', { name: '阿斯麦' })).toBeInTheDocument();
+    expect(window.location.search).toContain('company=asml');
   });
 
   it('supports arrow-key navigation across wrapped company choices', () => {
