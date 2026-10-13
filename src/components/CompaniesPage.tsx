@@ -440,6 +440,8 @@ function TrendChart({ company, points, frequency, metric, mode }: TrendChartProp
             <p><strong>*</strong><span>
               市值币种：{companyMarketCapCurrency(company.id)}。按财报截止日匹配历史期末市值，非财报披露日；不以当前股本倒推，缺失期间不补值。
               {activePoint.marketCap && <> 来源：<a href={activePoint.marketCap.sourceUrl} target="_blank" rel="noreferrer">{marketCapSourceName(activePoint.marketCap.sourceUrl)}</a>。
+                {activePoint.marketCap.calculation && <> {activePoint.marketCap.calculation.sharesBasis === 'exchange-issued' ? '同日发行股数' : '期末在外股数'} × <a href={activePoint.marketCap.calculation.priceSourceUrl}
+                  target="_blank" rel="noreferrer">历史收盘价</a>，使用当时未复权价格。</>}
                 {activePoint.marketCap.observationDate && activePoint.marketCap.observationDate !== activePoint.periodEnd
                   && <> 参考日：{compactDate(activePoint.marketCap.observationDate)}。</>}
               </>}
@@ -959,6 +961,12 @@ export default function CompaniesPage() {
               ))}（{companyMarketCapCurrency(selectedCompany.id)}）。年度、半年均取期末值，不相加；缺失不补值。不同来源的股本统计及汇率口径可能有小幅差异。{marketCapNotes[selectedCompany.id]}</>
               : `：${marketCapUnavailable[selectedCompany.id] ?? '暂无可核验数据，不推算。'}`}
           </p>
+
+          {companyMarketCaps[selectedCompany.id]?.some(point => point.calculation) && <p className={styles.companyNote}>
+            * 部分历史市值按历史股数与当时收盘价计算，{companyMarketCaps[selectedCompany.id].some(point => point.calculation?.sharesBasis === 'exchange-issued')
+              ? '使用交易所同日发行股数和未复权价格，不重复加计 ADR。'
+              : '使用 SEC 期末在外股数并还原价格的拆股影响，不使用加权平均股数或当前股本倒推。'}
+          </p>}
 
           {selectedCompany.methodologyNote && (
             <p className={styles.companyNote}>* {selectedCompany.methodologyNote}</p>

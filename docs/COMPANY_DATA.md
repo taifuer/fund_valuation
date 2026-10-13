@@ -85,7 +85,11 @@ npm run data:companies:sources -- --company=apple --write
 - 补充来源必须与原始财务比率页至少 3 个期末重合，偏差中位数不超过 2%、最大偏差不超过 5%；不以此前补数自证。通过后只补缺失日期，不替换原始值。存在明显股本口径差异的来源整组拒绝，而不是放宽阈值。
 - 宁德时代、恒瑞医药采用东方财富 `RPT_VALUEANALYSIS_DET` 的完整日频总市值历史，仅限港股上市前（分别为 [2025-05-20](https://www.catl.com/en/news/6451.html)、[2025-05-23](https://www.hengrui.com/media/detail-773.html)）。逐条校验总市值等于收盘价乘总股本，取期末之前最近交易日；港股上市后不把 A 股价格乘总股本当作 A/H 股合计市值。
 - 三星采用包含普通股和优先股的来源口径。核验样本：2024 年末普通股 5,969,782,550 股、优先股 822,886,700 股，2024-12-30 收盘价分别为 53,200 和 44,200 韩元，合计 353,964,023,800,000 韩元，与来源一致。股本见[三星上市信息](https://www.samsung.com/global/ir/stock-information/listing-Info/)，历史收盘价由 NAVER `siseJson.naver` 的 005930、005935 日线复核；不重复加计存托凭证。
+- 美股较早的特殊财年末可通过 [SEC Company Facts](https://www.sec.gov/search-filings/edgar-application-programming-interfaces) 与 Yahoo 历史收盘价补充：优先采用精确期末的 `CommonStockSharesOutstanding`；缺少时仅接受同一申报、同一期末的已发行股数减库存股，或日期恰好一致的封面股数。采用最早及时申报，不使用加权平均股数、较晚封面日期、后续拆股重述的比较数；期末至申报之间发生拆股的记录暂不计算。价格取 `quote.close` 而非含分红复权的 `adjclose`，还原之后发生的拆股，再乘当时股数。保存 `calculation` 中的股数口径、申报日期、价格、拆股系数和价格 URL，图表选点可追溯两项来源。
+- 台积电、联发科和鸿海通过台湾证券交易所的 [MI_QFIIS 发行股数](https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20190329&selectType=ALLBUT0999&response=json) 与 [MI_INDEX 未复权收盘价](https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20190329&type=ALLBUT0999&response=json) 补历史。必须是同一交易日、同一股票代码，保持 TWD 和当地发行股本口径，不使用 ADR 价格或重复加计 ADR。期末休市日通过日频行情前后相邻交易日核验，不跳过空价格、停牌或截断响应；同一方法也用于核验 CompaniesMarketCap 周末/假日期末缺口。
 - 华为未上市；比亚迪、中芯国际、百济神州的多地上市合计口径尚未核验，暂留空，具体原因见 `marketCapUnavailable`。其他公司也可能缺少早期或上市前的记录。缺失不表示零市值，不插值、不沿用相邻期、不用当前股本倒推。
+
+2026-10-13 补数后，共有 1,409 个不同期末（新增 167 个），27 家公司覆盖当前收录的全部财报期末。按页面实际序列统计：年度 360/419、半年 698/817、季度 1,374/1,612。三种频率共享相同期末，不能将覆盖数相加当作独立记录数；分母含未上市及多地上市口径暂缺的公司。美股特殊财年、台湾三家公司和部分港欧公司得到补充，礼来、Visa 等未通过股本口径交叉核验的旧来源仍拒绝写入。
 
 离线维护命令：
 
@@ -96,9 +100,13 @@ npm run data:companies:market-cap -- --offline --write
 npm run data:companies:market-cap:backfill -- --write
 npm run data:companies:market-cap:backfill -- --companies=apple,tencent --write
 npm run data:companies:market-cap:backfill -- --offline --write
+npm run data:companies:market-cap:shares -- --companies=apple,tsmc --write
+npm run data:companies:market-cap:shares -- --offline --write
+# 强制重新获取股数与价格缓存；不指定公司时检查全部公司缺口
+npm run data:companies:market-cap:shares -- --refresh --write
 ```
 
-脚本串行访问，两项维护命令也应依次运行。原始响应分别缓存于 git 忽略的 `data/company-market-caps/` 和 `data/company-market-cap-history/`；后者生成 `coverage.json`，列出覆盖数、缺失日期和拒绝原因。没有 `--write` 时仅校验。只解析 JSON 或 JavaScript 字面量，不执行上游代码，不读取付费墙后数据。校验来源路径、币种、日期、值和年度/季度同日期一致性。主来源任一所选公司失败时不覆盖正式文件；补历史按来源隔离失败，仅合并核验通过的新增记录。两者保留已保存的较早历史，`--offline` 使用缓存复核。更新后执行 `npm run test:unit`、`npm run data:companies:audit` 和 `npm run build`，审阅差异后再发布；不是 worker 自动更新任务。
+脚本串行访问，各项维护命令也应依次运行。原始响应缓存于 git 忽略的 `data/company-market-caps/`、`data/company-market-cap-history/`、`data/company-market-cap-shares/`。后两者生成 `coverage.json`，列出覆盖数、缺失日期和拒绝原因；股数补数报告还按年度、半年、季度分别统计。股数脚本优先复用缓存，`--refresh` 重抓，`--offline` 只用缓存；CompaniesMarketCap 原始页需先运行历史补数命令获取。没有 `--write` 时仅校验。只解析 JSON 或 JavaScript 字面量，不执行上游代码，不读取付费墙后数据。校验来源路径、币种、日期、值和年度/季度同日期一致性。主来源任一所选公司失败时不覆盖正式文件；补历史按来源隔离失败，仅合并核验通过的新增记录。始终保留已保存的较早历史及原始值。更新后执行 `npm test`、`npm run data:companies:audit` 和 `npm run build`，审阅差异后再发布；不是 worker 自动更新任务。
 
 ## 财报日历
 

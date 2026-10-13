@@ -1,7 +1,7 @@
 import data from './companyMarketCaps.json';
 import type { CompanyFundamentalPoint, CompanyMarketCapObservation } from '../types';
 
-export const companyMarketCaps: Readonly<Record<string, readonly CompanyMarketCapObservation[]>> = data;
+export const companyMarketCaps = data as Readonly<Record<string, readonly CompanyMarketCapObservation[]>>;
 
 export const marketCapUnavailable: Readonly<Record<string, string>> = {
   huawei: '未上市，不展示推测估值。',
@@ -21,6 +21,8 @@ export function marketCapSourceName(url: string): string {
   if (host === 'companiesmarketcap.com') return 'CompaniesMarketCap';
   if (host === 'datacenter-web.eastmoney.com') return '东方财富';
   if (host === 'stockanalysis.com') return 'Stock Analysis';
+  if (host === 'www.sec.gov') return 'SEC 财报';
+  if (host === 'www.twse.com.tw') return '台湾证券交易所';
   return host;
 }
 

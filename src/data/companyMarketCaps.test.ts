@@ -68,6 +68,18 @@ describe('offline company market caps', () => {
     expect(half.marketCap).toEqual(quarter.marketCap);
   });
 
+  it('retains the verified 2018-2020 backfill in all three reporting frequencies', () => {
+    for (const id of ['apple', 'adbe', 'amd', 'intel', 'cisco', 'qualcomm', 'micron', 'appliedMaterials',
+      'tsmc', 'mediatek', 'foxconn', 'schneider']) {
+      const company = companyFundamentalsDataset.companies.find(company => company.id === id)!;
+      for (const frequency of ['annual', 'half', 'quarterly'] as const) {
+        const historical = companySeries(company, frequency).filter(point => point.periodEnd >= '2018-01-01' && point.periodEnd <= '2020-12-31');
+        if (company.id !== 'schneider' || frequency !== 'quarterly') expect(historical.length, `${id} ${frequency}`).toBeGreaterThan(0);
+        expect(historical.every(point => point.marketCap != null), `${id} ${frequency}`).toBe(true);
+      }
+    }
+  });
+
   it('audits every saved row for matching fiscal date, positive value, one currency and provenance', () => {
     expect(Object.keys(companyMarketCaps).length).toBeGreaterThan(0);
     for (const [id, rows] of Object.entries(companyMarketCaps)) {
@@ -82,7 +94,15 @@ describe('offline company market caps', () => {
         expect(dates.has(row.periodEnd), `${id} ${row.periodEnd}`).toBe(true);
         expect(row.value).toBeGreaterThan(0);
         expect(Number.isFinite(row.value)).toBe(true);
-        expect(['stockanalysis.com', 'companiesmarketcap.com', 'datacenter-web.eastmoney.com']).toContain(new URL(row.sourceUrl).hostname);
+        expect(['stockanalysis.com', 'companiesmarketcap.com', 'datacenter-web.eastmoney.com', 'www.sec.gov', 'www.twse.com.tw']).toContain(new URL(row.sourceUrl).hostname);
+        if (row.calculation) {
+          expect(row.calculation.shares).toBeGreaterThan(0);
+          if (row.calculation.sharesFiled) expect(row.calculation.sharesFiled >= row.periodEnd).toBe(true);
+          expect(row.calculation.close).toBeGreaterThan(0);
+          expect(row.calculation.splitFactor).toBeGreaterThan(0);
+          expect(row.value).toBe(Math.round(row.calculation.shares * row.calculation.close * row.calculation.splitFactor));
+          expect(['query2.finance.yahoo.com', 'www.twse.com.tw']).toContain(new URL(row.calculation.priceSourceUrl).hostname);
+        }
         if (row.observationDate) {
           expect(row.observationDate <= row.periodEnd).toBe(true);
           expect((Date.parse(row.periodEnd) - Date.parse(row.observationDate)) / 86400000).toBeLessThanOrEqual(7);

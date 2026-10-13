@@ -38,12 +38,21 @@ const rows = companyFundamentalsDataset.companies.map((company) => {
   }
   for (const point of marketCaps) {
     if (!disclosureDates.has(point.periodEnd) || !Number.isFinite(point.value) || point.value <= 0
-      || !['stockanalysis.com', 'companiesmarketcap.com', 'datacenter-web.eastmoney.com'].includes(new URL(point.sourceUrl).hostname)
+      || !['stockanalysis.com', 'companiesmarketcap.com', 'datacenter-web.eastmoney.com', 'www.sec.gov', 'www.twse.com.tw'].includes(new URL(point.sourceUrl).hostname)
       || (point.observationDate != null && (!/^\d{4}-\d{2}-\d{2}$/.test(point.observationDate)
         || !Number.isFinite(Date.parse(point.observationDate)) || point.observationDate > point.periodEnd
         || (Date.parse(point.periodEnd) - Date.parse(point.observationDate)) / 86400000 > 7))
       || !Number.isFinite(Date.parse(point.retrievedAt)) || point.periodEnd > point.retrievedAt.slice(0, 10)) {
       sourceReferenceErrors.push(`${company.id}: invalid market cap for ${point.periodEnd}`);
+    }
+    const calculation = point.calculation;
+    if (calculation && (![calculation.shares, calculation.close, calculation.splitFactor].every(value => Number.isFinite(value) && value > 0)
+      || Math.abs(point.value - Math.round(calculation.shares * calculation.close * calculation.splitFactor)) > 1
+      || !['outstanding', 'issued-minus-treasury', 'exchange-issued'].includes(calculation.sharesBasis)
+      || (calculation.sharesFiled != null && (!Number.isFinite(Date.parse(calculation.sharesFiled))
+        || calculation.sharesFiled < point.periodEnd || calculation.sharesFiled > point.retrievedAt.slice(0, 10)))
+      || !['query2.finance.yahoo.com', 'www.twse.com.tw'].includes(new URL(calculation.priceSourceUrl).hostname))) {
+      sourceReferenceErrors.push(`${company.id}: invalid market cap calculation for ${point.periodEnd}`);
     }
   }
   const exactSources = disclosurePoints.filter(

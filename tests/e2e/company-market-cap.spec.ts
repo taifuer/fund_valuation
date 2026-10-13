@@ -1,5 +1,33 @@
 import { expect, test } from '@playwright/test';
 
+test('backfilled market caps cover annual, half-year and quarterly disclosures offline', async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.route('**/api/**', route => route.fulfill({ json: {} }));
+  for (const company of [{ id: 'adbe', name: 'Adobe', frequencies: ['年度', '半年', '季度'] },
+    { id: 'tsmc', name: '台积电', frequencies: ['年度', '半年', '季度'] },
+    { id: 'schneider', name: '施耐德电气', frequencies: ['年度', '半年'] }]) {
+    await page.goto(`/companies?company=${company.id}&metric=marketCap`);
+    for (const frequency of company.frequencies) {
+      await page.getByRole('button', { name: frequency, exact: true }).click();
+      const expand = page.getByRole('button', { name: /^显示全部 \d+ 期$/ });
+      if (await expand.isVisible()) await expand.click();
+      const rows = page.getByRole('table', { name: `${company.name}披露明细` }).locator('tbody tr');
+      expect(await rows.count()).toBeGreaterThanOrEqual(8);
+      for (const row of await rows.all()) {
+        const cell = row.getByRole('cell').last();
+        await expect(cell).toHaveAttribute('title', /期末 \d{4}-\d{2}-\d{2}/);
+        expect((await cell.textContent())?.trim()).toMatch(/\d/);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    }
+  }
+  await page.goto('/companies?company=adbe&metric=marketCap');
+  await expect(page.getByText(/部分历史市值按历史股数/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('market-cap-backfill.png'), fullPage: true });
+  expect(errors).toEqual([]);
+});
+
 test('offline market caps retain fiscal dates, currency and mobile table access', async ({ page, isMobile }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));

@@ -353,6 +353,14 @@ export interface CompanyMarketCapObservation {
   currency: string;
   sourceUrl: string;
   retrievedAt: string;
+  calculation?: {
+    shares: number;
+    sharesFiled?: string;
+    sharesBasis: 'outstanding' | 'issued-minus-treasury' | 'exchange-issued';
+    close: number;
+    splitFactor: number;
+    priceSourceUrl: string;
+  };
 }
 
 export interface CompanyEmployeeMethodologyMarker {

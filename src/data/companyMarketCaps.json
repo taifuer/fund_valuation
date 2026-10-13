@@ -33,6 +33,22 @@
       "retrievedAt": "2026-10-12T13:28:28.495Z"
     },
     {
+      "periodEnd": "2018-12-29",
+      "observationDate": "2018-12-28",
+      "value": 738937102482,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:54.158Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/320193/000032019319000010/",
+      "calculation": {
+        "shares": 4729803000,
+        "sharesFiled": "2019-01-30",
+        "close": 39.057498931884766,
+        "splitFactor": 4,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AAPL?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
       "periodEnd": "2019-03-30",
       "observationDate": "2019-03-29",
       "value": 895667400000,
@@ -49,12 +65,124 @@
       "retrievedAt": "2026-10-12T13:28:28.495Z"
     },
     {
+      "periodEnd": "2019-09-28",
+      "observationDate": "2019-09-27",
+      "value": 972268934063,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:54.158Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/320193/000032019319000119/",
+      "calculation": {
+        "shares": 4443236000,
+        "sharesFiled": "2019-10-31",
+        "close": 54.70500183105469,
+        "splitFactor": 4,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AAPL?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-12-28",
+      "observationDate": "2019-12-27",
+      "value": 1270761064673,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:54.158Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/320193/000032019320000010/",
+      "calculation": {
+        "shares": 4384959000,
+        "sharesFiled": "2020-01-29",
+        "close": 72.44999694824219,
+        "splitFactor": 4,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AAPL?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-03-28",
+      "observationDate": "2020-03-27",
+      "value": 1071224563132,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:54.158Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/320193/000032019320000052/",
+      "calculation": {
+        "shares": 4323987000,
+        "sharesFiled": "2020-05-01",
+        "close": 61.935001373291016,
+        "splitFactor": 4,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AAPL?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
       "periodEnd": "2020-06-27",
       "observationDate": "2020-06-26",
       "value": 1532750900000,
       "currency": "USD",
       "sourceUrl": "https://companiesmarketcap.com/apple/marketcap/",
       "retrievedAt": "2026-10-12T13:28:28.495Z"
+    },
+    {
+      "periodEnd": "2020-09-26",
+      "observationDate": "2020-09-25",
+      "value": 1906150928916,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:54.158Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/320193/000032019320000096/",
+      "calculation": {
+        "shares": 16976763000,
+        "sharesFiled": "2020-10-30",
+        "close": 112.27999877929688,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AAPL?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-12-26",
+      "observationDate": "2020-12-24",
+      "value": 2220166038646,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:54.158Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/320193/000032019321000010/",
+      "calculation": {
+        "shares": 16823263000,
+        "sharesFiled": "2021-01-28",
+        "close": 131.97000122070312,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AAPL?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2021-03-27",
+      "observationDate": "2021-03-26",
+      "value": 2022547013773,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:54.158Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/320193/000032019321000056/",
+      "calculation": {
+        "shares": 16686305000,
+        "sharesFiled": "2021-04-29",
+        "close": 121.20999908447266,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AAPL?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2021-06-26",
+      "observationDate": "2021-06-25",
+      "value": 2203894559726,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:54.158Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/320193/000032019321000065/",
+      "calculation": {
+        "shares": 16556942000,
+        "sharesFiled": "2021-07-28",
+        "close": 133.11000061035156,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AAPL?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
     },
     {
       "periodEnd": "2021-09-25",
@@ -199,12 +327,44 @@
   ],
   "novoNordisk": [
     {
+      "periodEnd": "2018-06-30",
+      "observationDate": "2018-06-29",
+      "value": 111115500000,
+      "currency": "USD",
+      "sourceUrl": "https://companiesmarketcap.com/novo-nordisk/marketcap/",
+      "retrievedAt": "2026-10-12T13:34:20.089Z"
+    },
+    {
+      "periodEnd": "2018-09-30",
+      "observationDate": "2018-09-28",
+      "value": 113657400000,
+      "currency": "USD",
+      "sourceUrl": "https://companiesmarketcap.com/novo-nordisk/marketcap/",
+      "retrievedAt": "2026-10-12T13:34:20.089Z"
+    },
+    {
       "periodEnd": "2018-12-31",
       "observationDate": "2018-12-31",
       "value": 115175000000,
       "currency": "USD",
       "sourceUrl": "https://stockanalysis.com/stocks/nvo/market-cap/",
       "retrievedAt": "2026-10-12T13:34:19.061Z"
+    },
+    {
+      "periodEnd": "2019-03-31",
+      "observationDate": "2019-03-29",
+      "value": 125105700000,
+      "currency": "USD",
+      "sourceUrl": "https://companiesmarketcap.com/novo-nordisk/marketcap/",
+      "retrievedAt": "2026-10-12T13:34:20.089Z"
+    },
+    {
+      "periodEnd": "2019-06-30",
+      "observationDate": "2019-06-28",
+      "value": 120935500000,
+      "currency": "USD",
+      "sourceUrl": "https://companiesmarketcap.com/novo-nordisk/marketcap/",
+      "retrievedAt": "2026-10-12T13:34:20.089Z"
     },
     {
       "periodEnd": "2019-09-30",
@@ -944,9 +1104,41 @@
   ],
   "tencent": [
     {
+      "periodEnd": "2018-06-30",
+      "observationDate": "2018-06-29",
+      "value": 3741247959630,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/tencent/marketcap/",
+      "retrievedAt": "2026-10-12T13:33:15.141Z"
+    },
+    {
+      "periodEnd": "2018-09-30",
+      "observationDate": "2018-09-28",
+      "value": 3081501804860,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/tencent/marketcap/",
+      "retrievedAt": "2026-10-12T13:33:15.141Z"
+    },
+    {
       "periodEnd": "2018-12-31",
       "observationDate": "2018-12-31",
       "value": 2988739018108,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/tencent/marketcap/",
+      "retrievedAt": "2026-10-12T13:33:15.141Z"
+    },
+    {
+      "periodEnd": "2019-03-31",
+      "observationDate": "2019-03-29",
+      "value": 3436695317026,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/tencent/marketcap/",
+      "retrievedAt": "2026-10-12T13:33:15.141Z"
+    },
+    {
+      "periodEnd": "2019-06-30",
+      "observationDate": "2019-06-28",
+      "value": 3354886592460,
       "currency": "HKD",
       "sourceUrl": "https://companiesmarketcap.com/hkd/tencent/marketcap/",
       "retrievedAt": "2026-10-12T13:33:15.141Z"
@@ -1158,9 +1350,33 @@
   ],
   "meituan": [
     {
+      "periodEnd": "2018-09-30",
+      "observationDate": "2018-09-28",
+      "value": 377523850017,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/meituan-dianping/marketcap/",
+      "retrievedAt": "2026-10-12T13:35:31.700Z"
+    },
+    {
       "periodEnd": "2018-12-31",
       "observationDate": "2018-12-31",
       "value": 241066431519,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/meituan-dianping/marketcap/",
+      "retrievedAt": "2026-10-12T13:35:31.700Z"
+    },
+    {
+      "periodEnd": "2019-03-31",
+      "observationDate": "2019-03-29",
+      "value": 303072264795,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/meituan-dianping/marketcap/",
+      "retrievedAt": "2026-10-12T13:35:31.700Z"
+    },
+    {
+      "periodEnd": "2019-06-30",
+      "observationDate": "2019-06-28",
+      "value": 395699200845,
       "currency": "HKD",
       "sourceUrl": "https://companiesmarketcap.com/hkd/meituan-dianping/marketcap/",
       "retrievedAt": "2026-10-12T13:35:31.700Z"
@@ -1554,9 +1770,33 @@
   ],
   "xiaomi": [
     {
+      "periodEnd": "2018-09-30",
+      "observationDate": "2018-09-28",
+      "value": 350441405110,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/xiaomi/marketcap/",
+      "retrievedAt": "2026-10-12T13:33:21.207Z"
+    },
+    {
       "periodEnd": "2018-12-31",
       "observationDate": "2018-12-31",
       "value": 305188191563,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/xiaomi/marketcap/",
+      "retrievedAt": "2026-10-12T13:33:21.207Z"
+    },
+    {
+      "periodEnd": "2019-03-31",
+      "observationDate": "2019-03-29",
+      "value": 271898363997,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/xiaomi/marketcap/",
+      "retrievedAt": "2026-10-12T13:33:21.207Z"
+    },
+    {
+      "periodEnd": "2019-06-30",
+      "observationDate": "2019-06-28",
+      "value": 239272770230,
       "currency": "HKD",
       "sourceUrl": "https://companiesmarketcap.com/hkd/xiaomi/marketcap/",
       "retrievedAt": "2026-10-12T13:33:21.207Z"
@@ -1768,6 +2008,231 @@
   ],
   "tsmc": [
     {
+      "periodEnd": "2017-12-31",
+      "observationDate": "2017-12-29",
+      "value": 5951022315111,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20171229&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:27.592Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 229.5,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20171229&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2018-03-31",
+      "observationDate": "2018-03-30",
+      "value": 6378873592668,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20180330&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:33.285Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 246,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20180330&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2018-06-30",
+      "observationDate": "2018-06-29",
+      "value": 5613927369157,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20180629&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:38.412Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 216.5,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20180629&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2018-09-30",
+      "observationDate": "2018-09-28",
+      "value": 6806724870225,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20180928&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:43.515Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 262.5,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20180928&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2018-12-31",
+      "observationDate": "2018-12-28",
+      "value": 5847300793279,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20181228&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:48.580Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 225.5,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20181228&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2019-03-31",
+      "observationDate": "2019-03-29",
+      "value": 6365908402439,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20190329&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:50.217Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 245.5,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20190329&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2019-06-30",
+      "observationDate": "2019-06-28",
+      "value": 6197360929462,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20190628&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:54.755Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 239,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20190628&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2019-09-30",
+      "observationDate": "2019-09-27",
+      "value": 7053063484576,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20190927&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:00.433Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 272,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20190927&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2019-12-31",
+      "observationDate": "2019-12-31",
+      "value": 8582955931598,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20191231&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:04.168Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 331,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20191231&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2020-03-31",
+      "observationDate": "2020-03-31",
+      "value": 7104924245492,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20200331&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:08.919Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 274,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20200331&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2020-06-30",
+      "observationDate": "2020-06-30",
+      "value": 8116209083354,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20200630&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:15.878Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 313,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20200630&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2020-09-30",
+      "observationDate": "2020-09-30",
+      "value": 11227854738314,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20200930&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:22.209Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 433,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20200930&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2020-12-31",
+      "observationDate": "2020-12-31",
+      "value": 13743101642740,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20201231&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:26.941Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 530,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20201231&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2021-03-31",
+      "observationDate": "2021-03-31",
+      "value": 15221133328846,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20210331&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:34.347Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 587,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20210331&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2021-06-30",
+      "observationDate": "2021-06-30",
+      "value": 15428576372510,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20210630&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:39.103Z",
+      "calculation": {
+        "shares": 25930380458,
+        "close": 595,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20210630&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
       "periodEnd": "2021-09-30",
       "value": 15039620665640,
       "currency": "TWD",
@@ -1910,6 +2375,216 @@
   ],
   "mediatek": [
     {
+      "periodEnd": "2018-03-31",
+      "observationDate": "2018-03-30",
+      "value": 537688619100,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20180330&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:33.285Z",
+      "calculation": {
+        "shares": 1581437115,
+        "close": 340,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20180330&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2018-06-30",
+      "observationDate": "2018-06-29",
+      "value": 473780709600,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20180629&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:38.412Z",
+      "calculation": {
+        "shares": 1579269032,
+        "close": 300,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20180629&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2018-09-30",
+      "observationDate": "2018-09-28",
+      "value": 392309576717,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20180928&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:43.515Z",
+      "calculation": {
+        "shares": 1591519581,
+        "close": 246.5,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20180928&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2018-12-31",
+      "observationDate": "2018-12-28",
+      "value": 365250851222,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20181228&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:48.580Z",
+      "calculation": {
+        "shares": 1591506977,
+        "close": 229.5,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20181228&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2019-03-31",
+      "observationDate": "2019-03-29",
+      "value": 450213403613,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20190329&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:50.217Z",
+      "calculation": {
+        "shares": 1593675765,
+        "close": 282.5,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20190329&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2019-06-30",
+      "observationDate": "2019-06-28",
+      "value": 498487205494,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20190628&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:54.755Z",
+      "calculation": {
+        "shares": 1587538871,
+        "close": 314,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20190628&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2019-09-30",
+      "observationDate": "2019-09-27",
+      "value": 586596053538,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20190927&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:00.433Z",
+      "calculation": {
+        "shares": 1589691202,
+        "close": 369,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20190927&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2019-12-31",
+      "observationDate": "2019-12-31",
+      "value": 705024194072,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20191231&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:04.168Z",
+      "calculation": {
+        "shares": 1589682512,
+        "close": 443.5,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20191231&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2020-03-31",
+      "observationDate": "2020-03-31",
+      "value": 520718984480,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20200331&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:08.919Z",
+      "calculation": {
+        "shares": 1589981632,
+        "close": 327.5,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20200331&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2020-06-30",
+      "observationDate": "2020-06-30",
+      "value": 919944301698,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20200630&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:15.878Z",
+      "calculation": {
+        "shares": 1588850262,
+        "close": 579,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20200630&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2020-09-30",
+      "observationDate": "2020-09-30",
+      "value": 964381318309,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20200930&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:22.209Z",
+      "calculation": {
+        "shares": 1588766587,
+        "close": 607,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20200930&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2020-12-31",
+      "observationDate": "2020-12-31",
+      "value": 1187776450701,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20201231&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:26.941Z",
+      "calculation": {
+        "shares": 1590062183,
+        "close": 747,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20201231&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2021-03-31",
+      "observationDate": "2021-03-31",
+      "value": 1540952839152,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20210331&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:34.347Z",
+      "calculation": {
+        "shares": 1590250608,
+        "close": 969,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20210331&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2021-06-30",
+      "observationDate": "2021-06-30",
+      "value": 1529973180944,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20210630&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:39.103Z",
+      "calculation": {
+        "shares": 1590408712,
+        "close": 962,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20210630&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
       "periodEnd": "2021-09-30",
       "value": 1443073048775,
       "currency": "TWD",
@@ -2051,6 +2726,216 @@
     }
   ],
   "foxconn": [
+    {
+      "periodEnd": "2018-03-31",
+      "observationDate": "2018-03-30",
+      "value": 1583846677147,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20180330&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:33.285Z",
+      "calculation": {
+        "shares": 17328738262,
+        "close": 91.4,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20180330&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2018-06-30",
+      "observationDate": "2018-06-29",
+      "value": 1441751023398,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20180629&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:38.412Z",
+      "calculation": {
+        "shares": 17328738262,
+        "close": 83.2,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20180629&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2018-09-30",
+      "observationDate": "2018-09-28",
+      "value": 1372436070350,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20180928&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:43.515Z",
+      "calculation": {
+        "shares": 17328738262,
+        "close": 79.2,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20180928&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2018-12-31",
+      "observationDate": "2018-12-28",
+      "value": 981499735117,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20181228&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:48.580Z",
+      "calculation": {
+        "shares": 13862990609,
+        "close": 70.8,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20181228&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2019-03-31",
+      "observationDate": "2019-03-29",
+      "value": 1018929809762,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20190329&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:50.217Z",
+      "calculation": {
+        "shares": 13862990609,
+        "close": 73.5,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20190329&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2019-06-30",
+      "observationDate": "2019-06-28",
+      "value": 1072995473137,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20190628&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:00:54.755Z",
+      "calculation": {
+        "shares": 13862990609,
+        "close": 77.4,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20190628&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2019-09-30",
+      "observationDate": "2019-09-27",
+      "value": 1014770912579,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20190927&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:00.433Z",
+      "calculation": {
+        "shares": 13862990609,
+        "close": 73.2,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20190927&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2019-12-31",
+      "observationDate": "2019-12-31",
+      "value": 1258759547297,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20191231&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:04.168Z",
+      "calculation": {
+        "shares": 13862990609,
+        "close": 90.8,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20191231&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2020-03-31",
+      "observationDate": "2020-03-31",
+      "value": 969023043569,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20200331&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:08.919Z",
+      "calculation": {
+        "shares": 13862990609,
+        "close": 69.9,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20200331&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2020-06-30",
+      "observationDate": "2020-06-30",
+      "value": 1196376089557,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20200630&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:15.878Z",
+      "calculation": {
+        "shares": 13862990609,
+        "close": 86.3,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20200630&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2020-09-30",
+      "observationDate": "2020-09-30",
+      "value": 1072995473137,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20200930&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:22.209Z",
+      "calculation": {
+        "shares": 13862990609,
+        "close": 77.4,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20200930&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2020-12-31",
+      "observationDate": "2020-12-31",
+      "value": 1275395136028,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20201231&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:26.941Z",
+      "calculation": {
+        "shares": 13862990609,
+        "close": 92,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20201231&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2021-03-31",
+      "observationDate": "2021-03-31",
+      "value": 1719010835516,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20210331&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:34.347Z",
+      "calculation": {
+        "shares": 13862990609,
+        "close": 124,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20210331&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
+    {
+      "periodEnd": "2021-06-30",
+      "observationDate": "2021-06-30",
+      "value": 1552654948208,
+      "currency": "TWD",
+      "sourceUrl": "https://www.twse.com.tw/rwd/zh/fund/MI_QFIIS?date=20210630&selectType=ALLBUT0999&response=json",
+      "retrievedAt": "2026-10-13T15:01:39.103Z",
+      "calculation": {
+        "shares": 13862990609,
+        "close": 112,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=20210630&type=ALLBUT0999&response=json",
+        "sharesBasis": "exchange-issued"
+      }
+    },
     {
       "periodEnd": "2021-09-30",
       "value": 1455458290755,
@@ -3804,6 +4689,246 @@
   ],
   "adbe": [
     {
+      "periodEnd": "2018-03-02",
+      "observationDate": "2018-03-02",
+      "value": 103401291891,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634318000065/",
+      "calculation": {
+        "shares": 492880000,
+        "sharesFiled": "2018-03-28",
+        "close": 209.7899932861328,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-06-01",
+      "observationDate": "2018-06-01",
+      "value": 123251218653,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634318000134/",
+      "calculation": {
+        "shares": 490435000,
+        "sharesFiled": "2018-06-27",
+        "close": 251.30999755859375,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-08-31",
+      "observationDate": "2018-08-31",
+      "value": 128858239345,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634318000160/",
+      "calculation": {
+        "shares": 489007000,
+        "sharesFiled": "2018-09-26",
+        "close": 263.510009765625,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-11-30",
+      "observationDate": "2018-11-30",
+      "value": 122349769772,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634319000019/",
+      "calculation": {
+        "shares": 487663000,
+        "sharesFiled": "2019-01-25",
+        "close": 250.88999938964844,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-03-01",
+      "observationDate": "2019-03-01",
+      "value": 128969945811,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634319000079/",
+      "calculation": {
+        "shares": 488504000,
+        "sharesFiled": "2019-03-27",
+        "close": 264.010009765625,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-05-31",
+      "observationDate": "2019-05-31",
+      "value": 131731352732,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634319000142/",
+      "calculation": {
+        "shares": 486273000,
+        "sharesFiled": "2019-06-26",
+        "close": 270.8999938964844,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-08-30",
+      "observationDate": "2019-08-30",
+      "value": 137959757265,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634319000165/",
+      "calculation": {
+        "shares": 484903000,
+        "sharesFiled": "2019-09-26",
+        "close": 284.510009765625,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-11-29",
+      "observationDate": "2019-11-29",
+      "value": 149298390081,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634320000013/",
+      "calculation": {
+        "shares": 482339000,
+        "sharesFiled": "2020-01-21",
+        "close": 309.5299987792969,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-02-28",
+      "observationDate": "2020-02-28",
+      "value": 166692957642,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634320000064/",
+      "calculation": {
+        "shares": 483000000,
+        "sharesFiled": "2020-03-25",
+        "close": 345.1199951171875,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-05-29",
+      "observationDate": "2020-05-29",
+      "value": 185568002930,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634320000143/",
+      "calculation": {
+        "shares": 480000000,
+        "sharesFiled": "2020-06-24",
+        "close": 386.6000061035156,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-08-28",
+      "observationDate": "2020-08-28",
+      "value": 247891201172,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634320000201/",
+      "calculation": {
+        "shares": 480000000,
+        "sharesFiled": "2020-09-23",
+        "close": 516.4400024414062,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-11-27",
+      "observationDate": "2020-11-27",
+      "value": 228497369415,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634321000004/",
+      "calculation": {
+        "shares": 479000000,
+        "sharesFiled": "2021-01-15",
+        "close": 477.0299987792969,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2021-03-05",
+      "observationDate": "2021-03-05",
+      "value": 211157563568,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634321000069/",
+      "calculation": {
+        "shares": 479000000,
+        "sharesFiled": "2021-03-31",
+        "close": 440.8299865722656,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2021-06-04",
+      "observationDate": "2021-06-04",
+      "value": 240646500000,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634321000159/",
+      "calculation": {
+        "shares": 477000000,
+        "sharesFiled": "2021-06-30",
+        "close": 504.5,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2021-09-03",
+      "observationDate": "2021-09-03",
+      "value": 317296852783,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:19.019Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/796343/000079634321000210/",
+      "calculation": {
+        "shares": 476000000,
+        "sharesFiled": "2021-09-29",
+        "close": 666.5900268554688,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/ADBE?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
       "periodEnd": "2021-12-03",
       "value": 293344974000,
       "currency": "USD",
@@ -3945,6 +5070,38 @@
     }
   ],
   "nvidia": [
+    {
+      "periodEnd": "2019-01-27",
+      "observationDate": "2019-01-25",
+      "value": 97050896301,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:46.707Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581019000023/",
+      "calculation": {
+        "shares": 606000000,
+        "sharesFiled": "2019-02-21",
+        "close": 4.003749847412109,
+        "splitFactor": 40,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/NVDA?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-01-26",
+      "observationDate": "2020-01-24",
+      "value": 153293762054,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:46.707Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1045810/000104581020000010/",
+      "calculation": {
+        "shares": 612000000,
+        "sharesFiled": "2020-02-20",
+        "close": 6.26200008392334,
+        "splitFactor": 40,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/NVDA?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
     {
       "periodEnd": "2020-07-26",
       "observationDate": "2020-07-24",
@@ -4144,6 +5301,22 @@
       "retrievedAt": "2026-10-12T13:33:46.240Z"
     },
     {
+      "periodEnd": "2018-12-29",
+      "observationDate": "2018-12-28",
+      "value": 17909099693,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:48.360Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/2488/000000248819000011/",
+      "calculation": {
+        "shares": 1005000000,
+        "sharesFiled": "2019-02-08",
+        "close": 17.81999969482422,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMD?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
       "periodEnd": "2019-03-30",
       "observationDate": "2019-03-29",
       "value": 27601500000,
@@ -4160,12 +5333,124 @@
       "retrievedAt": "2026-10-12T13:33:46.240Z"
     },
     {
+      "periodEnd": "2019-09-28",
+      "observationDate": "2019-09-27",
+      "value": 31994079235,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:48.360Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/2488/000000248819000159/",
+      "calculation": {
+        "shares": 1114000000,
+        "sharesFiled": "2019-10-30",
+        "close": 28.719999313354492,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMD?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-12-28",
+      "observationDate": "2019-12-27",
+      "value": 54030600357,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:48.360Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/2488/000000248820000008/",
+      "calculation": {
+        "shares": 1170000000,
+        "sharesFiled": "2020-02-04",
+        "close": 46.18000030517578,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMD?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-03-28",
+      "observationDate": "2020-03-27",
+      "value": 54545182144,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:48.360Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/2488/000000248820000051/",
+      "calculation": {
+        "shares": 1171000000,
+        "sharesFiled": "2020-04-29",
+        "close": 46.58000183105469,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMD?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-06-27",
+      "observationDate": "2020-06-26",
+      "value": 58817398209,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:48.360Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/2488/000000248820000103/",
+      "calculation": {
+        "shares": 1174000000,
+        "sharesFiled": "2020-07-29",
+        "close": 50.099998474121094,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMD?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-09-26",
+      "observationDate": "2020-09-25",
+      "value": 93828117065,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:48.360Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/2488/000000248820000164/",
+      "calculation": {
+        "shares": 1202000000,
+        "sharesFiled": "2020-10-28",
+        "close": 78.05999755859375,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMD?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-12-26",
+      "observationDate": "2020-12-24",
+      "value": 111181907043,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:48.360Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/2488/000162828021001185/",
+      "calculation": {
+        "shares": 1211000000,
+        "sharesFiled": "2021-01-29",
+        "close": 91.80999755859375,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMD?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
       "periodEnd": "2021-03-27",
       "observationDate": "2021-03-26",
       "value": 93768700000,
       "currency": "USD",
       "sourceUrl": "https://companiesmarketcap.com/amd/marketcap/",
       "retrievedAt": "2026-10-12T13:33:46.240Z"
+    },
+    {
+      "periodEnd": "2021-06-26",
+      "observationDate": "2021-06-25",
+      "value": 103857063332,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:48.360Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/2488/000000248821000116/",
+      "calculation": {
+        "shares": 1213000000,
+        "sharesFiled": "2021-07-28",
+        "close": 85.62000274658203,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMD?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
     },
     {
       "periodEnd": "2021-09-25",
@@ -4334,6 +5619,22 @@
       "retrievedAt": "2026-10-12T13:33:47.866Z"
     },
     {
+      "periodEnd": "2018-12-29",
+      "observationDate": "2018-12-28",
+      "value": 211123000000,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:49.765Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/50863/000005086319000007/",
+      "calculation": {
+        "shares": 4516000000,
+        "sharesFiled": "2019-02-01",
+        "close": 46.75,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/INTC?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
       "periodEnd": "2019-03-30",
       "observationDate": "2019-03-29",
       "value": 241578500000,
@@ -4350,12 +5651,124 @@
       "retrievedAt": "2026-10-12T13:33:47.866Z"
     },
     {
+      "periodEnd": "2019-09-28",
+      "observationDate": "2019-09-27",
+      "value": 220892994690,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:49.765Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/50863/000005086319000029/",
+      "calculation": {
+        "shares": 4350000000,
+        "sharesFiled": "2019-10-25",
+        "close": 50.779998779296875,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/INTC?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-12-28",
+      "observationDate": "2019-12-27",
+      "value": 257743207855,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:49.765Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/50863/000005086320000011/",
+      "calculation": {
+        "shares": 4290000000,
+        "sharesFiled": "2020-01-24",
+        "close": 60.08000183105469,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/INTC?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-03-28",
+      "observationDate": "2020-03-27",
+      "value": 221734575478,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:49.765Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/50863/000005086320000017/",
+      "calculation": {
+        "shares": 4234000000,
+        "sharesFiled": "2020-04-24",
+        "close": 52.369998931884766,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/INTC?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
       "periodEnd": "2020-06-27",
       "observationDate": "2020-06-26",
       "value": 243455000000,
       "currency": "USD",
       "sourceUrl": "https://companiesmarketcap.com/intel/marketcap/",
       "retrievedAt": "2026-10-12T13:33:47.866Z"
+    },
+    {
+      "periodEnd": "2020-09-26",
+      "observationDate": "2020-09-25",
+      "value": 204654114372,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:49.765Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/50863/000005086320000043/",
+      "calculation": {
+        "shares": 4098000000,
+        "sharesFiled": "2020-10-23",
+        "close": 49.939998626708984,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/INTC?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-12-26",
+      "observationDate": "2020-12-24",
+      "value": 191198338760,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:49.765Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/50863/000005086321000010/",
+      "calculation": {
+        "shares": 4062000000,
+        "sharesFiled": "2021-01-22",
+        "close": 47.06999969482422,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/INTC?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2021-03-27",
+      "observationDate": "2021-03-26",
+      "value": 261945071091,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:49.765Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/50863/000005086321000018/",
+      "calculation": {
+        "shares": 4038000000,
+        "sharesFiled": "2021-04-23",
+        "close": 64.87000274658203,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/INTC?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2021-06-26",
+      "observationDate": "2021-06-25",
+      "value": 226826869381,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:49.765Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/50863/000005086321000030/",
+      "calculation": {
+        "shares": 4057000000,
+        "sharesFiled": "2021-07-23",
+        "close": 55.90999984741211,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/INTC?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
     },
     {
       "periodEnd": "2021-09-25",
@@ -4754,12 +6167,204 @@
   ],
   "cisco": [
     {
+      "periodEnd": "2017-10-28",
+      "observationDate": "2017-10-27",
+      "value": 170462931511,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:51.336Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/858877/000085887717000019/",
+      "calculation": {
+        "shares": 4951000000,
+        "sharesFiled": "2017-11-21",
+        "close": 34.43000030517578,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/CSCO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-01-27",
+      "observationDate": "2018-01-26",
+      "value": 207182086685,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:51.336Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/858877/000085887718000004/",
+      "calculation": {
+        "shares": 4868000000,
+        "sharesFiled": "2018-02-20",
+        "close": 42.560001373291016,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/CSCO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-04-28",
+      "observationDate": "2018-04-27",
+      "value": 211657135666,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:51.336Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/858877/000085887718000007/",
+      "calculation": {
+        "shares": 4734000000,
+        "sharesFiled": "2018-05-22",
+        "close": 44.709999084472656,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/CSCO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-07-28",
+      "observationDate": "2018-07-27",
+      "value": 196417978592,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:51.336Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/858877/000085887718000011/",
+      "calculation": {
+        "shares": 4614000000,
+        "sharesFiled": "2018-09-06",
+        "close": 42.56999969482422,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/CSCO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-10-27",
+      "observationDate": "2018-10-26",
+      "value": 199877250000,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:51.336Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/858877/000085887718000015/",
+      "calculation": {
+        "shares": 4517000000,
+        "sharesFiled": "2018-11-20",
+        "close": 44.25,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/CSCO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-01-26",
+      "observationDate": "2019-01-25",
+      "value": 204079124725,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:51.336Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/858877/000085887719000003/",
+      "calculation": {
+        "shares": 4424000000,
+        "sharesFiled": "2019-02-19",
+        "close": 46.130001068115234,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/CSCO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-04-27",
+      "observationDate": "2019-04-26",
+      "value": 241010444607,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:51.336Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/858877/000085887719000007/",
+      "calculation": {
+        "shares": 4313000000,
+        "sharesFiled": "2019-05-21",
+        "close": 55.880001068115234,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/CSCO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-07-27",
+      "observationDate": "2019-07-26",
+      "value": 240252494812,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:51.336Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/858877/000085887719000012/",
+      "calculation": {
+        "shares": 4250000000,
+        "sharesFiled": "2019-09-05",
+        "close": 56.529998779296875,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/CSCO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-10-26",
+      "observationDate": "2019-10-25",
+      "value": 198902906471,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:51.336Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/858877/000085887719000018/",
+      "calculation": {
+        "shares": 4241000000,
+        "sharesFiled": "2019-11-19",
+        "close": 46.900001525878906,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/CSCO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-01-25",
+      "observationDate": "2020-01-24",
+      "value": 207172843529,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:51.336Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/858877/000085887720000004/",
+      "calculation": {
+        "shares": 4241000000,
+        "sharesFiled": "2020-02-18",
+        "close": 48.849998474121094,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/CSCO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-04-25",
+      "observationDate": "2020-04-24",
+      "value": 179434401932,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:51.336Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/858877/000085887720000006/",
+      "calculation": {
+        "shares": 4220000000,
+        "sharesFiled": "2020-05-18",
+        "close": 42.52000045776367,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/CSCO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
       "periodEnd": "2020-07-25",
       "observationDate": "2020-07-24",
       "value": 195914500000,
       "currency": "USD",
       "sourceUrl": "https://companiesmarketcap.com/cisco/marketcap/",
       "retrievedAt": "2026-10-12T13:33:51.223Z"
+    },
+    {
+      "periodEnd": "2020-10-24",
+      "observationDate": "2020-10-23",
+      "value": 163898038712,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:51.336Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/858877/000085887720000015/",
+      "calculation": {
+        "shares": 4222000000,
+        "sharesFiled": "2020-11-17",
+        "close": 38.81999969482422,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/CSCO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
     },
     {
       "periodEnd": "2021-01-23",
@@ -4928,12 +6533,76 @@
   ],
   "qualcomm": [
     {
+      "periodEnd": "2017-12-24",
+      "observationDate": "2017-12-22",
+      "value": 95800404968,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:52.850Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/804328/000172894918000011/",
+      "calculation": {
+        "shares": 1480000000,
+        "sharesFiled": "2018-01-31",
+        "close": 64.7300033569336,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/QCOM?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-03-25",
+      "observationDate": "2018-03-23",
+      "value": 79524119774,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:52.850Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/804328/000172894918000039/",
+      "calculation": {
+        "shares": 1482000000,
+        "sharesFiled": "2018-04-25",
+        "close": 53.65999984741211,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/QCOM?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-06-24",
+      "observationDate": "2018-06-22",
+      "value": 85936500000,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:52.850Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/804328/000172894918000075/",
+      "calculation": {
+        "shares": 1469000000,
+        "sharesFiled": "2018-07-25",
+        "close": 58.5,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/QCOM?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
       "periodEnd": "2018-09-30",
       "observationDate": "2018-09-28",
       "value": 105821400000,
       "currency": "USD",
       "sourceUrl": "https://companiesmarketcap.com/qualcomm/marketcap/",
       "retrievedAt": "2026-10-12T13:33:52.863Z"
+    },
+    {
+      "periodEnd": "2018-12-30",
+      "observationDate": "2018-12-28",
+      "value": 68740101662,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:52.850Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/804328/000172894919000012/",
+      "calculation": {
+        "shares": 1210000000,
+        "sharesFiled": "2019-01-30",
+        "close": 56.810001373291016,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/QCOM?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
     },
     {
       "periodEnd": "2019-03-31",
@@ -4950,6 +6619,134 @@
       "currency": "USD",
       "sourceUrl": "https://companiesmarketcap.com/qualcomm/marketcap/",
       "retrievedAt": "2026-10-12T13:33:52.863Z"
+    },
+    {
+      "periodEnd": "2019-09-29",
+      "observationDate": "2019-09-27",
+      "value": 87741346855,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:52.850Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/804328/000172894919000072/",
+      "calculation": {
+        "shares": 1145000000,
+        "sharesFiled": "2019-11-06",
+        "close": 76.62999725341797,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/QCOM?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-12-29",
+      "observationDate": "2019-12-27",
+      "value": 101498403488,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:52.850Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/804328/000172894920000011/",
+      "calculation": {
+        "shares": 1143000000,
+        "sharesFiled": "2020-02-05",
+        "close": 88.80000305175781,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/QCOM?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-03-29",
+      "observationDate": "2020-03-27",
+      "value": 75046925873,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:52.850Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/804328/000172894920000031/",
+      "calculation": {
+        "shares": 1127000000,
+        "sharesFiled": "2020-04-29",
+        "close": 66.58999633789062,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/QCOM?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-06-28",
+      "observationDate": "2020-06-26",
+      "value": 99286556213,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:52.850Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/804328/000172894920000057/",
+      "calculation": {
+        "shares": 1128000000,
+        "sharesFiled": "2020-07-29",
+        "close": 88.0199966430664,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/QCOM?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-09-27",
+      "observationDate": "2020-09-25",
+      "value": 129499500000,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:52.850Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/804328/000172894920000067/",
+      "calculation": {
+        "shares": 1131000000,
+        "sharesFiled": "2020-11-04",
+        "close": 114.5,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/QCOM?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-12-27",
+      "observationDate": "2020-12-24",
+      "value": 169025432373,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:52.850Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/804328/000172894921000022/",
+      "calculation": {
+        "shares": 1136000000,
+        "sharesFiled": "2021-02-03",
+        "close": 148.7899932861328,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/QCOM?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2021-03-28",
+      "observationDate": "2021-03-26",
+      "value": 150145716202,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:52.850Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/804328/000172894921000043/",
+      "calculation": {
+        "shares": 1129000000,
+        "sharesFiled": "2021-04-28",
+        "close": 132.99000549316406,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/QCOM?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2021-06-27",
+      "observationDate": "2021-06-25",
+      "value": 155269193115,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:52.850Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/804328/000172894921000066/",
+      "calculation": {
+        "shares": 1128000000,
+        "sharesFiled": "2021-07-28",
+        "close": 137.64999389648438,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/QCOM?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
     },
     {
       "periodEnd": "2021-09-26",
@@ -6537,6 +8334,262 @@
   ],
   "micron": [
     {
+      "periodEnd": "2017-11-30",
+      "observationDate": "2017-11-30",
+      "value": 49087619293,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312517000166/",
+      "calculation": {
+        "shares": 1158000000,
+        "sharesFiled": "2017-12-20",
+        "close": 42.38999938964844,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-03-01",
+      "observationDate": "2018-03-01",
+      "value": 55143958763,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312518000036/",
+      "calculation": {
+        "shares": 1158000000,
+        "sharesFiled": "2018-03-23",
+        "close": 47.619998931884766,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-05-31",
+      "observationDate": "2018-05-31",
+      "value": 66804400177,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312518000065/",
+      "calculation": {
+        "shares": 1160000000,
+        "sharesFiled": "2018-06-22",
+        "close": 57.59000015258789,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-08-30",
+      "observationDate": "2018-08-30",
+      "value": 61254358051,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312518000092/",
+      "calculation": {
+        "shares": 1161000000,
+        "sharesFiled": "2018-10-15",
+        "close": 52.7599983215332,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-11-29",
+      "observationDate": "2018-11-29",
+      "value": 42459199829,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312518000156/",
+      "calculation": {
+        "shares": 1120000000,
+        "sharesFiled": "2018-12-19",
+        "close": 37.90999984741211,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-02-28",
+      "observationDate": "2019-02-28",
+      "value": 45213281181,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312519000014/",
+      "calculation": {
+        "shares": 1106000000,
+        "sharesFiled": "2019-03-21",
+        "close": 40.880001068115234,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-05-30",
+      "observationDate": "2019-05-30",
+      "value": 36785279663,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312519000035/",
+      "calculation": {
+        "shares": 1104000000,
+        "sharesFiled": "2019-06-26",
+        "close": 33.31999969482422,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-08-29",
+      "observationDate": "2019-08-29",
+      "value": 49405017975,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312519000094/",
+      "calculation": {
+        "shares": 1106000000,
+        "sharesFiled": "2019-10-17",
+        "close": 44.66999816894531,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-11-28",
+      "observationDate": "2019-11-27",
+      "value": 53361279831,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312519000174/",
+      "calculation": {
+        "shares": 1108000000,
+        "sharesFiled": "2019-12-20",
+        "close": 48.15999984741211,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-02-27",
+      "observationDate": "2020-02-27",
+      "value": 56244962036,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312520000034/",
+      "calculation": {
+        "shares": 1112000000,
+        "sharesFiled": "2020-03-26",
+        "close": 50.58000183105469,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-05-28",
+      "observationDate": "2020-05-28",
+      "value": 51674641357,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312520000067/",
+      "calculation": {
+        "shares": 1112000000,
+        "sharesFiled": "2020-06-29",
+        "close": 46.470001220703125,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-09-03",
+      "observationDate": "2020-09-03",
+      "value": 51565292038,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312520000082/",
+      "calculation": {
+        "shares": 1113000000,
+        "sharesFiled": "2020-10-19",
+        "close": 46.33000183105469,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-12-03",
+      "observationDate": "2020-12-03",
+      "value": 78078301704,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312521000012/",
+      "calculation": {
+        "shares": 1117000000,
+        "sharesFiled": "2021-01-08",
+        "close": 69.9000015258789,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2021-03-04",
+      "observationDate": "2021-03-04",
+      "value": 94533932053,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312521000032/",
+      "calculation": {
+        "shares": 1121000000,
+        "sharesFiled": "2021-04-01",
+        "close": 84.33000183105469,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2021-06-03",
+      "observationDate": "2021-06-03",
+      "value": 91873598633,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312521000052/",
+      "calculation": {
+        "shares": 1120000000,
+        "sharesFiled": "2021-07-01",
+        "close": 82.02999877929688,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2021-09-02",
+      "observationDate": "2021-09-02",
+      "value": 82794807610,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:54:58.718Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/723125/000072312521000065/",
+      "calculation": {
+        "shares": 1119000000,
+        "sharesFiled": "2021-10-08",
+        "close": 73.98999786376953,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/MU?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
       "periodEnd": "2021-12-02",
       "value": 92839668797,
       "currency": "USD",
@@ -6679,12 +8732,140 @@
   ],
   "broadcom": [
     {
+      "periodEnd": "2018-05-06",
+      "observationDate": "2018-05-04",
+      "value": 100560944267,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:00.142Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1730168/000173016818000019/",
+      "calculation": {
+        "shares": 436235225,
+        "sharesFiled": "2018-06-14",
+        "close": 23.052000045776367,
+        "splitFactor": 10,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AVGO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-08-05",
+      "observationDate": "2018-08-03",
+      "value": 90020209465,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:00.142Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1730168/000173016818000039/",
+      "calculation": {
+        "shares": 413296951,
+        "sharesFiled": "2018-09-13",
+        "close": 21.7810001373291,
+        "splitFactor": 10,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AVGO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-11-04",
+      "observationDate": "2018-11-02",
+      "value": 89994155557,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:00.142Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1730168/000173016818000084/",
+      "calculation": {
+        "shares": 407637618,
+        "sharesFiled": "2018-12-21",
+        "close": 22.07699966430664,
+        "splitFactor": 10,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AVGO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-02-03",
+      "observationDate": "2019-02-01",
+      "value": 105697811220,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:00.142Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1730168/000173016819000036/",
+      "calculation": {
+        "shares": 396153863,
+        "sharesFiled": "2019-03-15",
+        "close": 26.680999755859375,
+        "splitFactor": 10,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AVGO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-05-05",
+      "observationDate": "2019-05-03",
+      "value": 125814778290,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:00.142Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1730168/000173016819000101/",
+      "calculation": {
+        "shares": 398513768,
+        "sharesFiled": "2019-06-14",
+        "close": 31.570999145507812,
+        "splitFactor": 10,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AVGO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-08-04",
+      "observationDate": "2019-08-02",
+      "value": 110747024707,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:00.142Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1730168/000173016819000118/",
+      "calculation": {
+        "shares": 397612545,
+        "sharesFiled": "2019-09-13",
+        "close": 27.85300064086914,
+        "splitFactor": 10,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AVGO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-11-03",
+      "observationDate": "2019-11-01",
+      "value": 117912562215,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:00.142Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1730168/000173016819000144/",
+      "calculation": {
+        "shares": 397560810,
+        "sharesFiled": "2019-12-20",
+        "close": 29.659000396728516,
+        "splitFactor": 10,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AVGO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
       "periodEnd": "2020-02-02",
       "observationDate": "2020-01-31",
       "value": 121390300000,
       "currency": "USD",
       "sourceUrl": "https://companiesmarketcap.com/broadcom/marketcap/",
       "retrievedAt": "2026-10-12T13:34:12.460Z"
+    },
+    {
+      "periodEnd": "2020-05-03",
+      "observationDate": "2020-05-01",
+      "value": 104426173867,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:00.142Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1730168/000173016820000109/",
+      "calculation": {
+        "shares": 402103106,
+        "sharesFiled": "2020-06-12",
+        "close": 25.969999313354492,
+        "splitFactor": 10,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AVGO?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
     },
     {
       "periodEnd": "2020-08-02",
@@ -6869,12 +9050,188 @@
   ],
   "appliedMaterials": [
     {
+      "periodEnd": "2018-01-28",
+      "observationDate": "2018-01-26",
+      "value": 60015268935,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:01.753Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/6951/000000695118000008/",
+      "calculation": {
+        "shares": 1050687501,
+        "sharesFiled": "2018-02-22",
+        "close": 57.119998931884766,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMAT?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-04-29",
+      "observationDate": "2018-04-27",
+      "value": 49797560981,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:01.753Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/6951/000000695118000017/",
+      "calculation": {
+        "shares": 1008047762,
+        "sharesFiled": "2018-05-24",
+        "close": 49.400001525878906,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMAT?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-07-29",
+      "observationDate": "2018-07-27",
+      "value": 47478441414,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:01.753Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/6951/000000695118000029/",
+      "calculation": {
+        "shares": 982990521,
+        "sharesFiled": "2018-08-23",
+        "close": 48.29999923706055,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMAT?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2018-10-28",
+      "observationDate": "2018-10-26",
+      "value": 31292120590,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:01.753Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/6951/000000695118000041/",
+      "calculation": {
+        "shares": 967000000,
+        "sharesFiled": "2018-12-13",
+        "close": 32.36000061035156,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMAT?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-01-27",
+      "observationDate": "2019-01-25",
+      "value": 37206695043,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:01.753Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/6951/000000695119000008/",
+      "calculation": {
+        "shares": 949392609,
+        "sharesFiled": "2019-02-21",
+        "close": 39.189998626708984,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMAT?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-04-28",
+      "observationDate": "2019-04-26",
+      "value": 41806445986,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:01.753Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/6951/000000695119000019/",
+      "calculation": {
+        "shares": 936104929,
+        "sharesFiled": "2019-05-23",
+        "close": 44.65999984741211,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMAT?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-07-28",
+      "observationDate": "2019-07-26",
+      "value": 46871267130,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:01.753Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/6951/000000695119000029/",
+      "calculation": {
+        "shares": 923753756,
+        "sharesFiled": "2019-08-22",
+        "close": 50.7400016784668,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMAT?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2019-10-27",
+      "observationDate": "2019-10-25",
+      "value": 51039521118,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:01.753Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/6951/000000695119000046/",
+      "calculation": {
+        "shares": 916000000,
+        "sharesFiled": "2019-12-13",
+        "close": 55.720001220703125,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMAT?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-01-26",
+      "observationDate": "2020-01-24",
+      "value": 56934917068,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:01.753Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/6951/000000695120000014/",
+      "calculation": {
+        "shares": 918305114,
+        "sharesFiled": "2020-02-20",
+        "close": 62,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMAT?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
+      "periodEnd": "2020-04-26",
+      "observationDate": "2020-04-24",
+      "value": 47418640158,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:01.753Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/6951/000000695120000028/",
+      "calculation": {
+        "shares": 916479293,
+        "sharesFiled": "2020-05-21",
+        "close": 51.7400016784668,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMAT?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
+    },
+    {
       "periodEnd": "2020-07-26",
       "observationDate": "2020-07-24",
       "value": 55557000000,
       "currency": "USD",
       "sourceUrl": "https://companiesmarketcap.com/applied-materials/marketcap/",
       "retrievedAt": "2026-10-12T13:34:14.144Z"
+    },
+    {
+      "periodEnd": "2020-10-25",
+      "observationDate": "2020-10-23",
+      "value": 55708300697,
+      "currency": "USD",
+      "retrievedAt": "2026-10-13T14:55:01.753Z",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/6951/000000695120000048/",
+      "calculation": {
+        "shares": 914000000,
+        "sharesFiled": "2020-12-11",
+        "close": 60.95000076293945,
+        "splitFactor": 1,
+        "priceSourceUrl": "https://query2.finance.yahoo.com/v8/finance/chart/AMAT?period1=1483228800&period2=1791936000&interval=1d&events=splits",
+        "sharesBasis": "outstanding"
+      }
     },
     {
       "periodEnd": "2021-01-31",
@@ -7495,6 +9852,22 @@
   ],
   "asml": [
     {
+      "periodEnd": "2018-07-01",
+      "observationDate": "2018-06-29",
+      "value": 83694400000,
+      "currency": "USD",
+      "sourceUrl": "https://companiesmarketcap.com/asml/marketcap/",
+      "retrievedAt": "2026-10-12T13:34:22.142Z"
+    },
+    {
+      "periodEnd": "2018-09-30",
+      "observationDate": "2018-09-28",
+      "value": 79633100000,
+      "currency": "USD",
+      "sourceUrl": "https://companiesmarketcap.com/asml/marketcap/",
+      "retrievedAt": "2026-10-12T13:34:22.142Z"
+    },
+    {
       "periodEnd": "2018-12-31",
       "observationDate": "2018-12-31",
       "value": 66511000000,
@@ -7503,12 +9876,36 @@
       "retrievedAt": "2026-10-12T13:34:21.114Z"
     },
     {
+      "periodEnd": "2019-03-31",
+      "observationDate": "2019-03-29",
+      "value": 79902800000,
+      "currency": "USD",
+      "sourceUrl": "https://companiesmarketcap.com/asml/marketcap/",
+      "retrievedAt": "2026-10-12T13:34:22.142Z"
+    },
+    {
+      "periodEnd": "2019-06-30",
+      "observationDate": "2019-06-28",
+      "value": 88925600000,
+      "currency": "USD",
+      "sourceUrl": "https://companiesmarketcap.com/asml/marketcap/",
+      "retrievedAt": "2026-10-12T13:34:22.142Z"
+    },
+    {
       "periodEnd": "2019-12-31",
       "observationDate": "2019-12-31",
       "value": 124619700000,
       "currency": "USD",
       "sourceUrl": "https://stockanalysis.com/stocks/asml/market-cap/",
       "retrievedAt": "2026-10-12T13:34:21.114Z"
+    },
+    {
+      "periodEnd": "2020-06-28",
+      "observationDate": "2020-06-26",
+      "value": 154711700000,
+      "currency": "USD",
+      "sourceUrl": "https://companiesmarketcap.com/asml/marketcap/",
+      "retrievedAt": "2026-10-12T13:34:22.142Z"
     },
     {
       "periodEnd": "2020-12-31",
@@ -7857,9 +10254,25 @@
   ],
   "schneider": [
     {
+      "periodEnd": "2018-06-30",
+      "observationDate": "2018-06-29",
+      "value": 39770442396,
+      "currency": "EUR",
+      "sourceUrl": "https://companiesmarketcap.com/eur/schneider-electric/marketcap/",
+      "retrievedAt": "2026-10-12T13:34:25.917Z"
+    },
+    {
       "periodEnd": "2018-12-31",
       "observationDate": "2018-12-31",
       "value": 32814840598,
+      "currency": "EUR",
+      "sourceUrl": "https://companiesmarketcap.com/eur/schneider-electric/marketcap/",
+      "retrievedAt": "2026-10-12T13:34:25.917Z"
+    },
+    {
+      "periodEnd": "2019-06-30",
+      "observationDate": "2019-06-28",
+      "value": 43745592000,
       "currency": "EUR",
       "sourceUrl": "https://companiesmarketcap.com/eur/schneider-electric/marketcap/",
       "retrievedAt": "2026-10-12T13:34:25.917Z"
@@ -8197,9 +10610,33 @@
   ],
   "tcs": [
     {
+      "periodEnd": "2018-06-30",
+      "observationDate": "2018-06-29",
+      "value": 7074251314500,
+      "currency": "INR",
+      "sourceUrl": "https://companiesmarketcap.com/inr/tata-consultancy-services/marketcap/",
+      "retrievedAt": "2026-10-12T13:34:30.683Z"
+    },
+    {
+      "periodEnd": "2018-09-30",
+      "observationDate": "2018-09-28",
+      "value": 8194084003000,
+      "currency": "INR",
+      "sourceUrl": "https://companiesmarketcap.com/inr/tata-consultancy-services/marketcap/",
+      "retrievedAt": "2026-10-12T13:34:30.683Z"
+    },
+    {
       "periodEnd": "2018-12-31",
       "observationDate": "2018-12-31",
       "value": 7103454806006,
+      "currency": "INR",
+      "sourceUrl": "https://companiesmarketcap.com/inr/tata-consultancy-services/marketcap/",
+      "retrievedAt": "2026-10-12T13:34:30.683Z"
+    },
+    {
+      "periodEnd": "2019-06-30",
+      "observationDate": "2019-06-28",
+      "value": 8357313623130,
       "currency": "INR",
       "sourceUrl": "https://companiesmarketcap.com/inr/tata-consultancy-services/marketcap/",
       "retrievedAt": "2026-10-12T13:34:30.683Z"
