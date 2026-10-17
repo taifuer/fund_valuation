@@ -29,6 +29,7 @@ const UPDATES = [
 ] as const;
 
 export default function AboutPage() {
+  const analyticsEnabled = typeof __BAIDU_ANALYTICS_ID__ !== 'undefined' && /^[a-f0-9]{32}$/i.test(__BAIDU_ANALYTICS_ID__);
   return (
     <main className={styles.page} aria-labelledby="about-title">
       <header className={styles.pageHeader}>
@@ -45,6 +46,7 @@ export default function AboutPage() {
             行情主要来自新浪财经、腾讯财经、台湾证券交易所、Naver Finance 和 Coin Metrics，历史参考汇率来自欧洲中央银行；基金净值、资料及持仓主要来自天天基金、东方财富等公开接口。公司经营数据根据官方披露离线整理，并使用监管机构、交易所或证券行情结构化公开数据交叉校验，不在访问时实时抓取。不同数据源可能存在延迟、缺失或误差；基金估算基于已披露持仓、行情与汇率计算，不代表基金公司正式净值。基金净值以基金管理人正式披露为准，所有数据仅供参考，不构成投资建议。
           </p>
           <p>交流与问题反馈请联系邮箱：<a href="mailto:taifu@taifua.com">taifu@taifua.com</a>。</p>
+          <p>隐私说明：基金列表和筛选偏好保存在当前浏览器。本部署{analyticsEnabled ? '使用百度统计了解访问情况，统计服务可能记录访问设备、页面和 Cookie；请勿在反馈中提交管理令牌等敏感信息。' : '未启用第三方访问统计。'}</p>
         </section>
 
         <section className={styles.section} aria-labelledby="update-history">

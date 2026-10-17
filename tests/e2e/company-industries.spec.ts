@@ -36,8 +36,8 @@ test('company industries combine with regions and search without fetching new da
   await expect(regions.getByRole('button', { name: /全部/ })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('heading', { name: '高通', exact: true })).toBeVisible();
   const navigation = page.getByRole('navigation', { name: '页面切换' });
-  await navigation.getByRole('button', { name: '关于', exact: true }).click();
-  await navigation.getByRole('button', { name: '公司', exact: true }).click();
+  await navigation.getByRole('link', { name: '关于', exact: true }).click();
+  await navigation.getByRole('link', { name: '公司', exact: true }).click();
   await expect(industry).toHaveValue('semiconductors');
   await expect(search).toHaveValue('QCOM');
   await regions.getByRole('button', { name: /中国/ }).click();

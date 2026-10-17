@@ -55,26 +55,29 @@ npm run backend:history -- --publish-only
 
 ```bash
 cp .env.example .env
-# 至少替换诊断令牌
+# 按需生成独立随机令牌；未配置时诊断和基金管理保持关闭
 docker compose up --build -d
 ```
 
-默认访问 `http://localhost:8080`。服务包括 Nginx 前端、Gunicorn 后端和独立 worker；SQLite 与备份目录挂载到宿主机。生产环境建议将 HTTP 绑定到 `127.0.0.1`，再由外层反向代理提供 HTTPS。
+默认访问 `http://localhost:8080`，仅绑定 `127.0.0.1`。服务包括 Nginx 前端、Gunicorn 后端和独立 worker；SQLite 与备份目录挂载到宿主机。对外访问由外层反向代理提供 HTTPS。
 
 重要配置：
 
 - `FUND_VALUATION_DIAGNOSTICS_TOKEN`：内部诊断令牌
 - `FUND_VALUATION_ENABLE_FUND_MANAGEMENT`：是否开放基金管理入口
 - `FUND_VALUATION_FUND_MANAGEMENT_TOKEN`：基金管理独立令牌
+- `FUND_VALUATION_CORS_ORIGINS`：可选跨域来源白名单，逗号分隔；默认同源，不开放任意来源
 - `FUND_VALUATION_HTTP_HOST`：Compose 对外绑定地址
 - `FUND_VALUATION_BACKUP_HOST_DIR`：宿主机备份目录
 - `FUND_VALUATION_SNAPSHOT_RETENTION_DAYS`：行情快照保留天数
 - `FUND_VALUATION_FX_HISTORY_YEARS`：历史汇率覆盖年数
 - `FUND_VALUATION_BAIDU_ANALYTICS_ID`：可选的百度统计站点 ID
 
-完整默认值和说明以 `.env.example` 为准。不要把令牌写入仓库。
+完整默认值和说明以 `.env.example` 为准。不要把令牌写入仓库。管理功能必须同时配置启用标志和非空令牌，不再支持匿名开放模式；已知示例占位令牌会使启动失败。可用 `openssl rand -hex 32` 分别生成两个令牌。
 
-`refresh=1` 和诊断时间参数 `now=` 需要通过 `X-Diagnostics-Token` 传入维护令牌；无令牌返回 403。基金相关刷新也接受有效的基金管理令牌，但不能据此刷新任意市场数据或模拟时间。显式开放基金管理时，保留基金代码的初次净值查询能力，不开放历史刷新。维护请求另设每客户端每进程 20 次/分钟限制，响应禁止缓存；日常更新仍运行 worker，不由浏览器轮询强制刷新。
+`refresh=1` 和诊断时间参数 `now=` 需要通过 `X-Diagnostics-Token` 传入维护令牌；无令牌返回 403。基金相关刷新也接受有效的基金管理令牌，但不能据此刷新任意市场数据或模拟时间。维护请求另设每客户端每进程 20 次/分钟限制，认证响应均为 `private, no-store`；日常更新仍运行 worker，不由浏览器轮询强制刷新。
+
+Worker 的 Docker 健康检查只读取刷新租约，不发起上游请求，也不因正常休市而失败。历史任务失败、日历覆盖和上游详情保留在需要令牌的诊断中；公开 `/api/datahealth` 仅返回 worker 预发布的数量/时间摘要，不暴露路径、主机标识或原始错误。容器标记 unhealthy 不等于自动重启，需由运维监测处理。
 
 反向代理限流通过 `FUND_VALUATION_TRUSTED_PROXIES` 指定可信 IP/CIDR，从直连地址向左逐级验证转发链，不直接采用用户可伪造的最左 IP。本地默认只信任 loopback；Compose 默认额外信任标准 Docker 网桥 `172.16.0.0/12`，生产应收窄为实际代理网段，非标准 Docker 网段需显式配置。保持 backend 端口不对公网开放。多进程下严格总配额应配置在最外层可信 Nginx，当前应用内限流是每进程保护。
 
@@ -105,6 +108,10 @@ Docker worker 默认每天创建一次通过完整性校验的 SQLite 备份，�
 
 行情快照、原始响应和响应缓存属于可再生成数据，会按配置周期清理并执行非阻塞 WAL checkpoint 与 `PRAGMA optimize`；基金净值、市场日线和季度持仓不会被自动删除。恢复数据库前会自动备份当前文件，生产恢复仍建议先停止 backend 和 worker。
 
+新原始响应使用 gzip 保存；旧文件按原保留周期自然轮换。响应缓存默认限制为 64 MiB，维护时优先淘汰最旧缓存。最新行情另存小表，清理旧分钟采样不会清空最新行情。已对账且超过 30 天的估值审计仅移除大型逐持仓明细，保留日级结果、质量和校准字段；不删除校准样本，不自动 `VACUUM`。备份仍为日常 1 份 + 部署前 1 份。
+
+Schema 18 增加摘要修订号、预计算收益摘要和最新行情表，不重建大历史表。Worker 启动及增量维护时发布收益/风险摘要；接口只读已发布结果，启动后暂缺摘要时等待 worker，不回退到请求内计算。财务数据修正、分红和拆股因子修改会触发重算，单纯刷新抓取时间不会触发。
+
 ## 构建与测试
 
 ```bash
@@ -115,6 +122,8 @@ npm run preview
 ```
 
 CI 在 `main`、`dev` 的 push 和 pull request 上执行后端、前端和浏览器测试，并构建 Docker 镜像、启动临时 Compose 环境、验证健康检查、API、SPA 路由和数据库完整性。CI 不连接生产服务器。
+
+浏览器测试默认使用独立端口 5174/8001 和 `test-results/backend-data`，拒绝复用已运行服务；占用时通过 `FUND_E2E_FRONTEND_PORT` / `FUND_E2E_BACKEND_PORT` 指定其他空闲端口。无障碍检查覆盖主要页面的颜色对比度、名称和 ARIA 语义。
 
 ## 串行更新与恢复验收
 

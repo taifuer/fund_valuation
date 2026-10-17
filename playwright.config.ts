@@ -13,8 +13,8 @@ process.env.NO_PROXY = [...noProxy].join(',');
 process.env.no_proxy = process.env.NO_PROXY;
 
 const e2eDataDir = resolve('test-results/backend-data');
-const frontendPort = Number(process.env.FUND_E2E_FRONTEND_PORT ?? 5173);
-const backendPort = Number(process.env.FUND_E2E_BACKEND_PORT ?? 8000);
+const frontendPort = Number(process.env.FUND_E2E_FRONTEND_PORT ?? 5174);
+const backendPort = Number(process.env.FUND_E2E_BACKEND_PORT ?? 8001);
 const frontendURL = `http://127.0.0.1:${frontendPort}`;
 const backendURL = `http://127.0.0.1:${backendPort}`;
 
@@ -30,15 +30,15 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `FUND_VALUATION_PREWARM=0 FUND_VALUATION_PORT=${backendPort} FUND_VALUATION_DATA_DIR=${e2eDataDir} npm run backend`,
+      command: `FUND_VALUATION_CORS_ORIGINS=${frontendURL} FUND_VALUATION_PREWARM=0 FUND_VALUATION_PORT=${backendPort} FUND_VALUATION_DATA_DIR=${e2eDataDir} npm run backend`,
       url: `${backendURL}/api/health`,
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 60_000,
     },
     {
       command: `VITE_API_BASE_URL=${backendURL} npm run build && python3 scripts/serve_spa.py --host 127.0.0.1 --port ${frontendPort}`,
       url: frontendURL,
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 60_000,
     },
   ],

@@ -1,0 +1,4 @@
+User-agent: *
+Disallow: /api/
+Disallow: /diagnostics
+Sitemap: https://fund.taifua.com/sitemap.xml

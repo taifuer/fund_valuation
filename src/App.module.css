@@ -12,7 +12,7 @@
 
 .error {
   text-align: center;
-  color: #dc2626;
+  color: var(--color-up);
   background: #fef2f2;
   padding: 10px 16px;
   margin: 8px 16px 0;
@@ -160,7 +160,7 @@
 }
 
 .managerHeader strong { color: #0f172a; display: block; font-size: 16px; line-height: 1.3; }
-.managerHeader span { color: #94a3b8; display: block; font-size: 12px; margin-top: 3px; }
+.managerHeader span { color: var(--ink-faint); display: block; font-size: 12px; margin-top: 3px; }
 .managerClose {
   align-items: center;
   background: transparent;
@@ -272,7 +272,7 @@
 }
 
 .managerMessage {
-  color: #94a3b8;
+  color: var(--ink-faint);
   flex: 0 1 auto;
   font-size: 12px;
   min-width: 0;
@@ -308,7 +308,7 @@
 .footer {
   background: #fff;
   border-top: 1px solid #e2e8f0;
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 12px;
   line-height: 20px;
   margin-top: auto;

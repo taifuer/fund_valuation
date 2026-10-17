@@ -43,6 +43,8 @@
 
 基金页首屏使用 `/api/fundestimates?view=cards`，一次读取官方净值、服务端估值、汇率和市场状态，不包含逐项持仓行情。展开持仓后才读取该基金的完整估值快照，资料与走势继续按标签懒加载。快照缺失时不触发请求内计算，等待 worker 发布。正常重复快照直接返回，不进行额外 15 秒等待或强制重试。
 
+卡片聚合快照与压缩详情分开存储，静态持仓按内容版本复用，每只基金保留最近三个详情版本供卡片固定引用。排除纯抓取/计算时钟后内容一致则跳过写入；真实报价时间、交易日期、价格、汇率和质量变化仍产生新版本，避免把旧行情伪装成新行情。闭市估算检查间隔最低为 5 分钟，有交易时最低为 1 分钟；实际刷新仍跟随行情任务，新官方净值由维护任务立即触发估算。
+
 基金页首次进入默认筛选主动基金，之后在当前浏览器记住分类选择；链接中的 `strategy=active|index|all` 优先于本地偏好。指数基金默认按官方净值涨跌排序，主动基金首次进入按实时参考排序。收益页保留自身独立筛选，不受基金页偏好影响。
 
 基金链接保留 `mode=preview|pending|official`、`order=asc|desc` 和展开标签 `tab=holdings|nav|trend|profile`；默认实时参考、降序可省略参数。指数基金不提供持仓估算标签，非法参数回退默认视图。
@@ -66,6 +68,9 @@
 - `backend/long_history.py`：独立月末历史补全、年末基准校验、同区间涨跌及复合年化快照
 - `backend/db_admin.py`：状态检查、备份、恢复和在线优化
 - `backend/contracts.py`：API Schema 版本与结构校验
+- `backend/snapshots.py`：内容寻址、压缩和固定版本的估值发布
+- `backend/return_summaries.py`：历史修订检测与收益/风险摘要预计算
+- `backend/worker_health.py`：无上游调用的 worker 心跳检查
 
 前后端共用的标的与默认基金配置位于 `config/universe.json`，避免行情、历史和估值使用不同代码映射。
 
@@ -85,3 +90,13 @@
 内部诊断位于 `/diagnostics`，需要 `FUND_VALUATION_DIAGNOSTICS_TOKEN`。API 响应包含 `X-Request-ID`、`X-Elapsed-ms` 和 `X-API-Schema-Version`，慢请求与未处理异常写入结构化日志。
 
 Web 响应缓存按进程维护，限制为 512 项/16 MiB，写入时清理过期项并按 LRU 淘汰，不依赖独立 worker 清理内存。请求锁采用弱引用，只要仍有调用者持有或等待锁就保留，最后一个调用者释放引用后回收。限流桶同样有容量上限；这些限制仍为单进程约束，不承诺跨 Gunicorn 进程的严格总配额。
+
+收益/风险摘要通过 SQLite 修订号触发 worker 重算，发布前再次校验修订号，防止并发写入把旧计算标记为新版本。API 不扫描全量历史、不依赖另一进程清理内存缓存；主要公共快照支持 ETag，认证响应禁止公共缓存。
+
+修改收益或风险计算口径时，须同步递增 `backend/return_summaries.py` 的 `MODEL_VERSION`，使 worker 重建旧摘要；页面不展示模型版本不符的缓存。
+
+页面级错误边界保留 header 导航，并在运行错误或旧页面引用已删除的懒加载文件时提供刷新入口；不自动循环重载。导航采用真实链接，支持新标签页和键盘操作；标题与摘要随路由更新。
+
+## 日历覆盖
+
+`config/holidays.json` 由前后端共用。2027 年已核验的现金市场日历来自 [NYSE](https://www.nyse.com/trade/hours-calendars) 和 [JPX](https://www.jpx.co.jp/english/corporate/about-jpx/calendar/index.html)。其他市场没有录入经核验的下一年安排前，诊断接口 `calendarCoverage` 会列入 `pending`，数据库来源标记为未核验的工作日兜底。不得把周末规则当成完整交易所日历；期货节假日交易安排仍需按合约单独核实。

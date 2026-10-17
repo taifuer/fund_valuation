@@ -52,15 +52,17 @@
 }
 
 .rankNumber.gold {
+  color: #422006;
   background: linear-gradient(135deg, #f59e0b, #eab308);
 }
 
 .rankNumber.silver {
-  background: linear-gradient(135deg, #94a3b8, #64748b);
+  background: linear-gradient(135deg, #cbd5e1, #94a3b8);
+  color: #0f172a;
 }
 
 .rankNumber.bronze {
-  background: linear-gradient(135deg, #d97706, #b45309);
+  background: linear-gradient(135deg, #b45309, #92400e);
 }
 
 .main { padding: 10px 14px; }
@@ -86,7 +88,7 @@
 }
 .code {
   font-size: 10px;
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-weight: 400;
   margin-left: 4px;
 }
@@ -166,11 +168,11 @@
 }
 
 .secondaryNavBox .navBoxChange {
-  opacity: 0.72;
+  opacity: 1;
 }
 
 .navKindLabel {
-  color: #94a3b8;
+  color: var(--ink-faint);
   flex: 0 0 auto;
   font-size: 10px;
   font-weight: 600;
@@ -197,7 +199,7 @@
 }
 
 .navDataTime {
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 10px;
   font-weight: 500;
   margin-left: auto;
@@ -242,7 +244,7 @@
   }
   .secondaryNavBox .navBoxChange {
     font-size: 10px;
-    opacity: 0.72;
+    opacity: 1;
   }
   .secondaryNavBox.estimateNavBox {
     gap: 3px;
@@ -281,7 +283,7 @@
   white-space: nowrap;
 }
 .estLiveTagUp {
-  background: #16a34a;
+  background: #15803d;
   color: #fff;
 }
 .estLiveTagExtended {
@@ -289,12 +291,12 @@
   color: #fff;
 }
 .estLiveTagPartial {
-  background: #f59e0b;
-  color: #fff;
+  background: #fef3c7;
+  color: #92400e;
 }
 .estLiveTagClosed {
-  background: #94a3b8;
-  color: #fff;
+  background: #e2e8f0;
+  color: #475569;
 }
 
 .officialOnlyTag {
@@ -332,7 +334,7 @@
 }
 
 .tabLoading {
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 12px;
   padding: 16px 14px;
   text-align: center;

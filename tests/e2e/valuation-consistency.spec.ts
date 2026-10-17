@@ -51,8 +51,8 @@ test('fund links retain estimate mode, ordering and detail tab with keyboard rea
   await expect(chart).toBeVisible();
   await chart.focus();
   await page.keyboard.press('End');
-  await expect(card.getByRole('status')).toContainText('2026-10-09');
-  await expect(card.getByRole('status')).toContainText('1.0200');
+  await expect(card).toContainText('2026-10-09');
+  await expect(card).toContainText('1.0200');
   await page.reload();
   await expect(card.getByRole('button', { name: '走势', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await card.getByRole('button', { name: '持仓', exact: true }).click();

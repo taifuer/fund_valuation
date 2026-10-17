@@ -504,51 +504,30 @@ export interface DashboardSnapshot {
 }
 
 export interface DataHealth {
-  status: 'ok' | 'degraded';
+  status: 'ok' | 'degraded' | 'pending';
   updatedAt: number;
-  upstream: {
-    total: number;
-    staleCount: number;
-    errorCount: number;
-    issueCount?: number;
-    issues?: Array<{
-      key: string;
-      kind: string;
-      cacheKey: string;
-      source: string;
-      status?: number | null;
-      error?: string;
-      failureCount?: number;
-    }>;
+  upstream?: {
+    total?: number;
+    staleCount?: number;
+    errorCount?: number;
+    fallbackCount?: number;
   };
-  cache: {
-    total: number;
-    byKind: Record<string, number>;
-    latestAt: number;
-  };
-  fundHistory: {
+  fundHistory?: {
     total: number;
     missing: number;
     stale: number;
-    sampleMissing?: string[];
-    sampleStale?: string[];
     latestDate: string;
   };
-  marketHistory: {
+  marketHistory?: {
     total: number;
     missing: number;
     stale: number;
-    sampleMissing?: string[];
-    sampleStale?: string[];
     latestDate: string;
   };
-  backgroundRefresh: {
-    started: boolean;
+  backgroundRefresh?: {
     lastRunAt: number;
     lastSuccessAt: number;
     lastErrorAt: number;
-    lastError: string;
-    runCount: number;
   };
 }
 

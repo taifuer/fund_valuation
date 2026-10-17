@@ -28,6 +28,28 @@ from backend.storage import (
 
 
 class StorageMigrationTests(unittest.TestCase):
+    def test_schema_eighteen_seeds_summaries_and_latest_quotes_without_losing_history(self):
+        from backend import storage
+        with tempfile.TemporaryDirectory(prefix='fund-schema-test-') as directory:
+            path = Path(directory) / 'legacy.db'
+            with patch.object(storage, 'SCHEMA_VERSION', 17):
+                migrate_database(path)
+            with sqlite3.connect(path) as conn:
+                conn.execute("INSERT INTO fund_nav_history VALUES ('017436','2026-10-16',1.1,1,1)")
+                conn.execute("INSERT INTO market_history VALUES ('sina-cn','sh000001','2026-10-16',3200,1)")
+                for bucket in (1, 2):
+                    conn.execute("INSERT INTO market_quote_snapshots VALUES (?,?,?,'time','closed','test',1,1,0,'ok','','','line')", ('test', bucket, bucket))
+            migrate_database(path)
+            migrate_database(path)
+            with sqlite3.connect(path) as conn:
+                self.assertEqual(conn.execute('SELECT kind,item,revision FROM return_summary_versions ORDER BY kind').fetchall(),
+                                 [('fund', '017436', 1), ('market', 'sina-cn:sh000001', 1)])
+                self.assertEqual(conn.execute('SELECT bucket_at FROM market_quote_latest').fetchone()[0], 2)
+                self.assertEqual(conn.execute('SELECT COUNT(*) FROM market_quote_snapshots').fetchone()[0], 2)
+                self.assertEqual(conn.execute('SELECT nav FROM fund_nav_history').fetchone()[0], 1.1)
+                conn.execute('UPDATE market_history SET close=3210')
+                self.assertEqual(conn.execute("SELECT revision FROM return_summary_versions WHERE kind='market'").fetchone()[0], 2)
+
     def test_schema_seventeen_repairs_legacy_version_collision_without_losing_history(self):
         with tempfile.TemporaryDirectory(prefix='fund-schema-test-') as directory:
             path = Path(directory) / 'legacy.db'

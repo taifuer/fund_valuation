@@ -16,6 +16,7 @@ os.environ["FUND_VALUATION_DATA_DIR"] = _TEMP_DATA.name
 
 from backend import server  # noqa: E402
 from backend.storage import CACHE_BODY_COMPRESSION_MAGIC  # noqa: E402
+from backend.return_summaries import publish_return_summaries
 from backend.fx_history import parse_ecb_reference_rates  # noqa: E402
 from backend.data_coverage import expected_holding_periods, historical_data_coverage  # noqa: E402
 
@@ -173,11 +174,14 @@ class ServerDataRefreshTests(unittest.TestCase):
                 self.assertEqual(datetime.fromtimestamp(timestamp / 1000, ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M'), expected)
 
     def maintenance_client(self):
-        token = patch.dict(os.environ, {'FUND_VALUATION_DIAGNOSTICS_TOKEN': 'maintenance-test'})
+        token = patch.dict(os.environ, {'FUND_VALUATION_DIAGNOSTICS_TOKEN': 'maintenance-test',
+            'FUND_VALUATION_ENABLE_FUND_MANAGEMENT': '1',
+            'FUND_VALUATION_FUND_MANAGEMENT_TOKEN': 'management-test'})
         token.start()
         self.addCleanup(token.stop)
         client = server.app.test_client()
         client.environ_base['HTTP_X_DIAGNOSTICS_TOKEN'] = 'maintenance-test'
+        client.environ_base['HTTP_X_FUND_MANAGEMENT_TOKEN'] = 'management-test'
         return client
 
     def setUp(self) -> None:
@@ -212,6 +216,9 @@ class ServerDataRefreshTests(unittest.TestCase):
                 DELETE FROM market_quote_snapshots;
                 DELETE FROM dashboard_snapshots;
                 DELETE FROM background_jobs;
+                DELETE FROM market_quote_latest;
+                DELETE FROM return_summaries;
+                DELETE FROM return_summary_versions;
                 """
             )
         with server._RATE_LIMIT_GUARD:
@@ -436,6 +443,8 @@ class ServerDataRefreshTests(unittest.TestCase):
             patch.object(server, "configured_fund_codes_from_constants", return_value=["016664"]),
             patch.object(server, "configured_market_return_items_from_constants", return_value=["sina-cn:sh000001"]),
         ):
+            from backend.worker import public_data_health
+            server.store_dashboard_snapshot(public_data_health(server.build_data_health_payload()), 'data-health-public')
             response = server.app.test_client().get("/api/datahealth")
 
         self.assertEqual(response.status_code, 200)
@@ -443,7 +452,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(payload["status"], "degraded")
         self.assertEqual(payload["fundHistory"]["missing"], 1)
         self.assertEqual(payload["marketHistory"]["missing"], 1)
-        self.assertIn("backgroundRefresh", payload)
+        self.assertNotIn("lastError", payload['backgroundRefresh'])
 
     def test_fund_valuation_basis_reads_latest_values_on_or_before_nav_date(self) -> None:
         with sqlite3.connect(server.DB_PATH) as conn:
@@ -777,11 +786,9 @@ class ServerDataRefreshTests(unittest.TestCase):
         ))
         self.assertEqual(json.loads(row[-1]), {
             "disclosedWeight": None,
-            "holdingContributions": [{"sinaSymbol": "gb_aapl", "contributionPercent": 5.0}],
             "benchmarkChangePercent": 6.25,
             "benchmarkFxChangePercent": -0.1,
             "benchmarkLabel": "",
-            "benchmarkComponents": [],
             "benchmarkInput": None,
             "benchmarkFxInput": None,
             "quality": None,
@@ -1053,7 +1060,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         upstream_body = 'var hq_str_f_118001="易方达亚洲精选股票(QDII),1.693,1.693,1.673,2026-05-21,22.6875";'.encode("gb18030")
 
         with patch.object(server, "fetch_upstream", return_value=(200, "text/plain; charset=utf-8", upstream_body)):
-            response = server.app.test_client().get("/api/sina?list=f_118001&refresh=1")
+            response = self.maintenance_client().get("/api/sina?list=f_118001&refresh=1")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("charset=utf-8", response.content_type)
@@ -1344,7 +1351,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(first.headers.get("X-Cache"), "MISS")
         self.assertEqual(second.headers.get("X-Cache"), "HIT")
         self.assertEqual(refreshed.status_code, 200)
-        self.assertEqual(refreshed.headers.get("Cache-Control"), "no-store")
+        self.assertEqual(refreshed.headers.get("Cache-Control"), "private, no-store")
         self.assertIsNone(refreshed.headers.get("X-Cache"))
         self.assertEqual(len(calls), 2)
 
@@ -1656,7 +1663,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             patch.object(server, "fetch_fund_nav_payload", side_effect=AssertionError("unexpected blocking fetch")),
             patch.object(server, "fetch_fund_nav_one") as schedule_refresh,
         ):
-            response = server.app.test_client().get("/api/fundnav?codes=016664,118001")
+            response = self.maintenance_client().get("/api/fundnav?codes=016664,118001")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("X-Cache"), "STALE")
@@ -1732,7 +1739,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         server.cache_put('fundnav:016664', 'https://fundgz.1234567.com.cn/js/016664.js', 200, 'text/plain',
                          b'jsonpgz({"fundcode":"016664","dwjz":"1.0","jzrq":"2026-09-15","gsz":"1.1"});')
         with patch.object(server, 'fetch_fund_nav_payload', side_effect=AssertionError('Unexpected network')):
-            client = server.app.test_client()
+            client = self.maintenance_client()
             for query in ('', '&refresh=1'):
                 nav = client.get('/api/fundnav?codes=016664' + query).get_json()['016664']
                 self.assertEqual(nav['jzrq'], '2026-09-17')
@@ -1743,7 +1750,7 @@ class ServerDataRefreshTests(unittest.TestCase):
     def test_explicit_fund_nav_refresh_only_fetches_missing_funds(self):
         server.store_fund_history('016664', [{'FSRQ': '2026-09-17', 'DWJZ': '1.23', 'JZZZL': '1'}])
         with patch.object(server, 'fetch_fund_nav_payload', return_value={'118001': {'fundcode': '118001'}}) as fetch:
-            result = server.app.test_client().get('/api/fundnav?codes=016664,118001&refresh=1')
+            result = self.maintenance_client().get('/api/fundnav?codes=016664,118001&refresh=1')
         fetch.assert_called_once_with(['118001'])
         self.assertEqual(set(result.get_json()), {'016664', '118001'})
 
@@ -1766,7 +1773,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             patch.object(server, "fetch_and_store_purchase_status", side_effect=AssertionError("unexpected blocking fetch")),
             patch.object(server, "schedule_purchase_status_refresh") as schedule_refresh,
         ):
-            response = server.app.test_client().get("/api/fundpurchase?codes=016664,118001")
+            response = self.maintenance_client().get("/api/fundpurchase?codes=016664,118001")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("X-Cache"), "STALE")
@@ -1873,7 +1880,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         response = server.app.test_client().get(f"/api/fundreturns?codes={','.join(codes)}")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers.get("X-Cache"), "HIT")
+        self.assertEqual(response.headers.get("X-Cache"), "SNAPSHOT")
         self.assertIn(code, response.get_json())
 
     def test_market_states_marks_weekend_separately(self) -> None:
@@ -2155,6 +2162,7 @@ class ServerDataRefreshTests(unittest.TestCase):
 
         self.assertEqual(stored, 2)
         self.assertEqual(rows[-1], {"date": "2026-07-20", "close": 6516.27})
+        publish_return_summaries()
 
         history = server.app.test_client().get(
             "/api/markethistory?source=naver-korea&symbol=KOSPI"
@@ -3049,6 +3057,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             ],
         )
 
+        publish_return_summaries()
         response = server.app.test_client().get("/api/fundreturns?codes=016664")
 
         self.assertEqual(response.status_code, 200)
@@ -3109,7 +3118,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         )
 
         with patch.object(server, "fetch_upstream", side_effect=AssertionError("unexpected upstream fetch")):
-            response = server.app.test_client().get("/api/fundholdings?codes=457001")
+            response = self.maintenance_client().get("/api/fundholdings?codes=457001")
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
@@ -3189,6 +3198,7 @@ class ServerDataRefreshTests(unittest.TestCase):
                 (server.now_ms() - server.HISTORY_AUTO_REFRESH_TTL_MS - 1, "sina-us", ".INX"),
             )
         scheduled: list[tuple[str, str]] = []
+        publish_return_summaries()
         with patch.object(server, "ensure_market_history_for_returns", side_effect=lambda source, symbol: scheduled.append((source, symbol))):
             response = server.app.test_client().get("/api/marketreturns?items=sina-us:.INX")
 
@@ -3263,6 +3273,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             ]),
         )
 
+        publish_return_summaries()
         response = server.app.test_client().get("/api/marketreturns?items=sina-cn:sh515070")
 
         self.assertEqual(response.status_code, 200)
@@ -3481,6 +3492,7 @@ class ServerDataRefreshTests(unittest.TestCase):
             ]),
         )
 
+        publish_return_summaries()
         response = server.app.test_client().get("/api/marketreturns?items=sina-cn:sh000001")
 
         self.assertEqual(response.status_code, 200)

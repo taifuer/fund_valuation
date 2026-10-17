@@ -33,10 +33,10 @@ for (const [path, activeLabel] of [['/', '概览'], ['/funds', '基金'], ['/ret
   test(`${path} survives direct navigation`, async ({ page }) => {
     await page.goto(path);
     await expect(page.getByRole('heading', { name: '全球资产看板' })).toBeVisible();
-    await expect(page.getByRole('navigation', { name: '页面切换' }).getByRole('button'))
+    await expect(page.getByRole('navigation', { name: '页面切换' }).getByRole('link'))
       .toHaveText(['概览', '走势', '基金', '公司', '关于']);
     await expect(
-      page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: activeLabel, exact: true }),
+      page.getByRole('navigation', { name: '页面切换' }).getByRole('link', { name: activeLabel, exact: true }),
     ).toBeVisible();
     await expect(page.locator('body')).not.toContainText('页面加载失败');
   });
@@ -177,7 +177,7 @@ test('performance subpages keep their routes while sharing one primary entry', a
   await page.goForward();
   await expect(viewNav.getByRole('button', { name: '长期' })).toHaveAttribute('aria-current', 'page');
   await expect(
-    page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '走势', exact: true }),
+    page.getByRole('navigation', { name: '页面切换' }).getByRole('link', { name: '走势', exact: true }),
   ).toHaveAttribute('aria-current', 'page');
 });
 
@@ -241,7 +241,7 @@ test('mobile navigation keeps the active style after client-side navigation', as
 
   await page.goto('/');
   const primaryNavigation = page.getByRole('navigation', { name: '页面切换' });
-  const performanceButton = primaryNavigation.getByRole('button', { name: '走势', exact: true });
+  const performanceButton = primaryNavigation.getByRole('link', { name: '走势', exact: true });
   await performanceButton.click();
   await expect(page).toHaveURL(/\/returns$/);
   await expect(performanceButton).toHaveAttribute('aria-current', 'page');
@@ -252,7 +252,7 @@ test('mobile navigation keeps the active style after client-side navigation', as
   await page.reload();
   const reloadedButton = page
     .getByRole('navigation', { name: '页面切换' })
-    .getByRole('button', { name: '走势', exact: true });
+    .getByRole('link', { name: '走势', exact: true });
   await expect(reloadedButton).toHaveAttribute('aria-current', 'page');
   const backgroundAfterReload = await reloadedButton.evaluate(
     (element) => getComputedStyle(element).backgroundColor,
@@ -288,13 +288,13 @@ for (const returnVia of ['navigation', 'brand'] as const) {
     const shanghaiCard = page.getByRole('button').filter({ hasText: '上证指数' }).first();
     await expect(shanghaiCard).toContainText('3,200');
 
-    await navigation.getByRole('button', { name: '基金', exact: true }).click();
+    await navigation.getByRole('link', { name: '基金', exact: true }).click();
     await expect(page).toHaveURL(/\/funds\?strategy=active$/);
     holdRefresh = true;
     if (returnVia === 'navigation') {
-      await navigation.getByRole('button', { name: '概览', exact: true }).click();
+      await navigation.getByRole('link', { name: '概览', exact: true }).click();
     } else {
-      await page.getByRole('button', { name: '全球资产看板', exact: true }).click();
+      await page.getByRole('link', { name: '全球资产看板', exact: true }).click();
     }
     await expect(page).toHaveURL(/\/$/);
     await expect.poll(() => refreshRequested).toBe(true);
@@ -327,7 +327,7 @@ test('overview loads only market data and funds load after navigating to their p
   expect(requests.filter(url => /^\/api\/(fund|overview)/.test(url.pathname))).toEqual([]);
   expect(requests.some(url => url.searchParams.has('fundCodes'))).toBe(false);
 
-  await page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '基金', exact: true }).click();
+  await page.getByRole('navigation', { name: '页面切换' }).getByRole('link', { name: '基金', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'QDII 基金', exact: true })).toBeVisible();
   await expect(page.getByText(/^16 · 按实时参考/)).toBeVisible();
   await expect.poll(() => requests.some(url => url.pathname === '/api/fundestimates')).toBe(true);

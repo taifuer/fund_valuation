@@ -40,7 +40,7 @@
 }
 
 .groupCount {
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 12px;
   font-weight: 500;
 }
@@ -144,7 +144,7 @@
 }
 
 .stateLive {
-  color: #16a34a;
+  color: var(--color-down);
   background: #dcfce7;
   animation: livePulse 1.8s ease-in-out infinite;
 }
@@ -155,7 +155,7 @@
 }
 
 .stateClosed {
-  color: #64748b;
+  color: #475569;
   background: #f1f5f9;
 }
 

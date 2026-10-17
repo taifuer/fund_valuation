@@ -240,7 +240,7 @@ const FundCard = memo(function FundCard({
           <div className={styles.main}>
             {titleNode}
             <div className={`${styles.dualNav} ${officialOnly ? styles.officialOnlyNav : ''}`}>
-              <div className={`${styles.navBox} ${styles.primaryNavBox}`} role="status">
+              <div className={`${styles.navBox} ${styles.primaryNavBox}`}>
                 <span className={styles.navKindLabel}>{officialOnly ? '官方净值' : '基金数据'}</span>
                 <span className={styles.navBoxValue}>--</span>
                 <span className={styles.navBoxChange}>暂无数据</span>

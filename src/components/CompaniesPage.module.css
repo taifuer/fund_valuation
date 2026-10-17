@@ -173,7 +173,7 @@
 
 .pickerEmpty {
   border-top: 1px solid #edf0f4;
-  color: #929ba8;
+  color: var(--ink-faint);
   font-size: 11px;
   line-height: 1.6;
   margin: 0;
@@ -228,7 +228,7 @@
 }
 
 .companyMeta {
-  color: #8b95a3;
+  color: var(--ink-faint);
   font-size: 11px;
   line-height: 17px;
   white-space: nowrap;
@@ -252,7 +252,7 @@
 }
 
 .latestReportLink {
-  color: #758291;
+  color: var(--ink-muted);
   flex: 0 0 auto;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
@@ -302,7 +302,7 @@
 }
 
 .kpiStrip span {
-  color: #8a94a3;
+  color: var(--ink-muted);
   font-size: 10px;
   line-height: 15px;
 }
@@ -315,7 +315,7 @@
 }
 
 .kpiStrip em {
-  color: #8a94a3;
+  color: var(--ink-muted);
   font-size: 10px;
   font-style: normal;
   font-variant-numeric: tabular-nums;
@@ -348,7 +348,7 @@
   background: transparent;
   border: 0;
   border-bottom: 2px solid transparent;
-  color: #7d8795;
+  color: var(--ink-muted);
   cursor: pointer;
   flex: 0 0 auto;
   font-size: 12px;
@@ -518,13 +518,13 @@
 }
 
 .detailTableTitle small {
-  color: #929ba8;
+  color: var(--ink-faint);
   font-size: 10px;
 }
 
 .detailTableAction {
   align-items: center;
-  color: #87919f;
+  color: var(--ink-muted);
   display: inline-flex;
   flex: 0 0 auto;
   font-size: 10px;
@@ -599,7 +599,7 @@
 
 .periodSourceArchive {
   border-color: #dfe4ea;
-  color: #8993a0;
+  color: var(--ink-muted);
 }
 
 .detailTableFooter {
@@ -663,7 +663,7 @@
 }
 
 .companyNote {
-  color: #8b95a3;
+  color: var(--ink-faint);
   font-size: 10px;
   line-height: 1.7;
   margin: 9px 1px 0;
@@ -684,7 +684,7 @@
 }
 
 .methodology span {
-  color: #8b95a3;
+  color: var(--ink-faint);
   font-size: 10px;
   line-height: 1.65;
 }
@@ -692,7 +692,7 @@
 .emptyState {
   border: 1px dashed #dfe5ec;
   border-radius: 7px;
-  color: #8b95a3;
+  color: var(--ink-faint);
   font-size: 11px;
   margin-top: 10px;
   padding: 60px 16px;

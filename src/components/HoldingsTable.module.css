@@ -30,7 +30,7 @@
 }
 
 .table th {
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-weight: 500;
   background: #fafafa;
   text-align: left;
@@ -61,7 +61,7 @@
 }
 
 .stockName {
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 10px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -74,7 +74,7 @@
 }
 
 .estimatedDate {
-  color: #94a3b8;
+  color: var(--ink-faint);
 }
 
 .stateTag {
@@ -87,7 +87,7 @@
 }
 
 .stateLive {
-  color: #16a34a;
+  color: var(--color-down);
   background: #dcfce7;
   animation: livePulse 1.8s ease-in-out infinite;
 }
@@ -104,7 +104,7 @@
 }
 
 .stateClosed {
-  color: #94a3b8;
+  color: var(--ink-faint);
   background: #f1f5f9;
 }
 
@@ -142,7 +142,7 @@
 
 .notes {
   border-top: 1px solid #f8fafc;
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 11px;
   line-height: 18px;
   padding: 4px 14px 8px;

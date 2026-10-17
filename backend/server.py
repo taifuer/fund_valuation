@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
+import gzip
 import hmac
 import html
 import http.client
@@ -11,10 +12,8 @@ import json
 import math
 import os
 import re
-import shutil
 import socket
 import sqlite3
-import subprocess
 import threading
 import time
 import uuid
@@ -56,6 +55,9 @@ from .performance import (
 from .quotes import normalize_quote_text
 from .contracts import API_SCHEMA_VERSION, DASHBOARD_SCHEMA_VERSION, validate_dashboard_payload
 from .observability import REQUEST_METRICS, log_event, task_run, worker_task_snapshot
+from .security import configured_token, validate_security_configuration
+from .snapshots import encode_payload, read_snapshot, read_fund_detail, publish_fund_details
+from .return_summaries import read_return_summaries, publish_return_summaries
 from .fx_history import fx_history_summary, latest_fx_history_date, store_ecb_reference_rates
 from .data_coverage import historical_data_coverage, missing_holding_requests
 from .storage import (
@@ -151,25 +153,23 @@ CONFIGURED_FUND_PORTFOLIO_CODES = {"501312"}
 
 
 def fund_management_enabled() -> bool:
-    value = os.environ.get("FUND_VALUATION_ENABLE_FUND_MANAGEMENT", "1").strip().lower()
+    value = os.environ.get("FUND_VALUATION_ENABLE_FUND_MANAGEMENT", "0").strip().lower()
     return value not in {"0", "false", "no", "off"}
 
 
 def fund_management_mode() -> str:
     if not fund_management_enabled():
         return "disabled"
-    if os.environ.get("FUND_VALUATION_FUND_MANAGEMENT_TOKEN", "").strip():
+    if configured_token("FUND_VALUATION_FUND_MANAGEMENT_TOKEN"):
         return "token"
-    return "open"
+    return "disabled"
 
 
 def require_fund_management_access() -> None:
     mode = fund_management_mode()
     if mode == "disabled":
         raise Forbidden("Fund management is disabled; only configured funds are available")
-    if mode == "open":
-        return
-    expected_token = os.environ.get("FUND_VALUATION_FUND_MANAGEMENT_TOKEN", "").strip()
+    expected_token = configured_token("FUND_VALUATION_FUND_MANAGEMENT_TOKEN")
     provided_token = request.headers.get("X-Fund-Management-Token", "").strip()
     if not expected_token or not hmac.compare_digest(provided_token, expected_token):
         raise Forbidden("Fund management token is invalid")
@@ -226,6 +226,7 @@ def beijing_today() -> str:
 
 
 def ensure_storage() -> None:
+    validate_security_configuration()
     ensure_database_storage()
     ensure_market_calendar_seeded()
 
@@ -360,6 +361,15 @@ def is_weekend(dt: datetime) -> bool:
     return dt.weekday() >= 5
 
 
+def calendar_coverage(year: int | None = None) -> dict:
+    current = year or datetime.now(ZoneInfo('Asia/Shanghai')).year
+    markets = ('cn', 'hk', 'us', 'jp', 'kr', 'tw')
+    config = _load_holidays_json()
+    return {str(y): {'verified': [m for m in markets if m in config.get(str(y), {})],
+                     'pending': [m for m in markets if m not in config.get(str(y), {})]}
+            for y in (current, current + 1)}
+
+
 def ensure_market_calendar_seeded(year: int | None = None) -> None:
     # Seed both the current year and the next year so the calendar does not
     # expire on Jan 1. Unknown years degrade to weekend-only (empty holiday set).
@@ -397,7 +407,8 @@ def ensure_market_calendar_seeded(year: int | None = None) -> None:
                     status,
                     json.dumps(sessions, ensure_ascii=False),
                     str(calendar["timezone"]),
-                    str(calendar["source"]),
+                    str(calendar["source"]) if market.split('-')[0] in _load_holidays_json().get(str(year), {})
+                    else 'weekday fallback; holiday calendar unverified',
                     fetched_at,
                 ))
                 current += timedelta(days=1)
@@ -412,6 +423,10 @@ def ensure_market_calendar_seeded(year: int | None = None) -> None:
               timezone = excluded.timezone,
               source = excluded.source,
               fetched_at = excluded.fetched_at
+            WHERE market_calendar.status IS NOT excluded.status
+               OR market_calendar.sessions IS NOT excluded.sessions
+               OR market_calendar.timezone IS NOT excluded.timezone
+               OR market_calendar.source IS NOT excluded.source
             """,
             rows,
         )
@@ -767,7 +782,8 @@ def write_raw(kind: str, cache_key: str, body: bytes) -> None:
     digest = hashlib.sha1(cache_key.encode("utf-8")).hexdigest()[:16]
     folder = RAW_DIR / day
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / f"{kind}-{digest}.txt").write_bytes(body)
+    (folder / f"{kind}-{digest}.txt.gz").write_bytes(gzip.compress(body, compresslevel=6, mtime=0))
+    (folder / f"{kind}-{digest}.txt").unlink(missing_ok=True)
 
 
 def fetch_upstream(
@@ -910,7 +926,7 @@ def fetch_eastmoney_json(
             write_raw(kind, cache_key, body)
             record_upstream_health(cache_key=cache_key, kind=kind, url=url, source="network", status=status)
             return json.loads(decode_body(body))
-        except (requests.RequestException, subprocess.SubprocessError, json.JSONDecodeError, OSError) as exc:
+        except (requests.RequestException, json.JSONDecodeError, OSError) as exc:
             stale = cache_any(cache_key) if allow_stale_cache else None
             if stale:
                 try:
@@ -938,17 +954,6 @@ def fetch_eastmoney_json(
 
 
 def fetch_eastmoney_body(url: str, headers: dict[str, str]) -> tuple[bytes, int, str]:
-    curl_bin = shutil.which("curl")
-    if curl_bin:
-        command = [curl_bin, "--noproxy", "*", "-sS", "-L", "--max-time", "4"]
-        for key, value in headers.items():
-            command.extend(["-H", f"{key}: {value}"])
-        command.append(url)
-        result = subprocess.run(command, capture_output=True, check=False, timeout=5)
-        if result.returncode == 0 and result.stdout:
-            return result.stdout, 200, "application/json; charset=utf-8"
-        return b"", 599, "application/json; charset=utf-8"
-
     response = _EASTMONEY_SESSION.get(url, headers=headers, timeout=4)
     return response.content, response.status_code, response.headers.get("Content-Type") or "application/json; charset=utf-8"
 
@@ -1729,14 +1734,8 @@ def read_latest_quote_snapshot_text(
         rows = conn.execute(
             f"""
             SELECT snapshot.symbol, snapshot.sanitized_line, snapshot.captured_at
-            FROM market_quote_snapshots AS snapshot
-            JOIN (
-              SELECT symbol, MAX(bucket_at) AS bucket_at
-              FROM market_quote_snapshots
-              WHERE symbol IN ({placeholders})
-              GROUP BY symbol
-            ) AS latest
-              ON latest.symbol = snapshot.symbol AND latest.bucket_at = snapshot.bucket_at
+            FROM market_quote_latest AS snapshot
+            WHERE symbol IN ({placeholders})
             """,
             normalized,
         ).fetchall()
@@ -3041,6 +3040,8 @@ def reconcile_fund_estimate_snapshots(codes: list[str] | None = None) -> int:
                 SELECT 1 FROM fund_nav_history AS history
                 WHERE history.code = fund_estimate_snapshots.code
                   AND history.date = fund_estimate_snapshots.target_date
+                  AND (history.nav IS NOT fund_estimate_snapshots.actual_nav
+                       OR history.change_percent IS NOT fund_estimate_snapshots.actual_change)
               )
             """,
             tuple(normalized),
@@ -3052,10 +3053,11 @@ def reconcile_fund_estimate_snapshots(codes: list[str] | None = None) -> int:
               WHERE h.code=s.code AND h.date<s.target_date) AS previous_nav_date
             FROM fund_estimate_snapshots s WHERE s.code IN ({placeholders})
         """, tuple(normalized)).fetchall()
-        conn.executemany("UPDATE fund_estimate_snapshots SET error=? WHERE rowid=?", [
-            (row['estimated_change'] - row['actual_change'], row['rowid'])
-            for row in samples if eligible_daily_sample(row)
-        ])
+        error_updates = []
+        for row in samples:
+            error = row['estimated_change'] - row['actual_change'] if eligible_daily_sample(row) else None
+            error_updates.append((error, row['rowid'], error))
+        conn.executemany('UPDATE fund_estimate_snapshots SET error=? WHERE rowid=? AND error IS NOT ?', error_updates)
     return updated
 
 
@@ -3097,11 +3099,9 @@ def store_fund_estimate_snapshots(payload: dict[str, Any]) -> int:
                 str(projection.get("inputSignature") or ""),
                 json.dumps({
                     "disclosedWeight": (result.get("holdingDisclosure") or {}).get("weight"),
-                    "holdingContributions": projection.get("holdingContributions") or [],
                     "benchmarkChangePercent": float(projection.get("benchmarkChangePercent") or 0),
                     "benchmarkFxChangePercent": float(projection.get("benchmarkFxChangePercent") or 0),
                     "benchmarkLabel": str(projection.get("benchmarkLabel") or ""),
-                    "benchmarkComponents": projection.get("benchmarkComponents") or [],
                     "benchmarkInput": projection.get("benchmarkInput"),
                     "benchmarkFxInput": projection.get("benchmarkFxInput"),
                     "quality": projection.get("quality"),
@@ -3145,6 +3145,28 @@ def store_fund_estimate_snapshots(payload: dict[str, Any]) -> int:
               input_signature = excluded.input_signature,
               details_json = excluded.details_json
             WHERE fund_estimate_snapshots.actual_nav IS NULL
+              AND (fund_estimate_snapshots.as_of IS NOT excluded.as_of
+                OR fund_estimate_snapshots.estimated_nav IS NOT excluded.estimated_nav
+                OR fund_estimate_snapshots.raw_change IS NOT excluded.raw_change
+                OR fund_estimate_snapshots.estimated_change IS NOT excluded.estimated_change
+                OR fund_estimate_snapshots.cumulative_change IS NOT excluded.cumulative_change
+                OR fund_estimate_snapshots.base_nav IS NOT excluded.base_nav
+                OR fund_estimate_snapshots.base_nav_date IS NOT excluded.base_nav_date
+                OR fund_estimate_snapshots.phase IS NOT excluded.phase
+                OR fund_estimate_snapshots.complete IS NOT excluded.complete
+                OR fund_estimate_snapshots.coverage IS NOT excluded.coverage
+                OR fund_estimate_snapshots.comparison_date IS NOT excluded.comparison_date
+                OR fund_estimate_snapshots.holding_report_date IS NOT excluded.holding_report_date
+                OR fund_estimate_snapshots.estimate_model IS NOT excluded.estimate_model
+                OR fund_estimate_snapshots.benchmark_source IS NOT excluded.benchmark_source
+                OR fund_estimate_snapshots.benchmark_symbol IS NOT excluded.benchmark_symbol
+                OR fund_estimate_snapshots.holding_contribution IS NOT excluded.holding_contribution
+                OR fund_estimate_snapshots.residual_contribution IS NOT excluded.residual_contribution
+                OR fund_estimate_snapshots.calibration_contribution IS NOT excluded.calibration_contribution
+                OR fund_estimate_snapshots.residual_weight IS NOT excluded.residual_weight
+                OR fund_estimate_snapshots.priced_holding_count IS NOT excluded.priced_holding_count
+                OR fund_estimate_snapshots.input_signature IS NOT excluded.input_signature
+                OR fund_estimate_snapshots.details_json IS NOT excluded.details_json)
             """,
             rows,
         )
@@ -3734,30 +3756,13 @@ def build_fund_estimates(
 
 def refresh_fund_estimate_snapshots(dashboard_payload: dict[str, Any] | None = None) -> dict[str, Any]:
     payload = build_fund_estimates(dashboard_payload=dashboard_payload)
+    publish_fund_details(payload, now_ms())
     stored = store_fund_estimate_snapshots(payload)
-    with get_conn() as conn:
-        for code, result in payload.items():
-            snapshot_id = hashlib.sha256(json.dumps(result, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:24]
-            for kind in ("pending", "preview"):
-                if isinstance(result.get(kind), dict):
-                    result[kind]["snapshotId"] = snapshot_id
-            prefix = f"fund-detail:{code}:"
-            conn.execute("""
-                INSERT INTO dashboard_snapshots VALUES (?, ?, ?)
-                ON CONFLICT(name) DO NOTHING
-            """, (prefix + snapshot_id, json.dumps(result, ensure_ascii=False, separators=(",", ":")), now_ms()))
-            # A small bounded history lets a visible card open its own snapshot.
-            conn.execute("""
-                DELETE FROM dashboard_snapshots WHERE name LIKE ? AND name NOT IN (
-                  SELECT name FROM dashboard_snapshots WHERE name LIKE ? ORDER BY generated_at DESC, rowid DESC LIMIT 3
-                )
-            """, (prefix + "%", prefix + "%"))
-    store_dashboard_snapshot(payload, FUND_ESTIMATE_SNAPSHOT_NAME)
     response_cache_clear_prefix("api:fundestimates")
     return {"funds": len(payload), "stored": stored}
 
 
-def available_fund_estimates(codes: list[str], *, officials: dict[str, Any] | None = None) -> dict[str, Any]:
+def available_fund_estimates(codes: list[str], *, officials: dict[str, Any] | None = None, compact: bool = False) -> dict[str, Any]:
     codes = [code for code in codes if universe_fund_estimate_enabled(code)]
     snapshot = read_dashboard_snapshot(FUND_ESTIMATE_SNAPSHOT_NAME) or {}
     results = {
@@ -3766,7 +3771,10 @@ def available_fund_estimates(codes: list[str], *, officials: dict[str, Any] | No
         if isinstance(snapshot.get(code), dict) and estimate_matches_official(
             snapshot[code], officials.get(code) if officials is not None else read_fund_overview_summary_from_db(code))
     }
-    return results
+    if compact:
+        return {code: {key: value for key, value in result.items() if key != '_detailRef'} for code, result in results.items()}
+    return {code: detail for code, result in results.items()
+            if (detail := read_fund_detail(result['_detailRef']) if result.get('_detailRef') else result) is not None}
 
 
 def estimate_matches_official(estimate: dict[str, Any], official: dict[str, Any] | None) -> bool:
@@ -3779,7 +3787,7 @@ def estimate_matches_official(estimate: dict[str, Any], official: dict[str, Any]
 
 def fund_card_snapshot(codes: list[str]) -> dict[str, Any]:
     officials = {code: read_fund_overview_summary_from_db(code) for code in codes}
-    estimates = available_fund_estimates(codes, officials=officials)
+    estimates = available_fund_estimates(codes, officials=officials, compact=True)
     dashboard = read_dashboard_snapshot() or {}
     cards = {}
     card_symbols: set[str] = set()
@@ -3788,6 +3796,7 @@ def fund_card_snapshot(codes: list[str]) -> dict[str, Any]:
         estimate = estimates.get(code)
         card_holdings = parse_default_fund_holdings_from_constants(code) or (estimate or {}).get('holdings', [])[:10]
         card_symbols.update(str(holding.get('sinaSymbol') or '') for holding in card_holdings)
+        card_symbols.update((estimate or {}).get('holdingSymbols', []))
         if estimate and not estimate_matches_official(estimate, official):
             estimate = None
         if estimate:
@@ -3945,38 +3954,8 @@ def configured_market_return_items_from_constants() -> list[str]:
 
 
 def prewarm_response_cache() -> None:
-    fund_codes = configured_fund_codes_from_constants()
-    fund_payload = {
-        code: summary
-        for code in sorted(fund_codes)
-        if (summary := read_fund_return_summary_from_db(code))
-    }
-    if fund_payload:
-        response_cache_set(
-            f"api:fundreturns:{','.join(sorted(fund_codes))}",
-            json_response(fund_payload),
-            5 * 60,
-        )
-
-    market_items = configured_market_return_items_from_constants()
-    market_payload: dict[str, Any] = {}
-    for item in market_items:
-        source, symbol = item.split(":", 1)
-        summary = read_market_return_summary_from_db(source, symbol)
-        if summary:
-            market_payload[item] = summary
-    if market_payload:
-        response_cache_set(
-            f"api:marketreturns:{','.join(market_items)}",
-            json_response(market_payload),
-            MARKET_RETURNS_CACHE_TTL_SECONDS,
-        )
-
-    print(
-        f"Prewarmed caches: fundreturns {len(fund_payload)}/{len(fund_codes)}, "
-        f"marketreturns {len(market_payload)}/{len(market_items)}",
-        flush=True,
-    )
+    result = publish_return_summaries(limit=200)
+    print(f"Published return summaries: {result['published']}, failures: {len(result['errors'])}", flush=True)
 
 
 def fund_nav_upstream_cache_key(code: str) -> str:
@@ -5225,6 +5204,14 @@ def json_response(payload: Any, *, status: int = 200) -> Response:
     )
 
 
+def published_json_response(payload: Any) -> Response:
+    response = json_response(payload)
+    response.headers['X-Cache'] = 'SNAPSHOT'
+    response.headers['Cache-Control'] = 'public, max-age=15, stale-if-error=86400'
+    response.add_etag()
+    return response.make_conditional(request)
+
+
 def response_cache_get(cache_key: str, ttl_seconds: int) -> Response | None:
     if should_refresh() or ttl_seconds <= 0:
         return None
@@ -5523,12 +5510,7 @@ def quote_snapshot_health(now: datetime | None = None) -> dict[str, Any]:
                    snapshot.market_state, snapshot.source, snapshot.price,
                    snapshot.previous_close, snapshot.change_percent,
                    snapshot.validation_status, snapshot.validation_message
-            FROM market_quote_snapshots AS snapshot
-            JOIN (
-              SELECT symbol, MAX(bucket_at) AS bucket_at
-              FROM market_quote_snapshots GROUP BY symbol
-            ) AS latest
-              ON latest.symbol = snapshot.symbol AND latest.bucket_at = snapshot.bucket_at
+            FROM market_quote_latest AS snapshot
             """
         ).fetchall()
     latest_by_symbol = {str(row[0]): row for row in rows}
@@ -5853,7 +5835,7 @@ def mark_request_start() -> None:
 
 
 def require_maintenance_access() -> None:
-    expected = os.environ.get('FUND_VALUATION_DIAGNOSTICS_TOKEN', '').strip()
+    expected = configured_token('FUND_VALUATION_DIAGNOSTICS_TOKEN')
     supplied = request.headers.get('X-Diagnostics-Token', '').strip()
     if expected and hmac.compare_digest(expected, supplied):
         return
@@ -5862,12 +5844,9 @@ def require_maintenance_access() -> None:
         symbol.startswith('f_') for symbol in unique_csv_values(request.args.get('list', ''))
     ) and bool(request.args.get('list'))
     if (fund_route or fund_quotes) and not request.args.get('now') and fund_management_enabled():
-        token = os.environ.get('FUND_VALUATION_FUND_MANAGEMENT_TOKEN', '').strip()
+        token = configured_token('FUND_VALUATION_FUND_MANAGEMENT_TOKEN')
         supplied = request.headers.get('X-Fund-Management-Token', '').strip()
         if token and hmac.compare_digest(token, supplied):
-            return
-        # Explicitly open fund management permits discovery, not history refresh.
-        if fund_management_mode() == 'open' and (request.path == '/api/fundnav' or fund_quotes):
             return
     raise Forbidden('Maintenance authorization required')
 
@@ -5893,12 +5872,29 @@ def add_response_headers(response: Response) -> Response:
             )
     response.headers["X-Request-ID"] = getattr(g, "request_id", "")
     response.headers["X-API-Schema-Version"] = str(API_SCHEMA_VERSION)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Diagnostics-Token, X-Fund-Management-Token"
-    response.headers["Access-Control-Expose-Headers"] = "X-Request-ID, X-Elapsed-ms, X-API-Schema-Version, X-Cache"
+    origins = {value.strip() for value in os.environ.get('FUND_VALUATION_CORS_ORIGINS', '').split(',') if value.strip()}
+    origin = request.headers.get('Origin', '')
+    if origin and origin in origins:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Diagnostics-Token, X-Fund-Management-Token'
+        response.headers['Access-Control-Expose-Headers'] = 'X-Request-ID, X-Elapsed-ms, X-API-Schema-Version, X-Cache'
+    if origin or origins:
+        response.vary.add('Origin')
     if should_refresh() or request.args.get('now') or response.status_code >= 400:
         response.headers['Cache-Control'] = 'no-store'
+    if (request.headers.get('X-Diagnostics-Token') or request.headers.get('X-Fund-Management-Token')
+            or request.path.startswith(('/api/diagnostics/', '/api/fund-management/'))):
+        response.headers['Cache-Control'] = 'private, no-store'
+        response.vary.update(('X-Diagnostics-Token', 'X-Fund-Management-Token'))
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    if (request.method == 'GET' and response.status_code == 200
+            and request.path in {'/api/dashboard', '/api/overview', '/api/status', '/api/fundnav',
+                                 '/api/fundestimates', '/api/marketstates', '/api/datahealth'}
+            and 'no-store' not in response.headers.get('Cache-Control', '')):
+        response.add_etag()
+        response.make_conditional(request)
     if response.status_code == 429:
         response.headers['Retry-After'] = '60'
     return response
@@ -5965,7 +5961,8 @@ def readiness() -> Response:
 @app.get("/api/datahealth")
 def data_health() -> Response:
     enforce_rate_limit("datahealth")
-    return cached_json_response("api:datahealth", 30, build_data_health_payload)
+    payload = read_dashboard_snapshot('data-health-public')
+    return json_response(payload or {'status': 'pending', 'updatedAt': 0})
 
 
 @app.get("/api/status")
@@ -5977,7 +5974,7 @@ def public_status() -> Response:
 @app.get("/api/diagnostics/quotes")
 def quote_diagnostics() -> Response:
     enforce_rate_limit("diagnostics")
-    expected_token = os.environ.get("FUND_VALUATION_DIAGNOSTICS_TOKEN", "")
+    expected_token = configured_token("FUND_VALUATION_DIAGNOSTICS_TOKEN")
     provided_token = request.headers.get("X-Diagnostics-Token", "")
     if not expected_token or not hmac.compare_digest(provided_token, expected_token):
         return json_response({"error": "Forbidden"}, status=403)
@@ -5989,6 +5986,8 @@ def quote_diagnostics() -> Response:
     payload["valuationQuality"] = read_dashboard_snapshot("valuation-quality")
     payload["fxHistory"] = fx_history_summary()
     payload["historyCoverage"] = historical_data_coverage()
+    payload['dataHealth'] = build_data_health_payload()
+    payload['calendarCoverage'] = calendar_coverage()
     return json_response(payload)
 
 
@@ -6162,7 +6161,7 @@ DISPLAY_FX_CURRENCIES = ["EUR", "HKD", "JPY", "KRW", "USD"]
 def store_dashboard_snapshot(payload: dict[str, Any], name: str = DASHBOARD_SNAPSHOT_NAME) -> None:
     generated_at = now_ms()
     stored = dict(payload)
-    stored["generatedAt"] = generated_at
+    stored.pop('generatedAt', None)
     with get_conn() as conn:
         conn.execute(
             """
@@ -6172,26 +6171,12 @@ def store_dashboard_snapshot(payload: dict[str, Any], name: str = DASHBOARD_SNAP
               payload = excluded.payload,
               generated_at = excluded.generated_at
             """,
-            (name, json.dumps(stored, ensure_ascii=False), generated_at),
+            (name, encode_payload(stored), generated_at),
         )
 
 
 def read_dashboard_snapshot(name: str = DASHBOARD_SNAPSHOT_NAME) -> dict[str, Any] | None:
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT payload, generated_at FROM dashboard_snapshots WHERE name = ?",
-            (name,),
-        ).fetchone()
-    if not row:
-        return None
-    try:
-        payload = json.loads(str(row[0]))
-    except (TypeError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict):
-        return None
-    payload["generatedAt"] = int(row[1])
-    return payload
+    return read_snapshot(name)
 
 
 def filter_dashboard_snapshot(
@@ -6449,7 +6434,7 @@ def fund_estimates() -> Response:
     if snapshot_id := request.args.get("snapshot"):
         if len(codes) != 1 or not re.fullmatch(r"[a-f0-9]{24}", snapshot_id):
             return json_response({"error": "Invalid snapshot identifier"}, status=400)
-        snapshot = read_dashboard_snapshot(f"fund-detail:{codes[0]}:{snapshot_id}")
+        snapshot = read_fund_detail(f"fund-detail:{codes[0]}:{snapshot_id}")
         if not snapshot:
             return json_response({"error": "Snapshot expired; refresh the fund card"}, status=409)
         return json_response({codes[0]: snapshot})
@@ -6497,17 +6482,7 @@ def fund_history() -> Response:
 def fund_returns() -> Response:
     enforce_rate_limit("fundreturns")
     codes = require_fund_codes()
-    cache_key = f"api:fundreturns:{','.join(sorted(codes))}"
-
-    def build() -> dict[str, Any]:
-        results: dict[str, Any] = {}
-        for code in codes:
-            summary = read_fund_return_summary_from_db(code)
-            if summary:
-                results[code] = summary
-        return results
-
-    return cached_json_response(cache_key, 5 * 60, build)
+    return published_json_response(read_return_summaries('fund', codes))
 
 
 @app.get("/api/fundprofiles")
@@ -6886,18 +6861,9 @@ def market_returns() -> Response:
             continue
         normalized_items.append(f"{source}:{symbol}")
     normalized_items = sorted(dict.fromkeys(normalized_items))
-    cache_key = f"api:marketreturns:{','.join(normalized_items)}"
-
-    def build() -> dict[str, Any]:
-        results: dict[str, Any] = {}
-        for item in normalized_items:
-            source, symbol = item.split(":", 1)
-            summary = read_market_return_summary_from_db(source, symbol)
-            if summary:
-                results[item] = summary
-        return results
-
-    return cached_json_response(cache_key, MARKET_RETURNS_CACHE_TTL_SECONDS, build)
+    if len(normalized_items) > 160:
+        raise ValueError('Too many market items')
+    return published_json_response(read_return_summaries('market', normalized_items))
 
 
 def main() -> None:

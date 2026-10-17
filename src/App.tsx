@@ -1,4 +1,6 @@
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import PageErrorBoundary from './components/PageErrorBoundary';
+import { updatePageMetadata } from './pageMetadata';
 import { useQuotes } from './hooks/useQuotes';
 import { useOverviewData, useRankingMarketData, useSystemStatus } from './hooks/usePageData';
 import { fetchApiMeta, fetchFundNavs, fetchSinaFundNavs, verifyFundManagementToken } from './api';
@@ -110,6 +112,7 @@ export default function App() {
   const [fundManagementAuthLoading, setFundManagementAuthLoading] = useState(false);
   const [fundManagementAuthError, setFundManagementAuthError] = useState('');
   const [activePage, setActivePage] = useState<PageKey>(canonicalizePageLocation);
+  useEffect(() => { updatePageMetadata(activePage); }, [activePage]);
   // The URL is the single source of truth for the expanded fund card.
   const [expandedCode, setExpandedCode] = useState<string | null>(() => {
     if (pageFromPathname(window.location.pathname) !== 'funds') return null;
@@ -458,6 +461,7 @@ export default function App() {
         systemStatus={systemStatus}
         showMarketMeta={showMarketMeta}
       />
+      <PageErrorBoundary key={activePage}>
       {activePage === 'overview' ? (
         <IndexCards quotes={overviewData.quotes} marketStates={overviewData.marketStates} loading={overviewData.loading} error={overviewData.error} />
       ) : activePage === 'funds' ? (
@@ -658,6 +662,7 @@ export default function App() {
           <DiagnosticsPage />
         </Suspense>
       )}
+      </PageErrorBoundary>
       <footer className={styles.footer}>
         <div className={styles.footerInner}>
           © {new Date().getFullYear()} <a href="https://github.com/taifuer/fund_valuation" target="_blank" rel="noreferrer">Fund Valuation</a> · 数据仅供参考，不构成投资建议

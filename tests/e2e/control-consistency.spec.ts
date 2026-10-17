@@ -41,8 +41,8 @@ test('company selections keep contrast after touch, hover, keyboard and page cha
   await expect(selected).toHaveCSS('outline-style', 'solid');
   await expectSelected(selected);
   await page.screenshot({ path: testInfo.outputPath('company-controls.png') });
-  await page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '走势', exact: true }).click();
-  await page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '公司', exact: true }).click();
+  await page.getByRole('navigation', { name: '页面切换' }).getByRole('link', { name: '走势', exact: true }).click();
+  await page.getByRole('navigation', { name: '页面切换' }).getByRole('link', { name: '公司', exact: true }).click();
   await expectSelected(regions.locator('[aria-pressed="true"]'));
 });
 
@@ -178,7 +178,7 @@ test('fund details, pagination and chart ranges share the same control foundatio
 
 test('history dialogs keep explicit icon and range sizes after lazy page navigation', async ({ page, isMobile }) => {
   await page.goto('/companies');
-  await page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '走势', exact: true }).click();
+  await page.getByRole('navigation', { name: '页面切换' }).getByRole('link', { name: '走势', exact: true }).click();
   await page.getByRole('button', { name: '上证指数走势', exact: true }).click();
   const dialog = page.getByRole('dialog');
   const close = dialog.getByRole('button', { name: '关闭', exact: true });

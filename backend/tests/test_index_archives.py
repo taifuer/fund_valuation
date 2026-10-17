@@ -115,7 +115,9 @@ class IndexArchiveTests(unittest.TestCase):
         self.assertEqual(summary['latest']['endDate'], '2026-09-15')
 
     def test_public_history_and_returns_read_sqlite_without_upstream_requests(self):
+        from backend.return_summaries import publish_return_summaries
         server.store_market_history('yahoo-index', 'RUT', json.dumps(payload()))
+        publish_return_summaries()
         with patch.object(server, 'fetch_upstream', side_effect=AssertionError('Unexpected network')):
             client = server.app.test_client()
             response = client.get('/api/markethistory?source=yahoo-index&symbol=RUT')

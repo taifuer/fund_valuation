@@ -21,6 +21,7 @@ from .db_admin import ensure_recent_backup, optimize_database, positive_int_env
 from .storage import DB_PATH
 from .observability import run_task
 from .valuation_quality import valuation_quality_report
+from .return_summaries import publish_return_summaries
 from .server import (
     BACKGROUND_REFRESH_INTERVAL_SECONDS,
     FUND_HOLDINGS_REFRESH_INTERVAL_SECONDS,
@@ -28,6 +29,7 @@ from .server import (
     app,
     background_refresh_state_snapshot,
     build_dashboard_payload,
+    build_data_health_payload,
     claim_background_job,
     ensure_storage,
     mark_background_refresh,
@@ -87,6 +89,15 @@ def latest_fund_history_refresh_delay(now: datetime | None = None) -> int:
     if current < window_end:
         return min(30 * 60, max(math.ceil((window_end - current).total_seconds()), 1))
     return 2 * 60 * 60
+
+
+def public_data_health(payload: dict) -> dict:
+    result = {key: payload[key] for key in ('status', 'updatedAt')}
+    for group in ('upstream', 'fundHistory', 'marketHistory', 'backgroundRefresh'):
+        result[group] = {key: value for key, value in payload.get(group, {}).items()
+                         if key in {'total', 'missing', 'stale', 'errorCount', 'staleCount', 'fallbackCount',
+                                    'lastRunAt', 'lastSuccessAt', 'lastErrorAt', 'latestDate'}}
+    return result
 
 
 class CoalescingMaintenanceQueue:
@@ -168,6 +179,7 @@ def main() -> None:
         "cleanup": 0.0,
         "valuation_quality": 0.0,
         "public_status": 0.0,
+        "fund_estimates": 0.0,
     }
 
     def refresh_quotes(symbols: list[str], currencies: list[str]) -> None:
@@ -332,6 +344,8 @@ def main() -> None:
     maintenance_queue = CoalescingMaintenanceQueue(run_maintenance)
 
     with app.app_context():
+        # Publish existing history before slow startup backfills are enqueued.
+        run_task('return_summaries', publish_return_summaries, limit=200)
         try:
             while not stop_event.is_set():
                 started = time.monotonic()
@@ -369,17 +383,26 @@ def main() -> None:
                     try:
                         if dashboard_payload is None:
                             raise RuntimeError("dashboard snapshot unavailable")
-                        estimate_result = run_task("fund_estimates", refresh_fund_estimate_snapshots, dashboard_payload)
-                        tasks.append(f"fund-estimates:{estimate_result['funds']}")
+                        if current >= due['fund_estimates']:
+                            estimate_result = run_task("fund_estimates", refresh_fund_estimate_snapshots, dashboard_payload)
+                            tasks.append(f"fund-estimates:{estimate_result['funds']}")
+                            due['fund_estimates'] = current + (60 if cash_interval <= 300 else 300)
                     except Exception as exc:
                         errors.append(f"fund-estimates: {exc}")
                 if acquired and current >= due['public_status']:
                     try:
                         run_task('public_status', publish_public_status_snapshot)
+                        store_dashboard_snapshot(public_data_health(build_data_health_payload()), 'data-health-public')
                         tasks.append('public-status')
                     except Exception as exc:
                         errors.append(f'public-status: {exc}')
                     due['public_status'] = current + 5 * 60
+                if acquired:
+                    try:
+                        result = run_task('return_summaries', publish_return_summaries, limit=20)
+                        errors.extend(result['errors'])
+                    except Exception as exc:
+                        errors.append(f'return-summaries: {exc}')
                 maintenance_flags: set[str] = set()
                 if acquired:
                     maintenance_intervals = {

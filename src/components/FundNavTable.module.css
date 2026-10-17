@@ -19,7 +19,7 @@
 
 .subtitle,
 .count {
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 11px;
   margin-top: 2px;
 }
@@ -84,7 +84,7 @@
 .pageButton { composes: actionButton from './AnalysisBase.module.css'; }
 
 .pagination span {
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   min-width: 40px;
@@ -92,7 +92,7 @@
 }
 
 .state {
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 12px;
   padding: 28px 12px;
   text-align: center;

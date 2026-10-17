@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import PageErrorBoundary from './components/PageErrorBoundary';
 import './index.css';
 
 if (/^[a-f0-9]{32}$/i.test(__BAIDU_ANALYTICS_ID__)) {
@@ -14,6 +15,6 @@ if (/^[a-f0-9]{32}$/i.test(__BAIDU_ANALYTICS_ID__)) {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <PageErrorBoundary><App /></PageErrorBoundary>
   </React.StrictMode>,
 );

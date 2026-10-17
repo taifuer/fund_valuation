@@ -22,11 +22,11 @@
 .metrics { display: grid; gap: 6px; grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 10px; }
 .metrics div, .panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; }
 .metrics div { padding: 10px; }
-.metrics span { color: #94a3b8; display: block; font-size: 10px; }
+.metrics span { color: var(--ink-faint); display: block; font-size: 10px; }
 .metrics strong { color: #0f172a; display: block; font-size: 18px; margin-top: 3px; }
 .panel { padding: 12px; }
 .panel h3 { color: #334155; font-size: 13px; margin-bottom: 8px; }
-.empty { color: #94a3b8; font-size: 12px; padding: 18px; text-align: center; }
+.empty { color: var(--ink-faint); font-size: 12px; padding: 18px; text-align: center; }
 .tableWrap { overflow-x: auto; }
 .tableWrap table { border-collapse: collapse; font-size: 12px; min-width: 700px; width: 100%; }
 .tableWrap th, .tableWrap td { border-bottom: 1px solid #f1f5f9; padding: 8px; text-align: left; }

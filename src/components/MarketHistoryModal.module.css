@@ -41,7 +41,7 @@
 }
 
 .subtitle {
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 12px;
   font-weight: 600;
   margin-top: 2px;
@@ -87,7 +87,7 @@
 }
 
 .metrics span {
-  color: #94a3b8;
+  color: var(--ink-faint);
   display: block;
   font-size: 10px;
   margin-bottom: 3px;
@@ -159,7 +159,7 @@
 }
 
 .state {
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 12px;
   padding: 42px 12px;
   text-align: center;

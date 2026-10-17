@@ -388,10 +388,10 @@ test('lazy company and history styles cannot change the heading gap after naviga
   expect(initial.padding).toBe('0px');
   expect(initial.border).toBe('0px');
   for (const target of ['公司', '关于']) {
-    await page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: target, exact: true }).click();
+    await page.getByRole('navigation', { name: '页面切换' }).getByRole('link', { name: target, exact: true }).click();
     await expect(page.getByRole('heading', { name: target === '公司' ? '公司经营趋势' : '关于本站' })).toBeVisible();
     if (target === '公司') await expect(page.getByRole('searchbox', { name: '搜索公司' })).toBeVisible();
-    await page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '走势', exact: true }).click();
+    await page.getByRole('navigation', { name: '页面切换' }).getByRole('link', { name: '走势', exact: true }).click();
     expect(await geometry('分类筛选')).toEqual(initial);
   }
   await page.getByRole('navigation', { name: '走势分析视图' }).getByRole('button', { name: '长期', exact: true }).click();

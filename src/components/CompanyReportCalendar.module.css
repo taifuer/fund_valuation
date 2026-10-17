@@ -23,7 +23,7 @@
 
 .calendarToolbar span,
 .agenda header span {
-  color: #8b95a3;
+  color: var(--ink-faint);
   font-size: 10px;
 }
 
@@ -87,7 +87,7 @@
 .weekday {
   background: #f7f9fb;
   border-bottom: 1px solid #e2e7ed;
-  color: #7d8795;
+  color: var(--ink-muted);
   font-size: 10px;
   font-weight: 800;
   line-height: 32px;
@@ -225,7 +225,7 @@
 }
 
 .agendaItem small {
-  color: #929ba8;
+  color: var(--ink-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -251,7 +251,7 @@
 }
 
 .emptyAgenda {
-  color: #929ba8;
+  color: var(--ink-faint);
   font-size: 11px;
   margin: 0;
   padding: 30px 14px;
@@ -259,7 +259,7 @@
 }
 
 .calendarNote {
-  color: #8b95a3;
+  color: var(--ink-faint);
   font-size: 10px;
   line-height: 1.7;
   margin: 9px 2px 0;

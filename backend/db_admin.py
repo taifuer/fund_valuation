@@ -66,6 +66,7 @@ def optimize_database(
     raw_dir: Path = RAW_DIR,
     now: datetime | None = None,
     vacuum: bool = False,
+    response_cache_max_bytes: int = 64 * 1024 * 1024,
 ) -> dict[str, object]:
     current = now or datetime.now(ZoneInfo("Asia/Shanghai"))
     response_cutoff_ms = int((current - timedelta(days=max(response_cache_retention_days, 1))).timestamp() * 1000)
@@ -130,6 +131,36 @@ def optimize_database(
                     compressed_cache_bytes_saved += count * (len(original) - len(encoded))
             conn.commit()
             cursor = rows[-1][0]
+        # Preserve daily forecast results for calibration; trim only reconciled
+        # large breakdowns after 30 days, in bounded optimistic updates.
+        trimmed_estimate_rows = 0
+        estimate_cutoff = (current - timedelta(days=30)).date().isoformat()
+        cursor = 0
+        while True:
+            rows = conn.execute('''SELECT rowid,details_json FROM fund_estimate_snapshots
+                WHERE rowid>? AND target_date<? AND actual_nav IS NOT NULL
+                  AND (details_json LIKE '%"holdingContributions"%' OR details_json LIKE '%"benchmarkComponents"%')
+                ORDER BY rowid LIMIT 100''', (cursor, estimate_cutoff)).fetchall()
+            if not rows:
+                break
+            for row_id, original in rows:
+                details = json.loads(original)
+                details.pop('holdingContributions', None)
+                details.pop('benchmarkComponents', None)
+                trimmed_estimate_rows += conn.execute('UPDATE fund_estimate_snapshots SET details_json=? WHERE rowid=? AND details_json=?',
+                    (json.dumps(details, ensure_ascii=False, separators=(',', ':')), row_id, original)).rowcount
+            conn.commit()
+            cursor = rows[-1][0]
+
+        evicted_cache_bytes = 0
+        cache_bytes = int(conn.execute('SELECT COALESCE(SUM(length(body)),0) FROM response_cache').fetchone()[0])
+        for key, size, fetched in conn.execute('SELECT cache_key,length(body),fetched_at FROM response_cache ORDER BY fetched_at,cache_key').fetchall():
+            if cache_bytes <= max(response_cache_max_bytes, 0):
+                break
+            removed = conn.execute('DELETE FROM response_cache WHERE cache_key=? AND length(body)=? AND fetched_at=?', (key, size, fetched)).rowcount
+            cache_bytes -= removed * size
+            evicted_cache_bytes += removed * size
+            conn.commit()
         conn.execute("PRAGMA optimize")
         checkpoint = tuple(int(value) for value in conn.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone())
         if vacuum:
@@ -145,6 +176,8 @@ def optimize_database(
         "deduplicatedQuoteSnapshotBytes": deduplicated_snapshot_bytes,
         "compressedResponseCacheRows": compressed_cache_rows,
         "compressedResponseCacheBytesSaved": compressed_cache_bytes_saved,
+        "trimmedEstimateRows": trimmed_estimate_rows,
+        "evictedResponseCacheBytes": evicted_cache_bytes,
         "raw": raw_result,
         "checkpoint": checkpoint,
         "pageCount": page_count,

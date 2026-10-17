@@ -67,6 +67,7 @@ class HistoryFreshnessTests(unittest.TestCase):
         self.assertFalse(result['stale'])
 
     def test_public_summary_preserves_values_and_recovers_after_incremental_update(self):
+        from backend.return_summaries import publish_return_summaries
         with storage.get_conn() as conn:
             conn.executemany('INSERT INTO market_history VALUES (?,?,?,?,?)', [
                 ('yahoo-index', 'RUT', '2026-09-14', 100, 1),
@@ -74,6 +75,7 @@ class HistoryFreshnessTests(unittest.TestCase):
             ])
         with patch('backend.history_refresh.expected_history_date', return_value='2026-09-18'), \
                 patch.object(server, 'fetch_upstream', side_effect=AssertionError('No upstream on page reads')):
+            publish_return_summaries()
             response = server.app.test_client().get('/api/marketreturns?items=yahoo-index:RUT')
             self.assertEqual(response.status_code, 200)
             summary = response.get_json()['yahoo-index:RUT']
@@ -83,7 +85,7 @@ class HistoryFreshnessTests(unittest.TestCase):
             self.assertEqual(summary['latest']['endClose'], 105)
             with storage.get_conn() as conn:
                 conn.execute('INSERT INTO market_history VALUES (?,?,?,?,?)', ('yahoo-index', 'RUT', '2026-09-18', 110, 2))
-            server.response_cache_clear_marketreturns_item('yahoo-index:RUT')
+            publish_return_summaries()
             summary = server.app.test_client().get('/api/marketreturns?items=yahoo-index:RUT').get_json()['yahoo-index:RUT']
             self.assertFalse(summary['freshness']['stale'])
             self.assertEqual(summary['latest']['endDate'], '2026-09-18')

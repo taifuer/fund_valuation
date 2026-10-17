@@ -198,7 +198,7 @@ export default function HoldingsTable({
           <span className={`${styles.footerStrong} ${estimateChange >= 0 ? styles.up : styles.down}`}>
             {signedPercent(estimateChange)}
           </span>
-          <span style={{ fontSize: 11, color: '#94a3b8' }}>
+          <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
             （覆盖 {coveragePct.toFixed(0)}%；持仓 {signedPercent(holdingContribution)}
             {projection?.model !== 'coverageNormalizedFallback' && (
               `；未披露仓位 ${signedPercent(residualContribution)}${projection?.model === 'holdingsCompositeBenchmark' ? '（复合代理）' : ''}`

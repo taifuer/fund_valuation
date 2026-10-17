@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type MouseEvent } from 'react';
+import { restoredPagePath } from '../routing';
 import type { FxRateData } from '../types';
 import type { PageKey } from '../routing';
 import type { SystemStatus } from '../types';
@@ -68,6 +69,13 @@ export default function Header({
     window.scrollTo({ top: 0, behavior: 'auto' });
   }
 
+  function navigate(event: MouseEvent<HTMLAnchorElement>, page: PageKey) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    if (page === 'overview') reloadToTop();
+    else onPageChange(page);
+  }
+
   return (
     <>
       <header className={styles.header}>
@@ -76,54 +84,20 @@ export default function Header({
             <Logo />
             <div>
               <h1 className={styles.title}>
-                <button type="button" className={styles.titleButton} onClick={reloadToTop}>
+                <a href="/" className={styles.titleButton} onClick={(event) => navigate(event, 'overview')}>
                   全球资产看板
-                </button>
+                </a>
               </h1>
               <div className={styles.subtitle}>Markets · Companies · ETFs · QDII Funds</div>
             </div>
           </div>
           <nav className={styles.nav} aria-label="页面切换">
-            <button
-              type="button"
-              aria-current={activePage === 'overview' ? 'page' : undefined}
-              className={`${styles.navButton} ${activePage === 'overview' ? styles.navButtonActive : ''}`}
-              onClick={() => onPageChange('overview')}
-            >
-              概览
-            </button>
-            <button
-              type="button"
-              aria-current={['ranking', 'history'].includes(activePage) ? 'page' : undefined}
-              className={`${styles.navButton} ${['ranking', 'history'].includes(activePage) ? styles.navButtonActive : ''}`}
-              onClick={() => onPageChange('ranking')}
-            >
-              走势
-            </button>
-            <button
-              type="button"
-              aria-current={activePage === 'funds' ? 'page' : undefined}
-              className={`${styles.navButton} ${activePage === 'funds' ? styles.navButtonActive : ''}`}
-              onClick={() => onPageChange('funds')}
-            >
-              基金
-            </button>
-            <button
-              type="button"
-              aria-current={activePage === 'companies' ? 'page' : undefined}
-              className={`${styles.navButton} ${activePage === 'companies' ? styles.navButtonActive : ''}`}
-              onClick={() => onPageChange('companies')}
-            >
-              公司
-            </button>
-            <button
-              type="button"
-              aria-current={activePage === 'about' ? 'page' : undefined}
-              className={`${styles.navButton} ${activePage === 'about' ? styles.navButtonActive : ''}`}
-              onClick={() => onPageChange('about')}
-            >
-              关于
-            </button>
+            {([['overview', '概览'], ['ranking', '走势'], ['funds', '基金'], ['companies', '公司'], ['about', '关于']] as const).map(([page, label]) => {
+              const active = page === activePage || (page === 'ranking' && activePage === 'history');
+              return <a key={page} href={restoredPagePath(page)} aria-current={active ? 'page' : undefined}
+                className={`${styles.navButton} ${active ? styles.navButtonActive : ''}`}
+                onClick={(event) => navigate(event, page)}>{label}</a>;
+            })}
           </nav>
         </div>
       </header>
@@ -135,6 +109,7 @@ export default function Header({
                 <span
                   className={`${styles.live} ${!systemStatus ? styles.liveChecking : ''} ${systemStatus?.status === 'degraded' ? styles.liveDegraded : ''} ${systemStatus?.status === 'offline' ? styles.liveOffline : ''}`}
                   title={freshnessLabel}
+                  role="img"
                   aria-label={freshnessLabel}
                 />
                 {time}（北京时间）

@@ -40,7 +40,7 @@
 
 .metrics span {
   display: block;
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 10px;
   margin-bottom: 2px;
 }
@@ -117,7 +117,7 @@
 .state {
   padding: 28px 12px;
   text-align: center;
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 12px;
 }
 

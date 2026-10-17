@@ -1,6 +1,18 @@
 {
   "_comment": "Market holiday & half-day calendar, shared by backend (server.py) and frontend (marketHours.ts). Add a new year block before the year rolls over. Unknown years degrade to weekend-only detection. Half-day sessions override the market's regular sessions for that date (format 'HH:MM').",
   "years": {
+    "2027": {
+      "us": {
+        "sourceUrl": "https://www.nyse.com/trade/hours-calendars",
+        "holidays": ["2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31", "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24"],
+        "halfDays": {"2027-11-26": [["09:30", "13:00"]]}
+      },
+      "jp": {
+        "sourceUrl": "https://www.jpx.co.jp/english/corporate/about-jpx/calendar/index.html",
+        "holidays": ["2027-01-01", "2027-01-02", "2027-01-03", "2027-01-11", "2027-02-11", "2027-02-23", "2027-03-21", "2027-03-22", "2027-04-29", "2027-05-03", "2027-05-04", "2027-05-05", "2027-07-19", "2027-08-11", "2027-09-20", "2027-09-23", "2027-10-11", "2027-11-03", "2027-11-23", "2027-12-31"],
+        "halfDays": {}
+      }
+    },
     "2026": {
       "cn": {
         "holidays": [

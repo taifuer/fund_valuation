@@ -30,6 +30,7 @@
 }
 
 .titleButton {
+  text-decoration: none;
   background: transparent;
   border: 0;
   color: #0f172a;
@@ -46,7 +47,7 @@
 
 .subtitle {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--ink-faint);
   margin-top: 2px;
   font-weight: 400;
   letter-spacing: 0;
@@ -87,6 +88,8 @@
 }
 
 .navButton {
+  text-decoration: none;
+  text-align: center;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 999px;

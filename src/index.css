@@ -9,8 +9,8 @@
 :root {
   /* Semantic up/down (Chinese convention: red up, green down) on :root so they
      are available to portals, modals, and pages rendered outside .app. */
-  --color-up: #dc2626;
-  --color-down: #16a34a;
+  --color-up: #b91c1c;
+  --color-down: #15803d;
   --color-up-bg: #fef2f2;
   --color-up-border: #fee2e2;
   --color-down-bg: #f0fdf4;
@@ -22,7 +22,7 @@
   /* Neutral slate scale + surfaces */
   --ink: #1e293b;
   --ink-muted: #64748b;
-  --ink-faint: #94a3b8;
+  --ink-faint: #58677d;
   --line: #e2e8f0;
   --surface: #ffffff;
   --surface-muted: #f8fafc;

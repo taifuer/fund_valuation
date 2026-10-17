@@ -165,7 +165,7 @@ test('returning to funds refreshes silently without hiding cached cards', async 
   await page.goto('/funds');
   await expect(page.locator('[id^="fund-"]')).toHaveCount(16);
   const navigation = page.getByRole('navigation', { name: '页面切换' });
-  await navigation.getByRole('button', { name: '公司', exact: true }).click();
+  await navigation.getByRole('link', { name: '公司', exact: true }).click();
   let release = () => {};
   const gate = new Promise<void>(resolve => { release = resolve; });
   let refreshing = false;
@@ -175,7 +175,7 @@ test('returning to funds refreshes silently without hiding cached cards', async 
     await route.fulfill({ status: 503, json: {} });
   });
   try {
-    await navigation.getByRole('button', { name: '基金', exact: true }).click();
+    await navigation.getByRole('link', { name: '基金', exact: true }).click();
     await expect.poll(() => refreshing).toBe(true);
     await page.waitForTimeout(1100);
     await expect(page.locator('[id^="fund-"]')).toHaveCount(16);
@@ -191,7 +191,7 @@ test('fund filters remember user choices while explicit links and history keep t
   const filters = page.getByRole('group', { name: '基金类型筛选' });
   const navigation = page.getByRole('navigation', { name: '页面切换' });
   await page.goto('/');
-  await navigation.getByRole('button', { name: '基金', exact: true }).click();
+  await navigation.getByRole('link', { name: '基金', exact: true }).click();
   await expect(page).toHaveURL(/\/funds\?strategy=active$/);
   await expect(filters.getByRole('button', { name: '主动' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('[id^="fund-"]')).toHaveCount(16);
@@ -202,15 +202,15 @@ test('fund filters remember user choices while explicit links and history keep t
     await page.reload();
     await expect(filters.getByRole('button', { name: label })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('[id^="fund-"]')).toHaveCount(count);
-    await navigation.getByRole('button', { name: '概览', exact: true }).click();
+    await navigation.getByRole('link', { name: '概览', exact: true }).click();
     await page.reload();
-    await navigation.getByRole('button', { name: '基金', exact: true }).click();
+    await navigation.getByRole('link', { name: '基金', exact: true }).click();
     await expect(filters.getByRole('button', { name: label })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('[id^="fund-"]')).toHaveCount(count);
   }
 
   await page.goto('/returns?category=fund&strategy=active');
-  await navigation.getByRole('button', { name: '基金', exact: true }).click();
+  await navigation.getByRole('link', { name: '基金', exact: true }).click();
   await expect(filters.getByRole('button', { name: '指数' })).toHaveAttribute('aria-pressed', 'true');
   await page.goto('/funds?strategy=active');
   await expect(filters.getByRole('button', { name: '主动' })).toHaveAttribute('aria-pressed', 'true');
@@ -306,9 +306,9 @@ test('fund controls fit narrow widths, navigation preserves filters and detail l
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   }
   await page.getByRole('group', { name: '基金类型筛选' }).getByRole('button', { name: '主动' }).click();
-  await page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '概览', exact: true }).click();
+  await page.getByRole('navigation', { name: '页面切换' }).getByRole('link', { name: '概览', exact: true }).click();
   await expect(page.locator('[id^="fund-"]')).toHaveCount(0);
-  await page.getByRole('navigation', { name: '页面切换' }).getByRole('button', { name: '基金', exact: true }).click();
+  await page.getByRole('navigation', { name: '页面切换' }).getByRole('link', { name: '基金', exact: true }).click();
   await expect(page.getByRole('group', { name: '基金类型筛选' }).getByRole('button', { name: '主动' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('[id^="fund-"]')).toHaveCount(16);
   await page.goto('/funds/270042?strategy=active');

@@ -1,0 +1,4 @@
+.error { max-width: var(--page-width); margin: 32px auto; padding: 0 var(--page-gutter); }
+.error h2 { font-size: var(--font-heading); }
+.error p { color: var(--ink-muted); margin: 8px 0 16px; }
+.error button { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; color: var(--ink); cursor: pointer; padding: 8px 16px; font-size: var(--font-body); }

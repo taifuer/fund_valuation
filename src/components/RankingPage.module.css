@@ -129,15 +129,17 @@
 }
 
 .rank.gold {
+  color: #422006;
   background: linear-gradient(135deg, #f59e0b, #eab308);
 }
 
 .rank.silver {
-  background: linear-gradient(135deg, #94a3b8, #64748b);
+  background: linear-gradient(135deg, #cbd5e1, #94a3b8);
+  color: #0f172a;
 }
 
 .rank.bronze {
-  background: linear-gradient(135deg, #d97706, #b45309);
+  background: linear-gradient(135deg, #b45309, #92400e);
 }
 
 .nameCell {
@@ -230,7 +232,7 @@
 .risk,
 .ratio,
 .winRate {
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 12px;
 }
 
@@ -272,14 +274,14 @@
 }
 
 .empty {
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 13px;
   padding: 28px 16px;
   text-align: center;
 }
 
 .note {
-  color: #94a3b8;
+  color: var(--ink-faint);
   font-size: 12px;
   line-height: 1.7;
   margin: 10px 2px 0;

@@ -11,7 +11,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.environ.get("FUND_VALUATION_DATA_DIR", ROOT_DIR / "data"))
 DB_PATH = DATA_DIR / "fund_valuation.db"
 RAW_DIR = DATA_DIR / "raw"
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 CACHE_BODY_COMPRESSION_MAGIC = b"\x00FVCZ1"
 CACHE_BODY_COMPRESSION_MIN_BYTES = 16 * 1024
 
@@ -259,6 +259,24 @@ MIGRATIONS: dict[int, str] = {
           checked_at INTEGER NOT NULL, PRIMARY KEY (code, report_date)
         );
     """,
+    18: """
+        CREATE TABLE IF NOT EXISTS return_summary_versions (
+          kind TEXT NOT NULL, item TEXT NOT NULL, revision INTEGER NOT NULL,
+          PRIMARY KEY(kind,item)
+        ) WITHOUT ROWID;
+        CREATE TABLE IF NOT EXISTS return_summaries (
+          kind TEXT NOT NULL, item TEXT NOT NULL, source_revision INTEGER NOT NULL,
+          model_version INTEGER NOT NULL, payload BLOB NOT NULL, published_at INTEGER NOT NULL,
+          PRIMARY KEY(kind,item)
+        ) WITHOUT ROWID;
+        CREATE TABLE IF NOT EXISTS market_quote_latest (
+          symbol TEXT PRIMARY KEY, bucket_at INTEGER NOT NULL, captured_at INTEGER NOT NULL,
+          quote_time TEXT NOT NULL, market_state TEXT NOT NULL, source TEXT NOT NULL,
+          price REAL, previous_close REAL, change_percent REAL,
+          validation_status TEXT NOT NULL, validation_message TEXT NOT NULL,
+          raw_line TEXT NOT NULL, sanitized_line TEXT NOT NULL
+        );
+    """,
 }
 
 
@@ -368,6 +386,42 @@ def migrate_database(path: Path | None = None) -> int:
                     """
                     if conn.execute("SELECT 1 FROM sqlite_master WHERE name='response_cache'").fetchone():
                         script += "\nDELETE FROM response_cache WHERE cache_key LIKE 'api:fundreturns:%' OR cache_key LIKE 'api:marketreturns:%' OR cache_key LIKE 'api:overview:%';"
+            if version == 18:
+                tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                for table, kind, key, columns in (
+                    ('fund_nav_history', 'fund', 'code', ['nav', 'change_percent']),
+                    ('fund_nav_details', 'fund', 'code', ['accumulated_nav']),
+                    ('market_history', 'market', "source || ':' || {row}.symbol", ['close']),
+                ):
+                    if table not in tables:
+                        continue
+                    for event, row in [('INSERT', 'NEW'), ('UPDATE', 'NEW'), ('DELETE', 'OLD')]:
+                        expression = f'{row}.{key}'.format(row=row)
+                        when = ' WHEN ' + ' OR '.join(f'OLD.{column} IS NOT NEW.{column}' for column in columns) if event == 'UPDATE' else ''
+                        script += f'''\nCREATE TRIGGER IF NOT EXISTS summary_{table}_{event.lower()} AFTER {event} ON {table}{when} BEGIN
+                            INSERT INTO return_summary_versions VALUES ('{kind}',{expression},1)
+                            ON CONFLICT(kind,item) DO UPDATE SET revision=revision+1; END;'''
+                    expression = key.format(row=table)
+                    script += f"\nINSERT OR IGNORE INTO return_summary_versions SELECT '{kind}',{expression},1 FROM {table} GROUP BY {expression};"
+                if 'market_adjustment_factors' in tables:
+                    for event, row in [('INSERT', 'NEW'), ('UPDATE', 'NEW'), ('DELETE', 'OLD')]:
+                        when = ' WHEN OLD.factor IS NOT NEW.factor OR OLD.shares IS NOT NEW.shares OR OLD.cash IS NOT NEW.cash' if event == 'UPDATE' else ''
+                        script += f'''\nCREATE TRIGGER IF NOT EXISTS summary_adjustments_{event.lower()} AFTER {event} ON market_adjustment_factors{when} BEGIN
+                            UPDATE return_summary_versions SET revision=revision+1 WHERE kind='market'
+                              AND substr(item,instr(item,':')+1)={row}.symbol; END;'''
+                if 'market_quote_snapshots' in tables:
+                    script += '''\nINSERT OR REPLACE INTO market_quote_latest
+                        SELECT s.* FROM market_quote_snapshots s JOIN
+                        (SELECT symbol,MAX(bucket_at) bucket_at FROM market_quote_snapshots GROUP BY symbol) latest
+                        ON s.symbol=latest.symbol AND s.bucket_at=latest.bucket_at;'''
+                    for event in ('INSERT', 'UPDATE'):
+                        fields = ['symbol', 'bucket_at', 'captured_at', 'quote_time', 'market_state', 'source',
+                                  'price', 'previous_close', 'change_percent', 'validation_status',
+                                  'validation_message', 'raw_line', 'sanitized_line']
+                        script += f'''\nCREATE TRIGGER IF NOT EXISTS latest_quotes_{event.lower()} AFTER {event} ON market_quote_snapshots BEGIN
+                            INSERT INTO market_quote_latest VALUES ({','.join('NEW.' + field for field in fields)})
+                            ON CONFLICT(symbol) DO UPDATE SET {','.join(field + '=excluded.' + field for field in fields[1:])}
+                            WHERE excluded.bucket_at>=market_quote_latest.bucket_at; END;'''
             conn.executescript(
                 "BEGIN IMMEDIATE;\n"
                 + script

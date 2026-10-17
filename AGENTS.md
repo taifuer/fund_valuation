@@ -54,7 +54,7 @@ Commit messages should include a concise subject plus a body that lists the main
 
 Use `taifu <taifu@taifua.com>` as the Git author. Agent-assisted commits must include `Co-Authored-By: Codex (GPT‑6 Astra) <noreply@openai.com>` in the commit message body.
 
-Pull requests should include a concise summary, verification performed, and screenshots when UI output changes. Link related issues when applicable, and call out data-source or proxy changes because production deployments must mirror `vite-sina-proxy.ts`.
+Pull requests should include a concise summary, verification performed, and screenshots when UI output changes. Link related issues when applicable, and call out data-source or proxy changes because development `vite.config.ts` and production `deploy/nginx.conf` must route the same API paths.
 
 ## Security & Configuration Tips
 
