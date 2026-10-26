@@ -12,6 +12,12 @@ export default defineCompany({
   "sourceUrl": "https://investor.atmeta.com/financials/",
   "employeeScope": "期末员工",
   "moneyScale": MILLION,
+  "metricMarkers": [{
+    "metric": "operatingProfit",
+    "period": "FY2026 Q3",
+    "label": "法律相关费用",
+    "note": "FY2026 Q3 营业利润包含 98.9 亿美元多州总检察长协议相关费用，未剔除该项影响。"
+  }],
   "researchAndDevelopment": {
     "annual": {
       "FY2018": 10273,
@@ -57,7 +63,8 @@ export default defineCompany({
       "FY2025 Q3": 15144,
       "FY2025 Q4": 17136,
       "FY2026 Q1": 17699,
-      "FY2026 Q2": 21656
+      "FY2026 Q2": 21656,
+      "FY2026 Q3": 20054
     }
   },
   "annual": [
@@ -348,6 +355,19 @@ export default defineCompany({
       60801,
       18775,
       75472
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      64601,
+      12988,
+      66775
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-22",
+    "sourceLabel": "Meta FY2026 第三季度 Form 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1326801/000162828026066773/meta-20260930.htm"
+  }
 });

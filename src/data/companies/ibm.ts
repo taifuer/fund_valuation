@@ -11,11 +11,17 @@ export default defineCompany({
   "sourceName": "IBM 投资者关系",
   "sourceUrl": "https://www.ibm.com/investor/financial-reporting",
   "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-22",
+    "sourceLabel": "IBM FY2026 第三季度 Form 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/51143/000005114326000095/ibm-20260930.htm"
+  },
+  "reportReferences": [{
     "period": "FY2026 Q2",
     "publishedAt": "2026-07-23",
     "sourceLabel": "IBM FY2026 第二季度 Form 10-Q",
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/51143/000005114326000078/ibm-20260630.htm"
-  },
+  }],
   "methodologyNote": "IBM 未持续单列合并营业利润，利润指标采用 GAAP 持续经营税前利润；FY2019 起收入按 Kyndryl 剥离后的持续经营口径，季度序列从可连续核验的 FY2021 开始。",
   "profitMetricLabel": "税前利润",
   "employeeScope": "年末 IBM 及全资子公司员工（官方披露，千人换算）",
@@ -86,7 +92,8 @@ export default defineCompany({
       "FY2025 Q3": 2082,
       "FY2025 Q4": 2187,
       "FY2026 Q1": 2173,
-      "FY2026 Q2": 2311
+      "FY2026 Q2": 2311,
+      "FY2026 Q3": 2378
     }
   },
   "annual": [
@@ -279,6 +286,12 @@ export default defineCompany({
       "2026-06-30",
       17162,
       2479
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      17103,
+      2497
     ]
   ]
 });

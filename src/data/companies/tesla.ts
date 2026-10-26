@@ -70,7 +70,8 @@ export default defineCompany({
       "FY2025 Q3": 1630,
       "FY2025 Q4": 1783,
       "FY2026 Q1": 1946,
-      "FY2026 Q2": 2371
+      "FY2026 Q2": 2371,
+      "FY2026 Q3": 2761
     }
   },
   "annual": [
@@ -335,6 +336,18 @@ export default defineCompany({
       "2026-06-30",
       28236,
       398
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      28046,
+      718
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-22",
+    "sourceLabel": "Tesla FY2026 第三季度 Form 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1318605/000162828026066775/tsla-20260930.htm"
+  }
 });

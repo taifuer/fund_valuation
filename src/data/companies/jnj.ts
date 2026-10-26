@@ -11,11 +11,17 @@ export default defineCompany({
   "sourceName": "Johnson & Johnson 投资者关系",
   "sourceUrl": "https://www.investor.jnj.com/financials/quarterly-results/default.aspx",
   "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-21",
+    "sourceLabel": "Johnson & Johnson FY2026 第三季度 Form 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/200406/000020040626000197/jnj-20260927.htm"
+  },
+  "reportReferences": [{
     "period": "FY2026 Q2",
     "publishedAt": "2026-07-23",
     "sourceLabel": "Johnson & Johnson FY2026 第二季度 Form 10-Q",
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/200406/000020040626000153/jnj-20260628.htm"
-  },
+  }],
   "methodologyNote": "公司未持续单列合并营业利润，利润指标采用 GAAP 税前利润；FY2021 起历史财务按 Kenvue 终止经营重述，季度序列从可连续核验的 FY2023 开始。",
   "profitMetricLabel": "税前利润",
   "employeeScope": "年末全球全职等效员工（官方约数）",
@@ -50,6 +56,12 @@ export default defineCompany({
       "period": "FY2025 Q1",
       "label": "准备金转回",
       "note": "FY2025 Q1 税前利润包含约 70 亿美元滑石粉诉讼准备金转回，不能视为经常性经营增长。"
+    },
+    {
+      "metric": "operatingProfit",
+      "period": "FY2026 Q3",
+      "label": "诉讼准备金",
+      "note": "FY2026 Q3 税前利润包含 55 亿美元滑石粉诉讼拟议解决方案相关费用，不代表经常性经营表现。"
     }
   ],
   "moneyScale": MILLION,
@@ -78,7 +90,8 @@ export default defineCompany({
       "FY2025 Q3": 3672,
       "FY2025 Q4": 4252,
       "FY2026 Q1": 3527,
-      "FY2026 Q2": 3653
+      "FY2026 Q2": 3653,
+      "FY2026 Q3": 4652
     }
   },
   "annual": [
@@ -223,6 +236,12 @@ export default defineCompany({
       "2026-06-28",
       25310,
       6747
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-27",
+      25399,
+      34
     ]
   ]
 });

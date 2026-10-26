@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from datetime import date, datetime, timedelta
+from functools import partial
 from zoneinfo import ZoneInfo
 from unittest.mock import MagicMock, patch
 
@@ -3067,6 +3068,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(ytd["winRatePercent"], 66.67)
         self.assertNotIn("volatilityPercent", ytd)
 
+    @patch.object(server, "current_fund_holding_report_date", new=partial(server.current_fund_holding_report_date, as_of=date(2026, 5, 18)))
     def test_fund_holdings_refresh_parses_and_stores_top_holdings(self) -> None:
         upstream_body = (
             'var apidata={ content:"<div><label class=\'right\'>截止至：<font class=\'px12\'>2026-03-31</font></label>'
@@ -3102,6 +3104,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         self.assertEqual(len(cached), 4)
         self.assertEqual(cached[0]["reportDate"], "2026-03-31")
 
+    @patch.object(server, "current_fund_holding_report_date", new=partial(server.current_fund_holding_report_date, as_of=date(2026, 5, 18)))
     def test_fund_holdings_without_refresh_reads_sqlite(self) -> None:
         server.store_fund_holdings(
             "457001",
@@ -3124,6 +3127,7 @@ class ServerDataRefreshTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["457001"][0]["sinaSymbol"], "gb_tsm")
 
+    @patch.object(server, "current_fund_holding_report_date", new=partial(server.current_fund_holding_report_date, as_of=date(2026, 5, 18)))
     def test_fund_holdings_refresh_falls_back_to_sqlite_on_empty_upstream(self) -> None:
         server.store_fund_holdings(
             "457001",

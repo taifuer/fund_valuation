@@ -62,7 +62,7 @@ describe('non-US company release checks', () => {
       ok: true,
       status: 200,
       headers: { get: () => 'text/html' },
-      text: async () => '<h2>Second Quarter 2026 Results</h2>',
+      text: async () => '<a href="/2026-q2.pdf">Second Quarter 2026 Results</a>',
     } as unknown as Response);
 
     await expect(probeCompanyReleaseSource(sampleCompany, freshness, fetchImpl))
@@ -83,5 +83,26 @@ describe('non-US company release checks', () => {
       .resolves.toMatchObject({ status: '访问受限', error: 'HTTP 403' });
     await expect(probeCompanyReleaseSource(sampleCompany, freshness, response(404)))
       .resolves.toMatchObject({ status: '来源异常', error: 'HTTP 404' });
+  });
+
+  it.each([
+    '<h2>Second Quarter 2026 Results</h2>',
+    '<a href="/q2-2026-earnings-invitation.pdf">Q2 2026 Earnings Conference Invitation</a>',
+    '<a href="/q2-2026-guidance">Q2 2026 Earnings Guidance</a>',
+    '<a href="/q2-2026-results">Q2 2026 Preliminary Results</a>',
+    '<a href="/q2-2026-results">2026年第二季度业绩预告</a>',
+    '<a href="/2026-q1.pdf">2026 Q1 Results</a><h2>2026 Q2 Results</h2>',
+  ])('does not infer a published report from an invitation, guidance or bare period mention', async (body) => {
+    const fetchImpl = async () => new Response(body, { headers: { 'content-type': 'text/html' } });
+    const result = await probeCompanyReleaseSource(sampleCompany, freshness, fetchImpl);
+    expect(result.status).toBe('需要人工核查');
+    expect(result.candidateLinks?.filter(link => link.period === freshness.expectedPeriod)).toEqual([]);
+  });
+
+  it('accepts a real report alongside an invitation', () => {
+    expect(extractReportCandidates(
+      '<a href="/2026-q2-invitation.pdf">2026 Q2 invitation</a><a href="/2026-q2.pdf">2026 Q2 Results</a>',
+      sampleCompany.sourceUrl, ['FY2026 Q2'],
+    )).toHaveLength(1);
   });
 });

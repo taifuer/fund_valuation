@@ -134,8 +134,9 @@ export function extractReportCandidates(body: string, baseUrl: string, periods: 
     try { decodedUrl = decodeURI(decodedUrl); } catch { /* keep the original URL */ }
     const evidence = `${link.title} ${decodedUrl}`;
     const key = `${period}:${link.url}`;
+    const schedulingOnly = /invitation|\binvite\b|guidance|preliminary|\bcalendar\b|will\s+(?:report|announce|release)|to\s+(?:report|announce|release)|邀请|邀請|预告|預告|业绩预期|業績預期|公告日期|发布日期|發佈日期|잠정|안내/i.test(evidence);
     if (seen.has(key) || !/\.pdf(?:[?#]|$)|report|results|earnings|报告|報告|业绩|業績|실적/i.test(evidence)
-      || !sourceMentionsExpectedPeriod(evidence, period)) return false;
+      || schedulingOnly || !sourceMentionsExpectedPeriod(evidence, period)) return false;
     seen.add(key);
     return true;
   }).map(link => ({ period, ...link })));
@@ -185,10 +186,10 @@ export async function probeCompanyReleaseSource(
     const periods = [...new Set([...company.annual, ...company.halfYear, ...company.quarterly].map(point => point.period))];
     if (freshness.expectedPeriod) periods.push(freshness.expectedPeriod);
     const candidateLinks = extractReportCandidates(body, company.sourceUrl, periods);
-    if (sourceMentionsExpectedPeriod(body, freshness.expectedPeriod)) {
+    if (candidateLinks.some(link => link.period === freshness.expectedPeriod)) {
       return { ...common, status: '命中报告候选', candidateLinks };
     }
-    if (freshness.status === 'review') {
+    if (freshness.status === 'review' || sourceMentionsExpectedPeriod(body, freshness.expectedPeriod)) {
       return { ...common, status: '需要人工核查', candidateLinks };
     }
     return { ...common, status: '来源可用', candidateLinks };

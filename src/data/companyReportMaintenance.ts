@@ -9,6 +9,7 @@ export interface CompanyReportFreshness {
   expectedPeriod?: string;
   expectedPeriodEnd?: string;
   reviewAfter?: string;
+  checkFrom?: string;
 }
 
 export interface SecRecentFilings {
@@ -202,6 +203,8 @@ export function assessCompanyReportFreshness(
     : nextQuarter(latest.period);
   const expectedPeriodEnd = addMonths(latest.periodEnd, halfYearCadence ? 6 : 3);
   const reviewAfter = addDays(expectedPeriodEnd, REVIEW_LAG_DAYS[company.region]);
+  // Start discovery early; the conservative escalation date is not a publication deadline.
+  const checkFrom = [addDays(expectedPeriodEnd, 7), addDays(reviewAfter, -upcomingDays)].sort()[0];
   const daysUntilReview = Math.ceil(
     (parseDate(reviewAfter).getTime() - parseDate(asOf).getTime()) / 86_400_000,
   );
@@ -209,12 +212,13 @@ export function assessCompanyReportFreshness(
   return {
     status: daysUntilReview < 0
       ? 'review'
-      : daysUntilReview <= upcomingDays ? 'upcoming' : 'current',
+      : asOf >= checkFrom ? 'upcoming' : 'current',
     latestPeriod: latest.period,
     latestPeriodEnd: latest.periodEnd,
     expectedPeriod,
     expectedPeriodEnd,
     reviewAfter,
+    checkFrom,
   };
 }
 

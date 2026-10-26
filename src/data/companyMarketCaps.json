@@ -2371,6 +2371,13 @@
       "currency": "TWD",
       "sourceUrl": "https://stockanalysis.com/quote/tpe/2330/financials/ratios/?p=quarterly",
       "retrievedAt": "2026-10-12T12:57:59.686Z"
+    },
+    {
+      "periodEnd": "2026-09-30",
+      "value": 64312277600000,
+      "currency": "TWD",
+      "sourceUrl": "https://stockanalysis.com/quote/tpe/2330/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-10-26T12:26:28.320Z"
     }
   ],
   "mediatek": [
@@ -3329,6 +3336,13 @@
       "currency": "USD",
       "sourceUrl": "https://stockanalysis.com/stocks/nflx/financials/ratios/?p=quarterly",
       "retrievedAt": "2026-10-12T12:58:06.256Z"
+    },
+    {
+      "periodEnd": "2026-09-30",
+      "value": 289726922656,
+      "currency": "USD",
+      "sourceUrl": "https://stockanalysis.com/stocks/nflx/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-10-26T12:25:05.323Z"
     }
   ],
   "visa": [
@@ -3907,6 +3921,13 @@
       "currency": "USD",
       "sourceUrl": "https://stockanalysis.com/stocks/ibm/financials/ratios/?p=quarterly",
       "retrievedAt": "2026-10-12T12:58:12.851Z"
+    },
+    {
+      "periodEnd": "2026-09-30",
+      "value": 207203616393,
+      "currency": "USD",
+      "sourceUrl": "https://stockanalysis.com/stocks/ibm/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-10-26T12:25:54.270Z"
     }
   ],
   "microsoft": [
@@ -6163,6 +6184,13 @@
       "currency": "USD",
       "sourceUrl": "https://stockanalysis.com/stocks/txn/financials/ratios/?p=quarterly",
       "retrievedAt": "2026-10-12T12:58:29.201Z"
+    },
+    {
+      "periodEnd": "2026-09-30",
+      "value": 255791544372,
+      "currency": "USD",
+      "sourceUrl": "https://stockanalysis.com/stocks/txn/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-10-26T12:25:59.825Z"
     }
   ],
   "cisco": [
@@ -7141,6 +7169,13 @@
       "currency": "USD",
       "sourceUrl": "https://stockanalysis.com/stocks/tsla/financials/ratios/?p=quarterly",
       "retrievedAt": "2026-10-12T12:58:36.317Z"
+    },
+    {
+      "periodEnd": "2026-09-30",
+      "value": 1401338910865,
+      "currency": "USD",
+      "sourceUrl": "https://stockanalysis.com/stocks/tsla/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-10-26T12:26:04.565Z"
     }
   ],
   "jnj": [
@@ -7255,6 +7290,13 @@
       "currency": "USD",
       "sourceUrl": "https://stockanalysis.com/stocks/jnj/financials/ratios/?p=quarterly",
       "retrievedAt": "2026-10-12T12:58:38.509Z"
+    },
+    {
+      "periodEnd": "2026-09-27",
+      "value": 653612697478,
+      "currency": "USD",
+      "sourceUrl": "https://stockanalysis.com/stocks/jnj/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-10-26T12:26:10.178Z"
     }
   ],
   "lilly": [
@@ -8330,6 +8372,13 @@
       "currency": "USD",
       "sourceUrl": "https://stockanalysis.com/stocks/meta/financials/ratios/?p=quarterly",
       "retrievedAt": "2026-10-12T12:58:49.069Z"
+    },
+    {
+      "periodEnd": "2026-09-30",
+      "value": 1847400564246,
+      "currency": "USD",
+      "sourceUrl": "https://stockanalysis.com/stocks/meta/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-10-26T12:26:16.953Z"
     }
   ],
   "micron": [
@@ -10060,6 +10109,13 @@
       "currency": "USD",
       "sourceUrl": "https://stockanalysis.com/stocks/asml/market-cap/",
       "retrievedAt": "2026-10-12T13:34:21.114Z"
+    },
+    {
+      "periodEnd": "2026-09-27",
+      "value": 666389710465,
+      "currency": "USD",
+      "sourceUrl": "https://stockanalysis.com/stocks/asml/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-10-26T12:26:22.367Z"
     }
   ],
   "siemens": [
@@ -10845,6 +10901,13 @@
       "currency": "INR",
       "sourceUrl": "https://stockanalysis.com/quote/nse/TCS/financials/ratios/?p=quarterly",
       "retrievedAt": "2026-10-12T12:59:11.253Z"
+    },
+    {
+      "periodEnd": "2026-09-30",
+      "value": 7419250264411,
+      "currency": "INR",
+      "sourceUrl": "https://stockanalysis.com/quote/nse/TCS/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-10-26T12:26:39.199Z"
     }
   ],
   "sk-hynix": [

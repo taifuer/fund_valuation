@@ -38,6 +38,24 @@ function company(overrides: Partial<CompanyFundamentals> = {}): CompanyFundament
 }
 
 describe('company report maintenance', () => {
+  it('starts discovery one week after quarter end without declaring a report overdue', () => {
+    const sample = company();
+    expect(assessCompanyReportFreshness(sample, '2026-07-06').status).toBe('current');
+    expect(assessCompanyReportFreshness(sample, '2026-07-07')).toMatchObject({
+      status: 'upcoming', checkFrom: '2026-07-07', reviewAfter: '2026-09-03',
+    });
+    expect(assessCompanyReportFreshness(sample, '2026-09-04').status).toBe('review');
+  });
+
+  it('discovers September reports during October rather than waiting until November', () => {
+    const sample = company({ region: 'usa', quarterly: [{ ...company().quarterly[0],
+      period: 'FY2026 Q2', periodEnd: '2026-06-30',
+    }] });
+    expect(assessCompanyReportFreshness(sample, '2026-10-26')).toMatchObject({
+      status: 'upcoming', expectedPeriod: 'FY2026 Q3', checkFrom: '2026-10-07',
+    });
+  });
+
   it('flags companies approaching their conservative review window', () => {
     expect(assessCompanyReportFreshness(company(), '2026-08-27')).toMatchObject({
       status: 'upcoming',

@@ -10,7 +10,7 @@ export default defineCompany({
   "currency": "CNY",
   "sourceName": "宁德时代投资者关系",
   "sourceUrl": "https://www.catl.com/investors/",
-  "methodologyNote": "营业利润和研发费用采用合并利润表费用化口径；员工规模变化需结合动力电池和储能产能扩张观察。",
+  "methodologyNote": "营业利润和研发费用采用合并利润表费用化口径，单季值按累计值减去上一累计期间计算；员工规模变化需结合动力电池和储能产能扩张观察。",
   "employeeScope": "年末在职员工",
   "employeeMarkers": [
     {
@@ -26,6 +26,7 @@ export default defineCompany({
   ],
   "moneyScale": MILLION,
   "researchAndDevelopment": {
+    "halfYear": { "FY2026 H1": 11376.545 },
     "annual": {
       "FY2018": 1991.000385,
       "FY2019": 2992.107517,
@@ -70,9 +71,11 @@ export default defineCompany({
       "FY2025 Q3": 4973.26,
       "FY2025 Q4": 7078.755,
       "FY2026 Q1": 5313.772,
-      "FY2026 Q2": 6062.773
+      "FY2026 Q2": 6062.773,
+      "FY2026 Q3": 7140.441
     }
   },
+  "halfYear": [["FY2026 H1", "2026-06-30", 276916.580, 55664.757]],
   "annual": [
     [
       "FY2018",
@@ -335,6 +338,24 @@ export default defineCompany({
       "2026-06-30",
       147785.539,
       29013.466
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      165220.844,
+      25268.302
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-21",
+    "sourceLabel": "宁德时代 2026 年第三季度报告",
+    "sourceUrl": "https://static.cninfo.com.cn/finalpage/2026-10-21/1225613175.PDF"
+  },
+  "reportReferences": [{
+    "period": "FY2026 H1",
+    "publishedAt": "2026-07-24",
+    "sourceLabel": "宁德时代 2026 年半年度报告（Q3 差分基期）",
+    "sourceUrl": "https://static.cninfo.com.cn/finalpage/2026-07-24/1225442062.PDF"
+  }]
 });

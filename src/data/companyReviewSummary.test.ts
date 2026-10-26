@@ -18,6 +18,12 @@ describe('company maintenance coverage', () => {
     expect(companyReviewMarkdown(base)).toContain('reachability is not verification');
   });
 
+  it('separates calendar reminders from discovered disclosures in offline output', () => {
+    const report = { ...base, offline: true, calendarCandidates: [{ company: 'Sample' }] };
+    expect(summarizeCompanyReview(report)).toMatchObject({ calendarReviewCount: 1, pendingCompanies: [] });
+    expect(companyReviewMarkdown(report)).toContain('Calendar review window: 1 companies');
+  });
+
   it('deduplicates pending disclosures while keeping distinct amendments', () => {
     const item = { company: 'Micron', source: 'https://www.sec.gov/a', kind: '新报告期' };
     const report = { ...base, sec: { ...base.sec!, candidates: [item, item, { ...item, source: 'https://www.sec.gov/b' }] } };

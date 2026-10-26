@@ -11,11 +11,17 @@ export default defineCompany({
   "sourceName": "Texas Instruments 投资者关系",
   "sourceUrl": "https://investor.ti.com/financial-information/earnings-annual-reports",
   "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-23",
+    "sourceLabel": "Texas Instruments FY2026 第三季度 Form 10-Q",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/97476/000009747626000169/txn-20260930.htm"
+  },
+  "reportReferences": [{
     "period": "FY2026 Q2",
     "publishedAt": "2026-07-24",
     "sourceLabel": "Texas Instruments FY2026 第二季度 Form 10-Q",
     "sourceUrl": "https://www.sec.gov/Archives/edgar/data/97476/000009747626000152/txn-20260630.htm"
-  },
+  }],
   "methodologyNote": "营业收入、营业利润与研发费用采用 U.S. GAAP；FY2020 起员工人数采用公司年报披露约数。",
   "employeeScope": "年末全球员工（FY2018-FY2019 为精确值，此后为官方约数）",
   "moneyScale": MILLION,
@@ -64,7 +70,8 @@ export default defineCompany({
       "FY2025 Q3": 518,
       "FY2025 Q4": 521,
       "FY2026 Q1": 510,
-      "FY2026 Q2": 535
+      "FY2026 Q2": 535,
+      "FY2026 Q3": 530
     }
   },
   "annual": [
@@ -329,6 +336,12 @@ export default defineCompany({
       "2026-06-30",
       5463,
       2310
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      6055,
+      2874
     ]
   ]
 });

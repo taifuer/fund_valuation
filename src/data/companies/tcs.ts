@@ -278,6 +278,19 @@ export default defineCompany({
       722750,
       173460,
       593798
+    ],
+    [
+      "FY2027 Q2",
+      "2026-09-30",
+      731880,
+      175530,
+      598056
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2027 Q2",
+    "publishedAt": "2026-10-08",
+    "sourceLabel": "TCS FY2027 Q2 卢比版官方业绩公告（公开存档）",
+    "sourceUrl": "https://financialfilings.com/filings/tata-consultancy-services-ltd/earnings-release/2026/67715417/"
+  }
 });

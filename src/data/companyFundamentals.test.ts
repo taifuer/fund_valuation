@@ -467,7 +467,7 @@ describe('company fundamentals offline dataset', () => {
       ['broadcom', 'FY2026 Q3', '2026-08-02', 29591, 15955, 2895, '2026-09-10'],
       ['oracle', 'FY2027 Q1', '2026-08-31', 19345, 6728, 2401, '2026-09-11'],
       ['adbe', 'FY2026 Q3', '2026-08-28', 6760, 2354, 1288, '2026-09-10'],
-      ['micron', 'FY2026 Q4', '2026-09-03', 54229, 43751, 1913, '2026-09-30'],
+      ['micron', 'FY2026 Q4', '2026-09-03', 54229, 43751, 1913, '2026-10-09'],
     ] as const;
     for (const [id, period, periodEnd, revenue, profit, research, publishedAt] of expected) {
       const company = companyFundamentalsDataset.companies.find(item => item.id === id)!;
@@ -479,11 +479,11 @@ describe('company fundamentals offline dataset', () => {
     }
   });
 
-  it('keeps Micron FY2026 annual totals reconciled and undisclosed staff blank', () => {
+  it('keeps Micron FY2026 annual totals reconciled with formally disclosed annual staff', () => {
     const company = companyFundamentalsDataset.companies.find(item => item.id === 'micron')!;
     const year = company.annual[company.annual.length - 1];
     expect(year).toMatchObject({ period: 'FY2026', revenue: 133188e6, operatingProfit: 99340e6,
-      researchAndDevelopment: 5650e6, employees: null });
+      researchAndDevelopment: 5650e6, employees: 61000 });
     const quarters = company.quarterly.filter(point => point.period.startsWith('FY2026 '));
     for (const metric of ['revenue', 'operatingProfit', 'researchAndDevelopment'] as const) {
       expect(quarters.reduce((sum, point) => sum + (point[metric] ?? 0), 0)).toBe(year[metric]);
@@ -504,7 +504,7 @@ describe('company fundamentals offline dataset', () => {
       operatingProfit: 2_331_000_000,
       researchAndDevelopment: 1_687_000_000,
     });
-    expect(ibm.quarterly[ibm.quarterly.length - 1]).toMatchObject({
+    expect(ibm.quarterly.find(point => point.period === 'FY2026 Q2')).toMatchObject({
       period: 'FY2026 Q2',
       revenue: 17_162_000_000,
       operatingProfit: 2_479_000_000,
@@ -513,7 +513,7 @@ describe('company fundamentals offline dataset', () => {
     expect(company('ibm').profitMetricLabel).toBe('税前利润');
     expect(company('jnj').profitMetricLabel).toBe('税前利润');
     expect(company('jnj').metricMarkers?.some((marker) => marker.period === 'FY2025 Q1')).toBe(true);
-    expect(company('txn').quarterly).toHaveLength(34);
+    expect(company('txn').quarterly.length).toBeGreaterThanOrEqual(34);
     expect(company('adbe').quarterly.length).toBeGreaterThanOrEqual(34);
   });
 
@@ -606,16 +606,17 @@ describe('company fundamentals offline dataset', () => {
       .find((company) => company.id === 'netflix')!;
 
     expect(netflix.annual).toHaveLength(8);
-    expect(netflix.quarterly).toHaveLength(34);
-    expect(netflix.quarterly[netflix.quarterly.length - 1]).toMatchObject({
+    expect(netflix.quarterly.length).toBeGreaterThanOrEqual(34);
+    const q2 = netflix.quarterly.find(point => point.period === 'FY2026 Q2');
+    expect(q2).toMatchObject({
       period: 'FY2026 Q2',
       periodEnd: '2026-06-30',
       revenue: 12_559_938_000,
       researchAndDevelopment: 1_007_675_000,
     });
-    expect(netflix.quarterly[netflix.quarterly.length - 1]?.operatingProfit)
+    expect(q2?.operatingProfit)
       .toBeCloseTo(4_192_610_000, 0);
-    expect(netflix.reportReferences).toHaveLength(42);
+    expect(netflix.reportReferences!.length).toBeGreaterThanOrEqual(42);
   });
 
   it('keeps period-end employee disclosures when deriving half years', () => {

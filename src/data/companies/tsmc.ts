@@ -9,7 +9,13 @@ export default defineCompany({
   "regionLabel": "中国台湾",
   "currency": "TWD",
   "sourceName": "台积电投资者关系",
-  "sourceUrl": "https://investor.tsmc.com/english/quarterly-results/2026/q2",
+  "sourceUrl": "https://investor.tsmc.com/english/quarterly-results",
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-15",
+    "sourceLabel": "TSMC FY2026 Q3 合并财务报表",
+    "sourceUrl": "https://investor.tsmc.com/english/encrypt/files/encrypt_file/reports/2026-10/3a94d1034b9e6b22446b674f7aaf3d088a12a193/FS.pdf"
+  },
   "employeeScope": "年末全球员工",
   "moneyScale": MILLION,
   "researchAndDevelopment": {
@@ -58,7 +64,8 @@ export default defineCompany({
       "FY2025 Q3": 63743,
       "FY2025 Q4": 64857,
       "FY2026 Q1": 67757,
-      "FY2026 Q2": 73146.138
+      "FY2026 Q2": 73146.138,
+      "FY2026 Q3": 88979
     }
   },
   "annual": [
@@ -330,6 +337,12 @@ export default defineCompany({
       "2026-06-30",
       1270380,
       766600
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      1494243,
+      876445
     ]
   ]
 });

@@ -43,7 +43,7 @@ const localCandidates = selected
     latest: `${freshness.latestPeriod} · ${freshness.latestPeriodEnd}`,
     expected: `${freshness.expectedPeriod} · ${freshness.expectedPeriodEnd}`,
     reviewAfter: freshness.reviewAfter,
-    status: freshness.status === 'review' ? '需要核查' : '即将进入核查窗口',
+    status: freshness.status === 'review' ? '需要核查' : '披露核查窗口（不代表已披露）',
     source: company.sourceUrl,
   }));
 

@@ -64,7 +64,8 @@ export default defineCompany({
       "FY2025 Q3": 1108.7,
       "FY2025 Q4": 1262.3,
       "FY2026 Q1": 1184.9,
-      "FY2026 Q2": 1276.6
+      "FY2026 Q2": 1276.6,
+      "FY2026 Q3": 1174.4
     }
   },
   "annual": [
@@ -329,6 +330,18 @@ export default defineCompany({
       "2026-06-30",
       9326.5,
       3456.1
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-27",
+      11662,
+      5172.8
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-14",
+    "sourceLabel": "ASML FY2026 Q3 US GAAP 财务报表",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/937966/000162828026065813/financial_statementsxusx.htm"
+  }
 });

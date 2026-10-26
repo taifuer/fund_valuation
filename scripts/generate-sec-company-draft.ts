@@ -58,7 +58,7 @@ if (ticker) {
 } else {
   const companies = secDomesticCompanies(companyFundamentalsDataset.companies);
   const failures: string[] = [];
-  const results = await mapWithConcurrency(companies, 4, async (company) => {
+  const results = await mapWithConcurrency(companies, 1, async (company) => {
     const cik = cikByTicker.get(company.ticker.toUpperCase());
     if (cik == null) {
       failures.push(`${company.name}: ticker ${company.ticker} not found`);

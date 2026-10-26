@@ -18,8 +18,8 @@ export const PARTIAL_RESEARCH_DISCLOSURE_PERIODS: Readonly<Record<string, readon
 };
 
 export const companyFundamentalsDataset: CompanyFundamentalsDataset = {
-  version: 18,
-  updatedAt: '2026-10-03',
+  version: 19,
+  updatedAt: '2026-10-26',
   coverage: '52 家公司 · 年度最长 9 年 · 季度最长 38 期',
   methodology: [
     '营业收入与利润指标保留公司原始披露币种及报表口径，具体利润口径以页面标签为准。',
