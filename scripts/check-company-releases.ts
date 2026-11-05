@@ -134,7 +134,7 @@ if (!offline) {
   const nonUsCompanies = selected
     .filter((company) => company.region !== 'usa');
   const probes = await mapWithConcurrency(nonUsCompanies, 1, async (company) => (
-    probeCompanyReleaseSource(company, assessCompanyReportFreshness(company, asOf))
+    probeCompanyReleaseSource(company, assessCompanyReportFreshness(company, asOf), fetch, asOf)
   ));
   const actionable = probes.filter((probe) => probe.status !== '来源可用');
   const nonUsCandidates = probes.filter((probe) => probe.status === '命中报告候选');

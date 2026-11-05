@@ -7,6 +7,7 @@ import {
   probeCompanyReleaseSource,
   sourceMentionsExpectedPeriod,
   extractReportCandidates,
+  cninfoReportCandidates,
 } from '../../scripts/lib/company-releases';
 
 const sampleCompany: CompanyFundamentals = {
@@ -58,12 +59,9 @@ describe('non-US company release checks', () => {
   });
 
   it('marks a matching official page as a candidate for manual verification', async () => {
-    const fetchImpl = async () => ({
-      ok: true,
-      status: 200,
-      headers: { get: () => 'text/html' },
-      text: async () => '<a href="/2026-q2.pdf">Second Quarter 2026 Results</a>',
-    } as unknown as Response);
+    const fetchImpl = async () => new Response('<a href="/2026-q2.pdf">Second Quarter 2026 Results</a>', {
+      headers: { 'content-type': 'text/html' },
+    });
 
     await expect(probeCompanyReleaseSource(sampleCompany, freshness, fetchImpl))
       .resolves.toMatchObject({
@@ -88,6 +86,8 @@ describe('non-US company release checks', () => {
   it.each([
     '<h2>Second Quarter 2026 Results</h2>',
     '<a href="/q2-2026-earnings-invitation.pdf">Q2 2026 Earnings Conference Invitation</a>',
+    '<a href="/q2-2026.pdf">Announcement of Webcast Conference Call on Q2 2026 Results</a>',
+    '<a href="/q2-2026.pdf">Q2 2026 Results Conference Call Access Details</a>',
     '<a href="/q2-2026-guidance">Q2 2026 Earnings Guidance</a>',
     '<a href="/q2-2026-results">Q2 2026 Preliminary Results</a>',
     '<a href="/q2-2026-results">2026年第二季度业绩预告</a>',
@@ -104,5 +104,62 @@ describe('non-US company release checks', () => {
       '<a href="/2026-q2-invitation.pdf">2026 Q2 invitation</a><a href="/2026-q2.pdf">2026 Q2 Results</a>',
       sampleCompany.sourceUrl, ['FY2026 Q2'],
     )).toHaveLength(1);
+  });
+
+  it('keeps actual conference presentations', () => {
+    expect(extractReportCandidates(
+      '<a href="/2026_3Q_conference_eng.pdf">3Q 2026 Financial Results</a>',
+      sampleCompany.sourceUrl, ['FY2026 Q3'],
+    )).toHaveLength(1);
+  });
+
+  it('does not let an archive folder year override the report title year', () => {
+    expect(extractReportCandidates('<a href="/2025/Q4-2024-results.pdf">Q4 2024 Results</a>',
+      sampleCompany.sourceUrl, ['FY2025 Q4'])).toEqual([]);
+  });
+
+  it('validates CNINFO company, period, path and publication cutoff', () => {
+    const row = { secCode: '002594', announcementTitle: '2026年三季度报告', adjunctUrl: 'finalpage/2026-10-30/1225641442.PDF' };
+    expect(cninfoReportCandidates([
+      row, { ...row, secCode: '600276' }, { ...row, announcementTitle: '2026年三季度报告摘要' },
+      { ...row, adjunctUrl: 'https://example.com/report.pdf' },
+      { ...row, adjunctUrl: 'finalpage/2026-11-06/1225641442.PDF' },
+      { ...row, announcementTitle: '2025年三季度报告' },
+    ], '002594', ['FY2026 Q3'], '2026-11-05')).toEqual([
+      { period: 'FY2026 Q3', title: row.announcementTitle, url: `https://static.cninfo.com.cn/${row.adjunctUrl}` },
+    ]);
+  });
+
+  it('finds a Q2 candidate in a Chinese half-year report', () => {
+    expect(cninfoReportCandidates([
+      { secCode: '002594', announcementTitle: '2026年半年度报告', adjunctUrl: 'finalpage/2026-08-29/1225531835.PDF' },
+    ], '002594', ['FY2026 Q2'], '2026-11-05')).toHaveLength(1);
+  });
+
+  it('checks BYD regulatory announcements after a dynamic or inaccessible IR archive', async () => {
+    for (const status of [200, 403]) {
+      const requests: string[] = [];
+      const fetchImpl = async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push(String(url));
+        if (requests.length === 1) return new Response('<div id="app"></div>', { status, headers: { 'content-type': 'text/html' } });
+        expect(init?.method).toBe('POST');
+        expect(String(init?.body)).toContain('002594%2Cgshk0001211');
+        return new Response(JSON.stringify({ totalAnnouncement: 1, hasMore: false, announcements: [
+          { secCode: '002594', announcementTitle: '2026年三季度报告', adjunctUrl: 'finalpage/2026-10-30/1225641442.PDF' },
+        ] }));
+      };
+      const result = await probeCompanyReleaseSource({ ...sampleCompany, id: 'byd' },
+        { ...freshness, expectedPeriod: 'FY2026 Q3' }, fetchImpl, '2026-11-05');
+      expect(requests).toHaveLength(2);
+      expect(result).toMatchObject({ status: '命中报告候选', provider: '巨潮资讯' });
+      expect(result.candidateLinks).toHaveLength(1);
+    }
+  });
+
+  it('does not report fallback errors as no new reports', async () => {
+    const result = await probeCompanyReleaseSource({ ...sampleCompany, id: 'byd' }, freshness,
+      async () => new Response('not JSON', { headers: { 'content-type': 'text/html' } }), '2026-11-05');
+    expect(result.status).toBe('来源异常');
+    expect(result.error).toContain('CNINFO');
   });
 });

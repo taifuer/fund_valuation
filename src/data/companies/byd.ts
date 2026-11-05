@@ -11,12 +11,16 @@ export default defineCompany({
   "sourceName": "比亚迪投资者关系",
   "sourceUrl": "https://www.bydglobal.com/en/investorannals.html?scroll=true",
   "latestReport": {
-    "period": "FY2026 Q2",
-    "publishedAt": "2026-08-28",
-    "sourceLabel": "比亚迪 2026 年中期业绩",
-    "sourceUrl": "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0828/2026082801633.pdf"
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-30",
+    "sourceLabel": "比亚迪 2026 年第三季度报告",
+    "sourceUrl": "https://static.cninfo.com.cn/finalpage/2026-10-30/1225641442.PDF"
   },
-  "methodologyNote": "营业利润和研发费用采用合并利润表费用化口径；员工规模变化需结合产能扩张和组织效率调整观察。",
+  "reportReferences": [
+    { "period": "FY2026 Q2", "publishedAt": "2026-08-28", "sourceLabel": "比亚迪 2026 年中期业绩", "sourceUrl": "https://www1.hkexnews.hk/listedco/listconews/sehk/2026/0828/2026082801633.pdf" },
+    { "period": "FY2026 H1", "publishedAt": "2026-08-29", "sourceLabel": "比亚迪 2026 年半年度报告", "sourceUrl": "https://static.cninfo.com.cn/finalpage/2026-08-29/1225531835.PDF" }
+  ],
+  "methodologyNote": "营业利润和研发费用采用合并利润表费用化口径；第三季度由前三季度累计减半年报得到。员工规模变化需结合产能扩张和组织效率调整观察。",
   "employeeScope": "年末在职员工",
   "employeeMarkers": [
     {
@@ -81,9 +85,12 @@ export default defineCompany({
       "FY2025 Q3": 14152.081,
       "FY2025 Q4": 14229.658,
       "FY2026 Q1": 11343.566,
-      "FY2026 Q2": 11963.586
-    }
+      "FY2026 Q2": 11963.586,
+      "FY2026 Q3": 12969.986
+    },
+    "halfYear": { "FY2026 H1": 23307.152 }
   },
+  "halfYear": [["FY2026 H1", "2026-06-30", 344815.421, 14743.578]],
   "annual": [
     [
       "FY2018",
@@ -346,6 +353,12 @@ export default defineCompany({
       "2026-06-30",
       194590.107,
       10047.689
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      221488.251,
+      12268.165
     ]
   ]
 });

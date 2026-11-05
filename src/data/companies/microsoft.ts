@@ -55,7 +55,8 @@ export default defineCompany({
       "FY2026 Q1": 8146,
       "FY2026 Q2": 8504,
       "FY2026 Q3": 8915,
-      "FY2026 Q4": 9997
+      "FY2026 Q4": 9997,
+      "FY2027 Q1": 9047
     }
   },
   "annual": [
@@ -308,6 +309,18 @@ export default defineCompany({
       "2026-06-30",
       90007,
       40603
+    ],
+    [
+      "FY2027 Q1",
+      "2026-09-30",
+      92279,
+      45915
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2027 Q1",
+    "publishedAt": "2026-10-28",
+    "sourceLabel": "微软 FY2027 Q1 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/789019/000119312526436133/msft-20260930.htm"
+  }
 });

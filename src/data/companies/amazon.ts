@@ -301,6 +301,19 @@ export default defineCompany({
       200606,
       27461,
       1595000
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      201944,
+      28076,
+      1638000
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-29",
+    "sourceLabel": "亚马逊 FY2026 Q3 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1018724/000101872426000038/amzn-20260930xex991.htm"
+  }
 });

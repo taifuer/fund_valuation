@@ -25,6 +25,18 @@ export default defineCompany({
       "period": "FY2024 Q2",
       "label": "项目减值",
       "note": "FY2024 Q2 研发费用包含约 DKK 57 亿的 ocedurenone 项目减值。"
+    },
+    {
+      "metric": "researchAndDevelopment",
+      "period": "FY2026 Q3",
+      "label": "项目减值",
+      "note": "FY2026 Q3 披露研发费用 199.03 亿丹麦克朗，含 46.48 亿重大减值；使用报告值而非调整后的研发费用。"
+    },
+    {
+      "metric": "operatingProfit",
+      "period": "FY2026 Q3",
+      "label": "重大减值",
+      "note": "FY2026 Q3 营业利润含合计 87.09 亿丹麦克朗重大减值；不以调整后的 317.20 亿替代报告值 230.11 亿。"
     }
   ],
   "moneyScale": MILLION,
@@ -73,7 +85,8 @@ export default defineCompany({
       "FY2025 Q3": 15393,
       "FY2025 Q4": 14648,
       "FY2026 Q1": 10284,
-      "FY2026 Q2": 17787
+      "FY2026 Q2": 17787,
+      "FY2026 Q3": 19903
     }
   },
   "annual": [
@@ -350,6 +363,18 @@ export default defineCompany({
       "2026-06-30",
       78488,
       27061
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      79195,
+      23011
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-11-04",
+    "sourceLabel": "诺和诺德 FY2026 Q3 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/353278/000162828026069805/caq32026.htm"
+  }
 });

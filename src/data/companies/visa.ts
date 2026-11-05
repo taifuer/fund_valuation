@@ -69,6 +69,12 @@ export default defineCompany({
       40000,
       23994,
       34100
+    ],
+    [
+      "FY2026",
+      "2026-09-30",
+      45903,
+      28110
     ]
   ],
   "quarterly": [
@@ -281,6 +287,26 @@ export default defineCompany({
       "2026-06-30",
       11633,
       6877
+    ],
+    [
+      "FY2026 Q4",
+      "2026-09-30",
+      12139,
+      7262
     ]
-  ]
+  ],
+  "reportReferences": [
+    {
+      "period": "FY2026 Q4",
+      "publishedAt": "2026-10-27",
+      "sourceLabel": "Visa FY2026 Q4 财务报告",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1403161/000140316126000126/q42026earningsrelease.htm"
+    }
+  ],
+  "latestReport": {
+    "period": "FY2026",
+    "publishedAt": "2026-10-27",
+    "sourceLabel": "Visa FY2026 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1403161/000140316126000126/q42026earningsrelease.htm"
+  }
 });

@@ -58,7 +58,8 @@ export default defineCompany({
       "FY2025 Q3": 523.662,
       "FY2025 Q4": 615.423,
       "FY2026 Q1": 541.224,
-      "FY2026 Q2": 612.28
+      "FY2026 Q2": 612.28,
+      "FY2026 Q3": 660.784
     }
   },
   "annual": [
@@ -323,6 +324,18 @@ export default defineCompany({
       "2026-06-30",
       1705.071,
       325.047
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      1889.815,
+      418.675
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-11-05",
+    "sourceLabel": "百济神州 FY2026 Q3 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1651308/000162828026070477/bgne-20260930.htm"
+  }
 });

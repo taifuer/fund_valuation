@@ -50,7 +50,8 @@ export default defineCompany({
       "FY2025 Q3": 144.191,
       "FY2025 Q4": 143.554,
       "FY2026 Q1": 160.981,
-      "FY2026 Q2": 192.513
+      "FY2026 Q2": 192.513,
+      "FY2026 Q3": 219.72
     }
   },
   "annual": [
@@ -265,6 +266,18 @@ export default defineCompany({
       "2026-06-30",
       1935.464,
       912.004
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      2313.411,
+      1084.845
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-11-03",
+    "sourceLabel": "Palantir FY2026 Q3 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1321655/000132165526000048/pltr-20260930.htm"
+  }
 });

@@ -1,6 +1,7 @@
 import type { CompanyFundamentals } from '../../src/types';
 import type { CompanyReportFreshness } from '../../src/data/companyReportMaintenance';
 import { parse, type DefaultTreeAdapterMap } from 'parse5';
+import { readReportText } from './report-response';
 
 export type CompanyReleaseProvider =
   | '港交所'
@@ -63,7 +64,12 @@ export function expectedPeriodSearchTerms(period: string): string[] {
       `${year} ${ordinal} quarter`,
       `${year}年第${chineseOrdinal}季度`,
       `${year}年第${chineseOrdinal}季度报告`,
+      `${year}年${chineseOrdinal}季度报告`,
+      `${year}年第${chineseOrdinal}季度報告`,
+      `${year}年${chineseOrdinal}季度報告`,
       `${year} ${number}분기`,
+      ...(number === '2' ? [`${year}年半年度报告`, `${year}年半年度報告`] : []),
+      ...(number === '4' ? [`${year}年年度报告`, `${year}年年度報告`] : []),
     ];
   }
 
@@ -134,7 +140,9 @@ export function extractReportCandidates(body: string, baseUrl: string, periods: 
     try { decodedUrl = decodeURI(decodedUrl); } catch { /* keep the original URL */ }
     const evidence = `${link.title} ${decodedUrl}`;
     const key = `${period}:${link.url}`;
-    const schedulingOnly = /invitation|\binvite\b|guidance|preliminary|\bcalendar\b|will\s+(?:report|announce|release)|to\s+(?:report|announce|release)|邀请|邀請|预告|預告|业绩预期|業績預期|公告日期|发布日期|發佈日期|잠정|안내/i.test(evidence);
+    const titleYears: string[] = link.title.match(/\b20\d{2}\b/g) ?? [];
+    if (titleYears.length && !titleYears.includes(period.slice(2, 6))) return false;
+    const schedulingOnly = /invitation|\binvite\b|guidance|preliminary|\bcalendar\b|will\s+(?:report|announce|release)|to\s+(?:report|announce|release)|announcement\s+of\s+(?:a\s+)?(?:webcast\s+)?conference\s+call|conference\s+call\s+(?:access|registration|details)|邀请|邀請|预告|預告|业绩预期|業績預期|公告日期|发布日期|發佈日期|잠정|안내/i.test(evidence);
     if (seen.has(key) || !/\.pdf(?:[?#]|$)|report|results|earnings|报告|報告|业绩|業績|실적/i.test(evidence)
       || schedulingOnly || !sourceMentionsExpectedPeriod(evidence, period)) return false;
     seen.add(key);
@@ -142,7 +150,7 @@ export function extractReportCandidates(body: string, baseUrl: string, periods: 
   }).map(link => ({ period, ...link })));
 }
 
-export async function probeCompanyReleaseSource(
+async function probeInvestorRelations(
   company: CompanyFundamentals,
   freshness: CompanyReportFreshness,
   fetchImpl: FetchLike = fetch,
@@ -180,9 +188,8 @@ export async function probeCompanyReleaseSource(
 
     const contentType = response.headers.get('content-type') ?? '';
     const body = contentType.includes('html') || contentType.includes('text')
-      ? await response.text()
+      ? await readReportText(response)
       : '';
-    if (body.length > 2_000_000) throw new Error('Report archive exceeds size limit');
     const periods = [...new Set([...company.annual, ...company.halfYear, ...company.quarterly].map(point => point.period))];
     if (freshness.expectedPeriod) periods.push(freshness.expectedPeriod);
     const candidateLinks = extractReportCandidates(body, company.sourceUrl, periods);
@@ -201,5 +208,73 @@ export async function probeCompanyReleaseSource(
       status: accessRestricted ? '访问受限' : '来源异常',
       error: message,
     };
+  }
+}
+
+interface CninfoAnnouncement {
+  secCode?: string;
+  announcementTitle?: string;
+  adjunctUrl?: string;
+}
+
+export function cninfoReportCandidates(
+  announcements: readonly CninfoAnnouncement[], code: string, periods: readonly string[], asOf: string,
+) {
+  return announcements.flatMap(item => {
+    if (item.secCode !== code || typeof item.announcementTitle !== 'string'
+      || typeof item.adjunctUrl !== 'string') return [];
+    const path = /^finalpage\/(\d{4}-\d{2}-\d{2})\/\d+\.pdf$/i.exec(item.adjunctUrl);
+    if (!path || path[1] > asOf || /摘要|取消|预约|預約|预告|預告/.test(item.announcementTitle)) return [];
+    const title = item.announcementTitle;
+    return periods.filter(period => sourceMentionsExpectedPeriod(title, period))
+      .map(period => ({ period, title, url: `https://static.cninfo.com.cn/${item.adjunctUrl}` }));
+  });
+}
+
+export async function probeCompanyReleaseSource(
+  company: CompanyFundamentals,
+  freshness: CompanyReportFreshness,
+  fetchImpl: FetchLike = fetch,
+  asOf = new Date().toISOString().slice(0, 10),
+): Promise<CompanyReleaseProbe> {
+  const primary = await probeInvestorRelations(company, freshness, fetchImpl);
+  // BYD's IR archive is dynamic; CNINFO's verified A-share identity also uses its HK org ID.
+  if (company.id !== 'byd' || primary.status === '命中报告候选') return primary;
+  const source = 'https://www.cninfo.com.cn/new/hisAnnouncement/query';
+  try {
+    const response = await fetchImpl(source, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'fund-valuation company-data maintenance taifu@taifua.com',
+        Referer: 'https://www.cninfo.com.cn/',
+      },
+      body: new URLSearchParams({
+        pageNum: '1', pageSize: '30', column: 'szse', tabName: 'fulltext',
+        stock: '002594,gshk0001211', searchkey: '',
+        category: 'category_ndbg_szsh;category_bndbg_szsh;category_yjdbg_szsh;category_sjdbg_szsh;',
+        seDate: `${asOf.slice(0, 4)}-01-01~${asOf}`, isHLtitle: 'false',
+      }),
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = JSON.parse(await readReportText(response)) as {
+      announcements?: CninfoAnnouncement[] | null; totalAnnouncement?: number; hasMore?: boolean;
+    };
+    if (!Number.isFinite(payload.totalAnnouncement)
+      || (payload.announcements != null && !Array.isArray(payload.announcements))) {
+      throw new Error('Invalid CNINFO response');
+    }
+    const periods = [...new Set([...company.annual, ...company.halfYear, ...company.quarterly]
+      .map(point => point.period))];
+    if (freshness.expectedPeriod) periods.push(freshness.expectedPeriod);
+    const candidateLinks = cninfoReportCandidates(payload.announcements ?? [], '002594', periods, asOf);
+    const status = candidateLinks.some(link => link.period === freshness.expectedPeriod)
+      ? '命中报告候选' : payload.hasMore || freshness.status === 'review' ? '需要人工核查' : '来源可用';
+    return { ...primary, provider: '巨潮资讯', source, status, candidateLinks, error: undefined };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ...primary, status: /401|403|429|abort|timeout/i.test(message) ? '访问受限' : '来源异常',
+      error: `CNINFO fallback: ${message}` };
   }
 }

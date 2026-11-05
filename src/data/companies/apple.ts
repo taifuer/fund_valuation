@@ -21,7 +21,8 @@ export default defineCompany({
       "FY2022": 26251,
       "FY2023": 29915,
       "FY2024": 31370,
-      "FY2025": 34550
+      "FY2025": 34550,
+      "FY2026": 45765
     },
     "quarterly": {
       "FY2018 Q1": 3407,
@@ -58,7 +59,8 @@ export default defineCompany({
       "FY2025 Q4": 8866,
       "FY2026 Q1": 10887,
       "FY2026 Q2": 11419,
-      "FY2026 Q3": 11729
+      "FY2026 Q3": 11729,
+      "FY2026 Q4": 11730
     }
   },
   "annual": [
@@ -117,6 +119,13 @@ export default defineCompany({
       416161,
       133050,
       166000
+    ],
+    [
+      "FY2026",
+      "2026-09-26",
+      478834,
+      158063,
+      167000
     ]
   ],
   "quarterly": [
@@ -329,6 +338,26 @@ export default defineCompany({
       "2026-06-27",
       109417,
       35695
+    ],
+    [
+      "FY2026 Q4",
+      "2026-09-26",
+      114477,
+      35631
     ]
-  ]
+  ],
+  "reportReferences": [
+    {
+      "period": "FY2026 Q4",
+      "publishedAt": "2026-11-02",
+      "sourceLabel": "苹果 FY2026 Q4 财务报告",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000024/a8-kex991q4202609262026.htm"
+    }
+  ],
+  "latestReport": {
+    "period": "FY2026",
+    "publishedAt": "2026-11-03",
+    "sourceLabel": "苹果 FY2026 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/320193/000032019326000026/aapl-20260926.htm"
+  }
 });

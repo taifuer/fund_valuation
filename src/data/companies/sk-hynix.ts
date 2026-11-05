@@ -293,6 +293,18 @@ export default defineCompany({
       "2026-06-30",
       79318.7,
       60542.6
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      104615.5,
+      83333.8
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-28",
+    "sourceLabel": "SK 海力士 FY2026 Q3 财务报告",
+    "sourceUrl": "https://news.skhynix.com/en/q3-2026-business-results/"
+  }
 });

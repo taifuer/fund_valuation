@@ -486,15 +486,16 @@ describe('CompaniesPage', () => {
     render(<CompaniesPage />);
 
     const chart = screen.getByRole('img', { name: '三星电子营业收入同比趋势' });
-    const plottedPoints = Array.from(chart.querySelectorAll('circle'))
-      .filter((circle) => circle.getAttribute('r') !== '14');
+    // Dense series intentionally omit interior dots; assert the full line domain instead.
+    const plottedPoints = [...(chart.querySelector('path')?.getAttribute('d') ?? '')
+      .matchAll(/[ML] ([\d.]+) ([\d.]+)/g)];
     const chartWidth = Number(chart.getAttribute('width'));
     const expectedLeft = axisLabelWidth(Array.from(chart.querySelectorAll('text')).filter(text => text.getAttribute('text-anchor') === 'end' && Number(text.getAttribute('y')) < 254).map(text => text.textContent ?? ''));
     const expectedRight = chartWidth - 18;
 
     expect(plottedPoints.length).toBeGreaterThan(2);
-    expect(plottedPoints[0]).toHaveAttribute('cx', String(expectedLeft));
-    expect(plottedPoints[plottedPoints.length - 1]).toHaveAttribute('cx', String(expectedRight));
+    expect(Number(plottedPoints[0][1])).toBe(expectedLeft);
+    expect(Number(plottedPoints[plottedPoints.length - 1][1])).toBe(expectedRight);
   });
 
   it('uses a single keyboard focus stop and keeps the reading and crosshair synchronized', () => {

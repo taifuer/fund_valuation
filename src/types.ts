@@ -56,6 +56,11 @@ export interface Fund {
   estimateMode?: FundEstimateMode;
   strategy?: FundStrategy;
   trackingIndex?: string;
+  holdingsReport?: {
+    reportDate: string;
+    publishedAt: string;
+    sourceUrl: string;
+  };
   benchmark?: FundBenchmark;
   profile?: {
     inceptionDate: string;

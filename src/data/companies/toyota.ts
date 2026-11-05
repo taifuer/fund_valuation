@@ -63,7 +63,9 @@ export default defineCompany({
       "FY2026 Q1": 355.8,
       "FY2026 Q2": 354.4,
       "FY2026 Q3": 372.9,
-      "FY2026 Q4": 439.5
+      "FY2026 Q4": 439.5,
+      "FY2027 Q1": 383.2,
+      "FY2027 Q2": 412.9
     }
   },
   "annual": [
@@ -355,6 +357,19 @@ export default defineCompany({
       13525.4,
       1063.4,
       367990
+    ],
+    [
+      "FY2027 Q2",
+      "2026-09-30",
+      13437,
+      1127.6,
+      367173
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2027 Q2",
+    "publishedAt": "2026-11-05",
+    "sourceLabel": "丰田汽车 FY2027 Q2 财务报告",
+    "sourceUrl": "https://global.toyota/pages/global_toyota/ir/financial-results/2027_2q_summary_en.pdf"
+  }
 });

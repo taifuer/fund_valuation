@@ -2445,7 +2445,8 @@ def store_fund_holdings(code: str, holdings: list[dict[str, Any]]) -> bool:
             points,
         )
         source_code = fund_holdings_source_code(code)
-        source_url = f"https://fundf10.eastmoney.com/ccmx_{source_code}.html" if code not in CONFIGURED_FUND_PORTFOLIO_CODES else ""
+        source_url = (str(holdings[0].get('sourceUrl') or '') if code in CONFIGURED_FUND_PORTFOLIO_CODES
+                      else f"https://fundf10.eastmoney.com/ccmx_{source_code}.html")
         revision = hashlib.sha256(json.dumps(fund_holdings_signature(holdings)).encode()).hexdigest()[:16]
         conn.execute("""
             INSERT INTO fund_disclosure_metadata(code, report_date, holdings_count, holdings_weight, source_url, revision, checked_at)

@@ -10,7 +10,16 @@ export default defineCompany({
   "currency": "CNY",
   "sourceName": "恒瑞医药定期报告",
   "sourceUrl": "https://www.hengrui.com/investor/regularAnnouncement.html",
-  "methodologyNote": "研发费用采用利润表费用化口径，不含资本化部分，可能低于公司披露的研发总投入。",
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-27",
+    "sourceLabel": "恒瑞医药 2026 年第三季度报告",
+    "sourceUrl": "https://manager.wisdomir.com/files/760/2026/1027/20261027173001_75231679_tc.pdf"
+  },
+  "reportReferences": [
+    { "period": "FY2026 H1", "publishedAt": "2026-08-20", "sourceLabel": "恒瑞医药 2026 年半年度报告", "sourceUrl": "https://static.cninfo.com.cn/finalpage/2026-08-20/1225483600.PDF" }
+  ],
+  "methodologyNote": "研发费用采用利润表费用化口径，不含资本化部分，可能低于公司披露的研发总投入。第三季度利润与研发费用由前三季度累计减半年报得到，保留原始报表精度后再取整。",
   "employeeScope": "年末在职员工",
   "moneyScale": MILLION,
   "researchAndDevelopment": {
@@ -38,9 +47,12 @@ export default defineCompany({
       "FY2025 Q3": 1717.385,
       "FY2025 Q4": 2015.837,
       "FY2026 Q1": 1650.625,
-      "FY2026 Q2": 1842.287
-    }
+      "FY2026 Q2": 1842.287,
+      "FY2026 Q3": 1930.058
+    },
+    "halfYear": { "FY2026 H1": 3492.912 }
   },
+  "halfYear": [["FY2026 H1", "2026-06-30", 15455.584, 5087.742]],
   "annual": [
     [
       "FY2018",
@@ -303,6 +315,12 @@ export default defineCompany({
       "2026-06-30",
       7315.018,
       2480.299
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      8953.179,
+      2906.151
     ]
   ]
 });

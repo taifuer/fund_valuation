@@ -21,7 +21,8 @@ export default defineCompany({
       "FY2022": 8194,
       "FY2023": 8818,
       "FY2024": 8893,
-      "FY2025": 9042
+      "FY2025": 9042,
+      "FY2026": 10207
     },
     "quarterly": {
       "FY2018 Q1": 1420,
@@ -58,7 +59,8 @@ export default defineCompany({
       "FY2025 Q4": 2370,
       "FY2026 Q1": 2453,
       "FY2026 Q2": 2463,
-      "FY2026 Q3": 2607
+      "FY2026 Q3": 2607,
+      "FY2026 Q4": 2684
     }
   },
   "annual": [
@@ -117,6 +119,13 @@ export default defineCompany({
       44284,
       12355,
       52000
+    ],
+    [
+      "FY2026",
+      "2026-09-27",
+      43120,
+      8658,
+      57000
     ]
   ],
   "quarterly": [
@@ -329,6 +338,26 @@ export default defineCompany({
       "2026-06-28",
       9947,
       1626
+    ],
+    [
+      "FY2026 Q4",
+      "2026-09-27",
+      10322,
+      1356
     ]
-  ]
+  ],
+  "reportReferences": [
+    {
+      "period": "FY2026 Q4",
+      "publishedAt": "2026-11-04",
+      "sourceLabel": "高通 FY2026 Q4 财务报告",
+      "sourceUrl": "https://www.sec.gov/Archives/edgar/data/804328/000080432826000127/qcom092726erex991.htm"
+    }
+  ],
+  "latestReport": {
+    "period": "FY2026",
+    "publishedAt": "2026-11-04",
+    "sourceLabel": "高通 FY2026 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/804328/000080432826000128/qcom-20260927.htm"
+  }
 });

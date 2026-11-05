@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { resolveCompanyReportReference } from './companyReportSources';
 import {
   COMPANIES_WITHOUT_COMPARABLE_RESEARCH_DISCLOSURE,
   PARTIAL_RESEARCH_DISCLOSURE_PERIODS,
@@ -261,7 +262,7 @@ describe('company fundamentals offline dataset', () => {
       operatingProfit: 10_047_689_000,
       researchAndDevelopment: 11_963_586_000,
     });
-    expect(byd.latestReport?.sourceUrl).toContain('hkexnews.hk');
+    expect(resolveCompanyReportReference(byd, bydQuarter).sourceUrl).toContain('hkexnews.hk');
   });
 
   it('retains official exact and approximate employee disclosures with explicit scope', () => {

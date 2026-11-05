@@ -12,6 +12,14 @@ export default defineCompany({
   "sourceUrl": "https://investor.lilly.com/financial-information/fundamentals/income-statement",
   "methodologyNote": "营业利润采用 GAAP 口径；FY2018 采用 Elanco 剥离后的持续经营重述值；研发费用不含单独列示的已取得在研项目费用。",
   "employeeScope": "年末全球员工（公司披露约数）",
+  "metricMarkers": [
+    {
+      "metric": "operatingProfit",
+      "period": "FY2026 Q3",
+      "label": "在研项目费用",
+      "note": "FY2026 Q3 营业利润包含 41.81 亿美元已取得在研项目费用；该项单独列示，不重复计入研发费用序列。"
+    }
+  ],
   "moneyScale": MILLION,
   "researchAndDevelopment": {
     "annual": {
@@ -58,7 +66,8 @@ export default defineCompany({
       "FY2025 Q3": 3465.7,
       "FY2025 Q4": 3801.3,
       "FY2026 Q1": 3510,
-      "FY2026 Q2": 3819
+      "FY2026 Q2": 3819,
+      "FY2026 Q3": 4247
     }
   },
   "annual": [
@@ -323,6 +332,18 @@ export default defineCompany({
       "2026-06-30",
       22974,
       8978
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      24397,
+      8608
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-29",
+    "sourceLabel": "礼来 FY2026 Q3 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/59478/000005947826000108/lly-20260930.htm"
+  }
 });

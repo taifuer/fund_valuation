@@ -58,7 +58,8 @@ export default defineCompany({
       "FY2025 Q3": 3231,
       "FY2025 Q4": 3219,
       "FY2026 Q1": 3375,
-      "FY2026 Q2": 3368
+      "FY2026 Q2": 3368,
+      "FY2026 Q3": 3490
     }
   },
   "annual": [
@@ -323,6 +324,18 @@ export default defineCompany({
       "2026-06-27",
       16128,
       1796
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-26",
+      16513,
+      2522
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-30",
+    "sourceLabel": "英特尔 FY2026 Q3 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/50863/000005086326000191/intc-20260926.htm"
+  }
 });

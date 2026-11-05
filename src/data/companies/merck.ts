@@ -65,7 +65,8 @@ export default defineCompany({
       "FY2025 Q3": 4234,
       "FY2025 Q4": 3886,
       "FY2026 Q1": 12592,
-      "FY2026 Q2": 9741
+      "FY2026 Q2": 9741,
+      "FY2026 Q3": 4537
     }
   },
   "annual": [
@@ -282,6 +283,18 @@ export default defineCompany({
       "2026-06-30",
       16607,
       -584
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      18085,
+      5586
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-11-04",
+    "sourceLabel": "默沙东 FY2026 Q3 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/310158/000031015826000248/mrk-20260930.htm"
+  }
 });

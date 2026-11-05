@@ -65,7 +65,8 @@ export default defineCompany({
       "FY2025 Q3": 2546,
       "FY2025 Q4": 3206,
       "FY2026 Q1": 2490,
-      "FY2026 Q2": 2809
+      "FY2026 Q2": 2809,
+      "FY2026 Q3": 3016
     }
   },
   "annual": [
@@ -282,6 +283,18 @@ export default defineCompany({
       "2026-06-30",
       15034,
       3063
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-27",
+      16583,
+      3673
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-11-03",
+    "sourceLabel": "辉瑞 FY2026 Q3 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/78003/000007800326000127/pfe-20260927.htm"
+  }
 });

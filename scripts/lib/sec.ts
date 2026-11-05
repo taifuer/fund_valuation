@@ -1,4 +1,5 @@
 import type { CompanyFundamentals } from '../../src/types';
+import { readReportText } from './report-response';
 import type {
   SecPeriodicFiling,
   SecRecentFilings,
@@ -69,9 +70,7 @@ export function secArchiveUrl(cik: number, filing: Pick<SecPeriodicFiling, 'acce
 export async function fetchSecText(url: string): Promise<string> {
   const response = await fetch(url, { headers: SEC_HEADERS, signal: AbortSignal.timeout(20_000) });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${url}`);
-  const body = await response.text();
-  if (body.length > 2_000_000) throw new Error(`SEC announcement exceeds size limit: ${url}`);
-  return body;
+  return readReportText(response);
 }
 
 export function secDomesticCompanies(

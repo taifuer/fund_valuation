@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import re
 import threading
+from datetime import date
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 
@@ -148,6 +150,17 @@ def load_universe() -> dict[str, Any]:
             holdings = fund.get("holdings")
             if not isinstance(holdings, list):
                 raise RuntimeError(f"Invalid holdings for fund {code}")
+            report = fund.get('holdingsReport')
+            if report is not None:
+                try:
+                    report_date = date.fromisoformat(report['reportDate'])
+                    published = date.fromisoformat(report['publishedAt'])
+                    source = urlparse(report['sourceUrl'])
+                    if ((report_date.month, report_date.day) not in {(3, 31), (6, 30), (9, 30), (12, 31)}
+                            or published < report_date or source.scheme != 'https' or not source.hostname):
+                        raise ValueError('Invalid disclosure')
+                except (KeyError, TypeError, ValueError, AttributeError) as exc:
+                    raise RuntimeError(f"Invalid holdings report for fund {code}") from exc
         _CACHE = payload
         return payload
 
@@ -275,7 +288,8 @@ def default_fund_holdings(code: str) -> list[dict[str, Any]]:
         if not isinstance(fund, dict) or str(fund.get("code")) != code:
             continue
         profile = fund.get("profile") if isinstance(fund.get("profile"), dict) else {}
-        report_date = str(profile.get("scaleDate") or "")
+        report = fund.get('holdingsReport') or {}
+        report_date = str(report.get('reportDate') or profile.get("scaleDate") or "")
         rows: list[dict[str, Any]] = []
         for rank, holding in enumerate(fund.get("holdings", []), start=1):
             if not isinstance(holding, dict):
@@ -296,6 +310,7 @@ def default_fund_holdings(code: str) -> list[dict[str, Any]]:
                 "sinaSymbol": sina_symbol,
                 "currency": str(holding.get("currency") or "CNY"),
                 "quoteSupported": quote_supported_symbol(sina_symbol, holding.get("quoteSupported")),
+                "sourceUrl": str(report.get('sourceUrl') or ''),
             })
         return rows
     return []

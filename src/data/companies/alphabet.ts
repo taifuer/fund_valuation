@@ -57,7 +57,8 @@ export default defineCompany({
       "FY2025 Q3": 15151,
       "FY2025 Q4": 18572,
       "FY2026 Q1": 17032,
-      "FY2026 Q2": 18219
+      "FY2026 Q2": 18219,
+      "FY2026 Q3": 20640
     }
   },
   "annual": [
@@ -348,6 +349,19 @@ export default defineCompany({
       119796,
       40770,
       198933
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      127577,
+      40576,
+      204757
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-28",
+    "sourceLabel": "谷歌 FY2026 Q3 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1652044/000165204426000080/googexhibit991q32026.htm"
+  }
 });

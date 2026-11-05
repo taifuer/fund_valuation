@@ -10,7 +10,13 @@ export default defineCompany({
   "currency": "KRW",
   "sourceName": "Samsung Earnings Release",
   "sourceUrl": "https://www.samsung.com/global/ir/financial-information/earnings-release/",
-  "methodologyNote": "研发费用采用扣除政府补助及资本化金额后的当期费用；Q2-Q4 由官方累计披露与前期相减得到。",
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-29",
+    "sourceLabel": "三星电子 2026 年第三季度业绩",
+    "sourceUrl": "https://images.samsung.com/is/content/samsung/assets/global/ir/docs/2026_3Q_conference_eng.pdf"
+  },
+  "methodologyNote": "研发费用采用扣除政府补助及资本化金额后的当期费用；历史 Q2-Q4 由官方累计披露与前期相减得到。FY2026 Q3 采用业绩材料附录利润表的单季披露，金额精度为 0.1 万亿韩元，未经外部审阅。",
   "employeeScope": "年末全球员工",
   "moneyScale": BILLION,
   "researchAndDevelopment": {
@@ -56,7 +62,8 @@ export default defineCompany({
       "FY2025 Q1": 9032.741,
       "FY2025 Q2": 9019.29,
       "FY2025 Q3": 8824.05,
-      "FY2025 Q4": 10864.311
+      "FY2025 Q4": 10864.311,
+      "FY2026 Q3": 14400
     }
   },
   "annual": [
@@ -321,6 +328,12 @@ export default defineCompany({
       "2026-06-30",
       171500,
       89500
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      195300,
+      107400
     ]
   ]
 });

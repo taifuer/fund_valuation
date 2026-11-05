@@ -2719,11 +2719,16 @@ class ServerDataRefreshTests(unittest.TestCase):
         ):
             result = server.refresh_latest_fund_holdings(["501312"], force_refresh=True)
 
-        self.assertEqual(result["latestReports"], {"501312": "2026-06-30"})
+        self.assertEqual(result["latestReports"], {"501312": "2026-09-30"})
         holdings = server.read_fund_holdings_from_db("501312")
-        self.assertEqual(holdings[0]["stockCode"], "ARKK")
-        self.assertEqual(holdings[0]["sinaSymbol"], "gb_arkk")
-        self.assertAlmostEqual(holdings[0]["weight"], 0.1848)
+        self.assertEqual(holdings[0]["stockCode"], "ARKG")
+        self.assertEqual(holdings[0]["sinaSymbol"], "gb_arkg")
+        self.assertAlmostEqual(holdings[0]["weight"], 0.1971)
+        self.assertAlmostEqual(sum(row['weight'] for row in holdings), 0.9361)
+        with server.get_conn() as conn:
+            source = conn.execute("SELECT source_url FROM fund_disclosure_metadata WHERE code=? AND report_date=?",
+                                  ('501312', '2026-09-30')).fetchone()[0]
+        self.assertIn('5611617.pdf', source)
 
     def test_latest_holding_refresh_does_not_replace_newer_report(self) -> None:
         latest_rows = [{

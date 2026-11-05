@@ -1842,6 +1842,11 @@
       "symbol": "501312",
       "name": "华宝海外科技A",
       "code": "501312",
+      "holdingsReport": {
+        "reportDate": "2026-09-30",
+        "publishedAt": "2026-10-27",
+        "sourceUrl": "https://static.howbuy.com/gkxx/ggfile/2026/2026-10/2026-10-27/5611617.pdf"
+      },
       "shareClass": "A",
       "navCurrency": "CNY",
       "strategy": "active",
@@ -1856,18 +1861,18 @@
       },
       "holdings": [
         {
-          "symbol": "ARKK",
-          "name": "ARK Innovation ETF",
-          "sinaSymbol": "gb_arkk",
-          "weight": 0.1848,
+          "symbol": "ARKG",
+          "name": "ARK Genomic Revolution ETF",
+          "sinaSymbol": "gb_arkg",
+          "weight": 0.1971,
           "market": "us",
           "currency": "USD"
         },
         {
-          "symbol": "ARKG",
-          "name": "ARK Genomic Revolution ETF",
-          "sinaSymbol": "gb_arkg",
-          "weight": 0.1693,
+          "symbol": "ARKK",
+          "name": "ARK Innovation ETF",
+          "sinaSymbol": "gb_arkk",
+          "weight": 0.1872,
           "market": "us",
           "currency": "USD"
         },
@@ -1875,7 +1880,7 @@
           "symbol": "ARKQ",
           "name": "ARK Autonomous Technology & Robotics ETF",
           "sinaSymbol": "gb_arkq",
-          "weight": 0.1015,
+          "weight": 0.1096,
           "market": "us",
           "currency": "USD"
         },
@@ -1883,7 +1888,7 @@
           "symbol": "AIQ",
           "name": "Global X Artificial Intelligence & Technology ETF",
           "sinaSymbol": "gb_aiq",
-          "weight": 0.0632,
+          "weight": 0.0944,
           "market": "us",
           "currency": "USD"
         },
@@ -1891,7 +1896,15 @@
           "symbol": "BOTZ",
           "name": "Global X Robotics & Artificial Intelligence ETF",
           "sinaSymbol": "gb_botz",
-          "weight": 0.0505,
+          "weight": 0.0781,
+          "market": "us",
+          "currency": "USD"
+        },
+        {
+          "symbol": "XLK",
+          "name": "State Street Technology Select Sector SPDR ETF",
+          "sinaSymbol": "gb_xlk",
+          "weight": 0.0624,
           "market": "us",
           "currency": "USD"
         },
@@ -1899,15 +1912,15 @@
           "symbol": "ARKX",
           "name": "ARK Space & Defense Innovation ETF",
           "sinaSymbol": "gb_arkx",
-          "weight": 0.05,
+          "weight": 0.0609,
           "market": "us",
           "currency": "USD"
         },
         {
-          "symbol": "XLK",
-          "name": "Technology Select Sector SPDR ETF",
-          "sinaSymbol": "gb_xlk",
-          "weight": 0.0467,
+          "symbol": "QQQ",
+          "name": "Invesco QQQ Trust Series 1",
+          "sinaSymbol": "gb_qqq",
+          "weight": 0.0533,
           "market": "us",
           "currency": "USD"
         },
@@ -1915,7 +1928,7 @@
           "symbol": "SMH",
           "name": "VanEck Semiconductor ETF",
           "sinaSymbol": "gb_smh",
-          "weight": 0.0439,
+          "weight": 0.0473,
           "market": "us",
           "currency": "USD"
         },
@@ -1923,15 +1936,7 @@
           "symbol": "SOXX",
           "name": "iShares Semiconductor ETF",
           "sinaSymbol": "gb_soxx",
-          "weight": 0.0333,
-          "market": "us",
-          "currency": "USD"
-        },
-        {
-          "symbol": "QQQ",
-          "name": "Invesco QQQ Trust",
-          "sinaSymbol": "gb_qqq",
-          "weight": 0.0327,
+          "weight": 0.0458,
           "market": "us",
           "currency": "USD"
         }

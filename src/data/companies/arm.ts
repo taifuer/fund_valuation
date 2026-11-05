@@ -37,7 +37,8 @@ export default defineCompany({
       "FY2026 Q2": 691,
       "FY2026 Q3": 737,
       "FY2026 Q4": 698,
-      "FY2027 Q1": 838
+      "FY2027 Q1": 838,
+      "FY2027 Q2": 857
     }
   },
   "annual": [
@@ -179,6 +180,18 @@ export default defineCompany({
       "2026-06-30",
       1289,
       91
+    ],
+    [
+      "FY2027 Q2",
+      "2026-09-30",
+      1443,
+      201
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2027 Q2",
+    "publishedAt": "2026-11-04",
+    "sourceLabel": "Arm FY2027 Q2 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/1973239/000197323926000142/arm-20260930.htm"
+  }
 });

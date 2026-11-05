@@ -8,6 +8,27 @@ from backend import config
 
 
 class FundConfigTests(unittest.TestCase):
+    def test_configured_holdings_use_disclosure_date_not_asset_scale_date(self):
+        payload = copy.deepcopy(config.load_universe())
+        fund = next(item for item in payload['funds'] if item['code'] == '501312')
+        fund['profile']['scaleDate'] = '2026-12-31'
+        with patch.object(config, '_CACHE', payload):
+            rows = config.default_fund_holdings('501312')
+        self.assertEqual({row['reportDate'] for row in rows}, {'2026-09-30'})
+        self.assertTrue(all(row['sourceUrl'].endswith('5611617.pdf') for row in rows))
+
+    def test_rejects_invalid_holdings_disclosure_metadata(self):
+        for report in ([], {}, {'reportDate': '2026-09-31'},
+                       {'reportDate': '2026-09-30', 'publishedAt': '2026-09-29', 'sourceUrl': 'https://example.com/report.pdf'},
+                       {'reportDate': '2026-09-30', 'publishedAt': '2026-10-27', 'sourceUrl': 'javascript:alert(1)'}):
+            payload = copy.deepcopy(config.load_universe())
+            payload['funds'][0]['holdingsReport'] = report
+            with patch.object(config, '_CACHE', None), patch.object(
+                type(config.UNIVERSE_FILE), 'open', return_value=io.StringIO(json.dumps(payload)),
+            ):
+                with self.assertRaisesRegex(RuntimeError, 'holdings report'):
+                    config.load_universe()
+
     def test_market_status_scope_excludes_holdings_and_archived_or_close_only_assets(self):
         payload = copy.deepcopy(config.load_universe())
         payload['indices'] = [

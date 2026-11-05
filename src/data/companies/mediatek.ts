@@ -58,7 +58,8 @@ export default defineCompany({
       "FY2025 Q3": 36353,
       "FY2025 Q4": 39248,
       "FY2026 Q1": 38345,
-      "FY2026 Q2": 39361
+      "FY2026 Q2": 39361,
+      "FY2026 Q3": 42237
     }
   },
   "annual": [
@@ -323,6 +324,18 @@ export default defineCompany({
       "2026-06-30",
       152183,
       22868
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-30",
+      168058,
+      27102
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-10-30",
+    "sourceLabel": "联发科 FY2026 Q3 财务报告",
+    "sourceUrl": "https://www.mediatek.com/hubfs/MediaTek-Assets/Pdfs/Quarterly%20Earnings%20Release/2026/Quarterly%20Earnings%20Release-2026Q3/Financial%20Statements.pdf"
+  }
 });

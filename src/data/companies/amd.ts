@@ -65,7 +65,8 @@ export default defineCompany({
       "FY2025 Q3": 2139,
       "FY2025 Q4": 2330,
       "FY2026 Q1": 2397,
-      "FY2026 Q2": 2528
+      "FY2026 Q2": 2528,
+      "FY2026 Q3": 2803
     }
   },
   "annual": [
@@ -330,6 +331,18 @@ export default defineCompany({
       "2026-06-27",
       11536,
       1990
+    ],
+    [
+      "FY2026 Q3",
+      "2026-09-26",
+      13377,
+      2832
     ]
-  ]
+  ],
+  "latestReport": {
+    "period": "FY2026 Q3",
+    "publishedAt": "2026-11-04",
+    "sourceLabel": "AMD FY2026 Q3 财务报告",
+    "sourceUrl": "https://www.sec.gov/Archives/edgar/data/2488/000000248826000191/amd-20260926.htm"
+  }
 });
