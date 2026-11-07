@@ -64,11 +64,12 @@ for (const company of targets) {
     // Backfilled observations cannot validate their own source on a later run.
     const references = old.filter(point => new URL(point.sourceUrl).pathname.endsWith('/financials/ratios/'));
     const path = marketCapListingPaths[company.id] ?? `stocks/${company.ticker.toLowerCase()}`;
+    const allowWeekend = company.region === 'usa' || path.startsWith('quote/hkg/');
     await run('stockanalysis', async () => {
       const url = `https://stockanalysis.com/${path}/market-cap/`;
       const response = await fetchPage(`${company.id}-stockanalysis`, url);
       const history = parseStockAnalysisMarketCapHistory(response.body, url, response.retrievedAt, currency);
-      return verifiedHistoryAdditions(old, alignMarketCapHistory(dates, history, company.region === 'usa'), references);
+      return verifiedHistoryAdditions(old, alignMarketCapHistory(dates, history, allowWeekend), references);
     });
     const slug = marketCapHistorySlugs[company.id];
     if (slug && ['USD', 'EUR', 'HKD', 'INR'].includes(currency)) await run('cmc', async () => {
@@ -76,7 +77,7 @@ for (const company of targets) {
       const url = `https://companiesmarketcap.com/${prefix}${slug}/marketcap/`;
       const response = await fetchPage(`${company.id}-cmc`, url);
       const history = parseCmcMarketCaps(response.body, url, response.retrievedAt, currency);
-      return verifiedHistoryAdditions(old, alignMarketCapHistory(dates, history, company.region === 'usa'), references);
+      return verifiedHistoryAdditions(old, alignMarketCapHistory(dates, history, allowWeekend), references);
     });
   }
   const count = rows.length - old.length;

@@ -452,6 +452,11 @@
   composes: line from './ChartBase.module.css';
 }
 
+.disclosureBridge {
+  composes: line from './ChartBase.module.css';
+  stroke-dasharray: 5 4;
+}
+
 .crosshair { composes: crosshair from './ChartBase.module.css'; }
 
 .chartPoint {

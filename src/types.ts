@@ -344,7 +344,7 @@ export interface CompanyFundamentalPoint {
   period: string;
   periodEnd: string;
   revenue: number;
-  operatingProfit: number;
+  operatingProfit: number | null;
   researchAndDevelopment: number | null;
   employees: number | null;
   marketCap?: CompanyMarketCapObservation;

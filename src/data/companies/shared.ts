@@ -11,7 +11,7 @@ export type RawPoint = readonly [
   period: string,
   periodEnd: string,
   revenue: number,
-  operatingProfit: number,
+  operatingProfit: number | null,
   employees?: number,
 ];
 
@@ -58,7 +58,7 @@ function points(
     period,
     periodEnd,
     revenue: revenue * moneyScale,
-    operatingProfit: operatingProfit * moneyScale,
+    operatingProfit: operatingProfit == null ? null : operatingProfit * moneyScale,
     researchAndDevelopment: researchAndDevelopment[period] == null
       ? null
       : researchAndDevelopment[period] * moneyScale,

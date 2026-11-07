@@ -118,7 +118,7 @@ export function alignMarketCapHistory(
       if (periodEnd === monthEnd && sameMonth && gap <= 7
         && ((point.bucket === 'annual' && target.getUTCMonth() === 11)
           || (point.bucket === 'quarterly' && [2, 5, 8, 11].includes(target.getUTCMonth())))) return true;
-      // A Friday/Saturday observation can cover a US fiscal weekend, never a missing trading weekday.
+      // US/HK weekend period ends may use the preceding session, never a missing trading weekday.
       return allowWeekend && [0, 6].includes(target.getUTCDay()) && gap <= (target.getUTCDay() === 0 ? 2 : 1);
     }).sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
     const found = candidates[0];

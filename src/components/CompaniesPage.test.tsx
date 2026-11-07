@@ -50,6 +50,54 @@ describe('CompaniesPage', () => {
     expect(screen.getByText(/未上市，不展示推测估值/)).toBeInTheDocument();
   });
 
+  it('connects sparse employee disclosures without filling unreported quarters or half years', () => {
+    window.history.replaceState({}, '', '/companies?company=chinaMobile&metric=employees');
+    render(<CompaniesPage />);
+    const chart = screen.getByRole('img', { name: '中国移动员工人数趋势' });
+    expect(chart.querySelectorAll('circle')).toHaveLength(11);
+    const bridges = screen.getByTestId('company-disclosure-bridges');
+    expect(bridges.getAttribute('d')?.match(/L /g)).toHaveLength(10);
+    expect(screen.getByText(/虚线连接相邻披露点/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '同比' }));
+    expect(screen.getByTestId('company-disclosure-bridges')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '半年' }));
+    expect(screen.getByTestId('company-disclosure-bridges')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '营业收入' }));
+    expect(screen.queryByText(/虚线连接相邻披露点/)).not.toBeInTheDocument();
+  });
+
+  it('shows missing historical profit and margin as unavailable, without artificial zeroes', () => {
+    window.history.replaceState({}, '', '/companies?company=chinaMobile&period=annual');
+    render(<CompaniesPage />);
+    fireEvent.click(screen.getByRole('button', { name: '显示全部 28 期' }));
+    const table = screen.getByRole('table', { name: '中国移动披露明细' });
+    const oldRow = within(table).getAllByRole('row').find(row => row.textContent?.includes('FY1998'))!;
+    const cells = within(oldRow).getAllByRole('cell');
+    expect(cells[3]).toHaveTextContent(/^--$/);
+    expect(cells[4]).toHaveTextContent(/^--$/);
+    expect(cells[5]).toHaveTextContent(/^--$/);
+    fireEvent.click(screen.getByRole('button', { name: '营业利润率' }));
+    const chart = screen.getByRole('img', { name: '中国移动营业利润率趋势' });
+    expect(chart.textContent).not.toContain('1998');
+    expect(chart.textContent).toContain('2018');
+  });
+
+  it('identifies China Mobile market caps as a fixed Hong Kong quote basis, separate from financial currency', () => {
+    window.history.replaceState({}, '', '/companies?company=chinaMobile&metric=marketCap');
+    render(<CompaniesPage />);
+    expect(screen.getByRole('button', { name: '期末市值' })).toBeEnabled();
+    expect(screen.getByRole('img', { name: '中国移动期末市值趋势' })).toBeInTheDocument();
+    expect(screen.getByText('港股口径 · HKD')).toBeInTheDocument();
+    expect(screen.getByText(/不是 A\/H 股分股类合计市值/)).toBeInTheDocument();
+    expect(screen.getByText(/600941.SH \/ 0941.HK · CNY/)).toBeInTheDocument();
+    const table = screen.getByRole('table', { name: '中国移动披露明细' });
+    expect(within(table).getAllByRole('row')[1].textContent).toContain('HK$');
+    fireEvent.click(screen.getByRole('button', { name: '同比' }));
+    expect(screen.getByRole('img', { name: '中国移动期末市值同比趋势' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '营业收入' }));
+    expect(screen.getByText(/不是 A\/H 股分股类合计市值/)).toBeInTheDocument();
+  });
+
   it('renders one focused trend with the complete restrained company roster', () => {
     render(<CompaniesPage />);
 
@@ -57,7 +105,7 @@ describe('CompaniesPage', () => {
     fireEvent.click(within(screen.getByLabelText('地区筛选')).getByRole('button', { name: /全部/ }));
     const companyOptions = screen.getByRole('group', { name: '全部公司' });
     const companyButtons = within(companyOptions).getAllByRole('button');
-    expect(companyButtons).toHaveLength(52);
+    expect(companyButtons).toHaveLength(53);
     expect(companyButtons.slice(0, 7).map((button) => button.textContent)).toEqual([
       'Adobe', 'AMD', '阿里巴巴', '谷歌', '亚马逊', '苹果', '应用材料',
     ]);
@@ -176,7 +224,7 @@ describe('CompaniesPage', () => {
     expect(options.getByRole('option', { name: '半导体 · 14' })).toBeInTheDocument();
     expect(options.getByRole('option', { name: '互联网与电商 · 10' })).toBeInTheDocument();
     const counts = options.getAllByRole('option').slice(1).map(option => Number(option.textContent!.split(' · ')[1]));
-    expect(counts.reduce((total, count) => total + count, 0)).toBe(52);
+    expect(counts.reduce((total, count) => total + count, 0)).toBe(53);
     fireEvent.change(screen.getByRole('searchbox', { name: '搜索公司' }), { target: { value: 'QCOM' } });
     expect(options.getByRole('option', { name: '全部行业' })).toHaveTextContent(/^全部行业$/);
     expect(options.getByRole('option', { name: '半导体 · 1' })).toBeInTheDocument();
@@ -214,7 +262,7 @@ describe('CompaniesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
     expect(screen.getByRole('combobox', { name: '行业筛选' })).toHaveValue('all');
     expect(screen.getByRole('searchbox', { name: '搜索公司' })).toHaveValue('');
-    expect(within(screen.getByRole('group', { name: '全部公司' })).getAllByRole('button')).toHaveLength(52);
+    expect(within(screen.getByRole('group', { name: '全部公司' })).getAllByRole('button')).toHaveLength(53);
     expect(screen.getByRole('heading', { name: '阿里巴巴' })).toBeInTheDocument();
   });
 

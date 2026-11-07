@@ -11,6 +11,7 @@ describe('company disclosure chart series', () => {
     const { coordinates } = companyPlotSeries(dates.map(point), [null, 100, null, 130, null], 'quarterly', 62, 400);
     expect(coordinates.map(p => p.x)).toEqual([62, 400]);
     expect(coordinates.map(p => p.breakBefore)).toEqual([true, true]);
+    expect(coordinates.map(p => p.bridgeBefore)).toEqual([false, false]);
     expect(coordinates.map(p => p.index)).toEqual([1, 3]);
   });
   it('uses elapsed dates and breaks at missing quarterly disclosures', () => {
@@ -28,5 +29,22 @@ describe('company disclosure chart series', () => {
     expect(companyPlotSeries(points, [0, -10, Infinity, NaN], 'quarterly', 62, 400).coordinates.map(p => p.value)).toEqual([0, -10]);
     expect(companyPlotSeries(points, [null, null, null, null], 'quarterly', 62, 400).coordinates).toEqual([]);
     expect(companyPlotSeries(points, [null, 10, null, null], 'quarterly', 62, 400).coordinates[0].x).toBe(231);
+  });
+
+  it('bridges sparse employee disclosures without inventing quarterly points', () => {
+    const points = ['2024-03-31', '2024-06-30', '2024-09-30', '2024-12-31', '2025-03-31'].map(point);
+    const { coordinates } = companyPlotSeries(points, [null, 100, null, 130, null], 'quarterly', 62, 400, true);
+    expect(coordinates.map(p => p.index)).toEqual([1, 3]);
+    expect(coordinates.map(p => p.value)).toEqual([100, 130]);
+    expect(coordinates.map(p => p.breakBefore)).toEqual([true, true]);
+    expect(coordinates.map(p => p.bridgeBefore)).toEqual([false, true]);
+  });
+
+  it('preserves solid consecutive disclosures and leaves multi-year gaps disconnected', () => {
+    const dates = ['2023-03-31', '2023-06-30', '2024-06-30', '2026-06-30'];
+    const { coordinates } = companyPlotSeries(dates.map(point), [100, 110, 120, 130], 'quarterly', 62, 400, true);
+    expect(coordinates.map(p => p.breakBefore)).toEqual([true, false, true, true]);
+    expect(coordinates.map(p => p.bridgeBefore)).toEqual([false, false, true, false]);
+    expect(companyPlotSeries(dates.map(point), [null, null, null, null], 'quarterly', 62, 400, true).coordinates).toEqual([]);
   });
 });

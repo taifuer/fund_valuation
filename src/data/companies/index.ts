@@ -13,6 +13,7 @@ import beone from './beone';
 import tsmc from './tsmc';
 import mediatek from './mediatek';
 import huawei from './huawei';
+import chinaMobile from './china-mobile';
 import foxconn from './foxconn';
 import netflix from './netflix';
 import visa from './visa';
@@ -67,6 +68,7 @@ export const companies = [
   tsmc,
   mediatek,
   huawei,
+  chinaMobile,
   foxconn,
   netflix,
   visa,

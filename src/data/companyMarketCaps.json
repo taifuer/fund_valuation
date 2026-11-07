@@ -11653,5 +11653,507 @@
       "sourceUrl": "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_VALUEANALYSIS_DET&columns=ALL&pageNumber=1&pageSize=10000&filter=%28SECURITY_CODE%3D%22600276%22%29%28TRADE_DATE%3E%3D%272018-03-31%27%29%28TRADE_DATE%3C%272025-05-23%27%29&sortColumns=TRADE_DATE&sortTypes=1&source=WEB&client=WEB",
       "retrievedAt": "2026-10-12T13:28:26.428Z"
     }
+  ],
+  "chinaMobile": [
+    {
+      "periodEnd": "2000-06-30",
+      "observationDate": "2000-06-30",
+      "value": 952596599184,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2000-12-31",
+      "observationDate": "2000-12-29",
+      "value": 792586491552,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2001-06-30",
+      "observationDate": "2001-06-29",
+      "value": 764678356570,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2001-12-31",
+      "observationDate": "2001-12-31",
+      "value": 510718627440,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2002-06-30",
+      "observationDate": "2002-06-28",
+      "value": 428854766320,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2002-12-31",
+      "observationDate": "2002-12-31",
+      "value": 365893145264,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2003-06-30",
+      "observationDate": "2003-06-30",
+      "value": 361958280400,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2003-12-31",
+      "observationDate": "2003-12-31",
+      "value": 468185669068,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2004-06-30",
+      "observationDate": "2004-06-30",
+      "value": 464251384175,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2004-12-31",
+      "observationDate": "2004-12-31",
+      "value": 518388787691,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2005-06-30",
+      "observationDate": "2005-06-30",
+      "value": 569538464827,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2005-12-31",
+      "observationDate": "2005-12-30",
+      "value": 726958769836,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2006-06-30",
+      "observationDate": "2006-06-30",
+      "value": 880681409610,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2006-12-31",
+      "observationDate": "2006-12-29",
+      "value": 1344832200121,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2007-06-30",
+      "observationDate": "2007-06-29",
+      "value": 1679293093159,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2007-12-31",
+      "observationDate": "2007-12-31",
+      "value": 2762399885373,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2008-06-30",
+      "observationDate": "2008-06-30",
+      "value": 2100690583702,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2008-12-31",
+      "observationDate": "2008-12-31",
+      "value": 1560230925548,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2009-06-30",
+      "observationDate": "2009-06-30",
+      "value": 1556460573458,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2009-12-31",
+      "observationDate": "2009-12-31",
+      "value": 1461432841842,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2010-06-30",
+      "observationDate": "2010-06-30",
+      "value": 1568895855685,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2010-12-31",
+      "observationDate": "2010-12-31",
+      "value": 1549050773157,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2011-06-30",
+      "observationDate": "2011-06-30",
+      "value": 1444865708300,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2011-12-31",
+      "observationDate": "2011-12-30",
+      "value": 1523129228223,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2012-06-30",
+      "observationDate": "2012-06-29",
+      "value": 1701107724589,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2012-12-31",
+      "observationDate": "2012-12-31",
+      "value": 1814056014203,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2013-06-30",
+      "observationDate": "2013-06-28",
+      "value": 1628127288966,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2013-12-31",
+      "observationDate": "2013-12-31",
+      "value": 1616243861752,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2014-06-30",
+      "observationDate": "2014-06-30",
+      "value": 1527492522259,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2014-12-31",
+      "observationDate": "2014-12-31",
+      "value": 1849677692935,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2015-06-30",
+      "observationDate": "2015-06-30",
+      "value": 2032146659555,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2015-12-31",
+      "observationDate": "2015-12-31",
+      "value": 1791604521490,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2016-06-30",
+      "observationDate": "2016-06-30",
+      "value": 1815151276694,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2016-12-31",
+      "observationDate": "2016-12-30",
+      "value": 1683084735837,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2017-06-30",
+      "observationDate": "2017-06-30",
+      "value": 1696393801296,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2017-12-31",
+      "observationDate": "2017-12-29",
+      "value": 1622681719590,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2018-06-30",
+      "observationDate": "2018-06-29",
+      "value": 1427141216100,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2018-12-31",
+      "observationDate": "2018-12-31",
+      "value": 1542827510989,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2019-06-30",
+      "observationDate": "2019-06-28",
+      "value": 1456830343345,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2019-12-31",
+      "observationDate": "2019-12-31",
+      "value": 1341144268496,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2020-06-30",
+      "observationDate": "2020-06-30",
+      "value": 1070867830295,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2020-12-31",
+      "observationDate": "2020-12-31",
+      "value": 908088051200,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2021-03-31",
+      "observationDate": "2021-03-31",
+      "value": 1043226220377,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2021-06-30",
+      "observationDate": "2021-06-30",
+      "value": 994084980377,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2021-09-30",
+      "observationDate": "2021-09-30",
+      "value": 961323556926,
+      "currency": "HKD",
+      "sourceUrl": "https://companiesmarketcap.com/hkd/china-mobile/marketcap/",
+      "retrievedAt": "2026-11-07T14:46:01.298Z"
+    },
+    {
+      "periodEnd": "2021-12-31",
+      "value": 958252599580,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2022-03-31",
+      "value": 1182476512098,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2022-06-30",
+      "value": 1066520626890,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2022-09-30",
+      "value": 1089021659729,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2022-12-31",
+      "value": 1127870756014,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2023-03-31",
+      "value": 1394392529764,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2023-06-30",
+      "value": 1402221691232,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2023-09-30",
+      "value": 1439666234538,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2023-12-31",
+      "value": 1426568016278,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2024-03-31",
+      "value": 1474712313256,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2024-06-30",
+      "value": 1685840631528,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2024-09-30",
+      "value": 1620364625437,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2024-12-31",
+      "value": 1692590842922,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2025-03-31",
+      "value": 1837026174886,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2025-06-30",
+      "value": 1915073708408,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2025-09-30",
+      "value": 1854449236690,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2025-12-31",
+      "value": 1796123976040,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2026-03-31",
+      "value": 1738974540347,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2026-06-30",
+      "value": 1671908095197,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    },
+    {
+      "periodEnd": "2026-09-30",
+      "value": 1752216751156,
+      "currency": "HKD",
+      "sourceUrl": "https://stockanalysis.com/quote/hkg/0941/financials/ratios/?p=quarterly",
+      "retrievedAt": "2026-11-07T14:45:04.314Z"
+    }
   ]
 }

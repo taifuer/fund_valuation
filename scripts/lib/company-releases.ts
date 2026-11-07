@@ -25,6 +25,12 @@ export interface CompanyReleaseProbe {
 
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
+// Verified CNINFO identities; these A-share listings use their existing HK org IDs.
+const CNINFO_LISTINGS: Record<string, { code: string; orgId: string; column: string }> = {
+  byd: { code: '002594', orgId: 'gshk0001211', column: 'szse' },
+  chinaMobile: { code: '600941', orgId: 'gshk0000941', column: 'sse' },
+};
+
 export function companyReleaseProvider(url: string): CompanyReleaseProvider {
   const hostname = new URL(url).hostname.toLowerCase();
   if (hostname.endsWith('hkexnews.hk')) return '港交所';
@@ -102,6 +108,8 @@ export function expectedPeriodSearchTerms(period: string): string[] {
       `${year} annual report`,
       `${year}年度报告`,
       `${year}年度報告`,
+      `${year}年年度报告`,
+      `${year}年年度報告`,
       `${year}年报`,
       `${year} 사업보고서`,
     ];
@@ -226,6 +234,7 @@ export function cninfoReportCandidates(
     const path = /^finalpage\/(\d{4}-\d{2}-\d{2})\/\d+\.pdf$/i.exec(item.adjunctUrl);
     if (!path || path[1] > asOf || /摘要|取消|预约|預約|预告|預告/.test(item.announcementTitle)) return [];
     const title = item.announcementTitle;
+    if (!/报告|報告|业绩|業績/.test(title) || /客户数据|客戶數據|运营数据|運營數據/.test(title)) return [];
     return periods.filter(period => sourceMentionsExpectedPeriod(title, period))
       .map(period => ({ period, title, url: `https://static.cninfo.com.cn/${item.adjunctUrl}` }));
   });
@@ -238,8 +247,8 @@ export async function probeCompanyReleaseSource(
   asOf = new Date().toISOString().slice(0, 10),
 ): Promise<CompanyReleaseProbe> {
   const primary = await probeInvestorRelations(company, freshness, fetchImpl);
-  // BYD's IR archive is dynamic; CNINFO's verified A-share identity also uses its HK org ID.
-  if (company.id !== 'byd' || primary.status === '命中报告候选') return primary;
+  const listing = CNINFO_LISTINGS[company.id];
+  if (!listing || primary.status === '命中报告候选') return primary;
   const source = 'https://www.cninfo.com.cn/new/hisAnnouncement/query';
   try {
     const response = await fetchImpl(source, {
@@ -250,8 +259,8 @@ export async function probeCompanyReleaseSource(
         Referer: 'https://www.cninfo.com.cn/',
       },
       body: new URLSearchParams({
-        pageNum: '1', pageSize: '30', column: 'szse', tabName: 'fulltext',
-        stock: '002594,gshk0001211', searchkey: '',
+        pageNum: '1', pageSize: '30', column: listing.column, tabName: 'fulltext',
+        stock: `${listing.code},${listing.orgId}`, searchkey: '',
         category: 'category_ndbg_szsh;category_bndbg_szsh;category_yjdbg_szsh;category_sjdbg_szsh;',
         seDate: `${asOf.slice(0, 4)}-01-01~${asOf}`, isHLtitle: 'false',
       }),
@@ -268,7 +277,7 @@ export async function probeCompanyReleaseSource(
     const periods = [...new Set([...company.annual, ...company.halfYear, ...company.quarterly]
       .map(point => point.period))];
     if (freshness.expectedPeriod) periods.push(freshness.expectedPeriod);
-    const candidateLinks = cninfoReportCandidates(payload.announcements ?? [], '002594', periods, asOf);
+    const candidateLinks = cninfoReportCandidates(payload.announcements ?? [], listing.code, periods, asOf);
     const status = candidateLinks.some(link => link.period === freshness.expectedPeriod)
       ? '命中报告候选' : payload.hasMore || freshness.status === 'review' ? '需要人工核查' : '来源可用';
     return { ...primary, provider: '巨潮资讯', source, status, candidateLinks, error: undefined };

@@ -53,7 +53,7 @@ describe('November 2026 reviewed disclosures', () => {
       const record = company(id);
       const h1 = companySeries(record, 'half').find(point => point.period === 'FY2026 H1')!;
       const q3 = record.quarterly.find(point => point.period === 'FY2026 Q3')!;
-      expect(Math.abs(h1.operatingProfit + q3.operatingProfit - profit * 1e6)).toBeLessThan(1000);
+      expect(Math.abs(h1.operatingProfit! + q3.operatingProfit! - profit * 1e6)).toBeLessThan(1000);
       expect(Math.abs(h1.researchAndDevelopment! + q3.researchAndDevelopment! - research * 1e6)).toBeLessThan(1000);
     }
   });
@@ -65,7 +65,7 @@ describe('November 2026 reviewed disclosures', () => {
       const quarters = record.quarterly.filter(point => point.period.startsWith('FY2026 '));
       expect(quarters).toHaveLength(4);
       expect(Math.abs(quarters.reduce((sum, point) => sum + point.revenue, 0) - annual.revenue)).toBeLessThanOrEqual(1e6);
-      expect(Math.abs(quarters.reduce((sum, point) => sum + point.operatingProfit, 0) - annual.operatingProfit)).toBeLessThanOrEqual(1e6);
+      expect(Math.abs(quarters.reduce((sum, point) => sum + point.operatingProfit!, 0) - annual.operatingProfit!)).toBeLessThanOrEqual(1e6);
     }
   });
 

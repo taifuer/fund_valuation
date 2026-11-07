@@ -11,9 +11,14 @@ export const marketCapUnavailable: Readonly<Record<string, string>> = {
 };
 
 export const marketCapNotes: Readonly<Record<string, string>> = {
+  chinaMobile: '采用 0941.HK 的供应商公司级市值（港股报价口径），不是 A/H 股分股类合计市值，也不是仅港股股份的市值；不与 A 股口径混用。',
   catl: '仅收录港股上市前可核验的期末市值；2025 年 5 月起 A/H 股合计口径暂缺，不沿用 A 股价格乘总股本。',
   hengrui: '仅收录港股上市前可核验的期末市值；2025 年 5 月起 A/H 股合计口径暂缺，不沿用 A 股价格乘总股本。',
   samsung: '采用包含普通股和优先股的市值口径，不重复叠加存托凭证。',
+};
+
+export const marketCapQuoteBasis: Readonly<Record<string, string>> = {
+  chinaMobile: '港股口径',
 };
 
 export function marketCapSourceName(url: string): string {

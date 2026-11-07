@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveCompanyReportReference } from './companyReportSources';
 import {
   COMPANIES_WITHOUT_COMPARABLE_RESEARCH_DISCLOSURE,
+  PARTIAL_OPERATING_PROFIT_DISCLOSURE_PERIODS,
   PARTIAL_RESEARCH_DISCLOSURE_PERIODS,
   companyFundamentalsDataset,
   companySeries,
@@ -24,6 +25,7 @@ const EXPECTED_IDS = [
   'tsmc',
   'mediatek',
   'huawei',
+  'chinaMobile',
   'foxconn',
   'netflix',
   'visa',
@@ -130,7 +132,11 @@ describe('company fundamentals offline dataset', () => {
         ).toEqual(series.map((point) => point.periodEnd).sort());
         series.forEach((point) => {
           expect(Number.isFinite(point.revenue), `${company.id} ${point.period} revenue`).toBe(true);
-          expect(Number.isFinite(point.operatingProfit), `${company.id} ${point.period} operating profit`).toBe(true);
+          if (point.operatingProfit == null) {
+            expect(PARTIAL_OPERATING_PROFIT_DISCLOSURE_PERIODS[company.id], `${company.id} documented profit gap`).toContain(point.period);
+          } else {
+            expect(Number.isFinite(point.operatingProfit), `${company.id} ${point.period} operating profit`).toBe(true);
+          }
           if (point.researchAndDevelopment != null) {
             expect(
               Number.isFinite(point.researchAndDevelopment),
@@ -176,11 +182,13 @@ describe('company fundamentals offline dataset', () => {
         const annual = company.annual.find((point) => point.period === year);
         if (!annual) return;
         const revenue = quarters.reduce((total, point) => total + point.revenue, 0);
-        const operatingProfit = quarters.reduce((total, point) => total + point.operatingProfit, 0);
         const revenueError = Math.abs(revenue - annual.revenue) / Math.max(Math.abs(annual.revenue), 1);
-        const profitError = Math.abs(operatingProfit - annual.operatingProfit) / Math.max(Math.abs(annual.operatingProfit), 1);
         expect(revenueError, `${company.id} ${year} revenue reconciliation`).toBeLessThan(5e-4);
-        expect(profitError, `${company.id} ${year} operating profit reconciliation`).toBeLessThan(5e-4);
+        if (annual.operatingProfit != null && quarters.every(point => point.operatingProfit != null)) {
+          const operatingProfit = quarters.reduce((total, point) => total + point.operatingProfit!, 0);
+          const profitError = Math.abs(operatingProfit - annual.operatingProfit) / Math.max(Math.abs(annual.operatingProfit), 1);
+          expect(profitError, `${company.id} ${year} operating profit reconciliation`).toBeLessThan(5e-4);
+        }
         if (
           annual.researchAndDevelopment != null
           && quarters.every((point) => point.researchAndDevelopment != null)
@@ -320,6 +328,7 @@ describe('company fundamentals offline dataset', () => {
       beone: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
       tsmc: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
       mediatek: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
+      chinaMobile: { firstPeriod: 'FY2021 Q1', minimumPoints: 23 },
       foxconn: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
       netflix: { firstPeriod: 'FY2018 Q1', minimumPoints: 34 },
       visa: { firstPeriod: 'FY2018 Q1', minimumPoints: 35 },
@@ -526,12 +535,24 @@ describe('company fundamentals offline dataset', () => {
     const q2 = microsoft.quarterly.find((point) => point.period === 'FY2026 Q2')!;
 
     expect(firstHalf.revenue).toBe(q1.revenue + q2.revenue);
-    expect(firstHalf.operatingProfit).toBe(q1.operatingProfit + q2.operatingProfit);
+    expect(firstHalf.operatingProfit).toBe(q1.operatingProfit! + q2.operatingProfit!);
     expect(firstHalf.periodEnd).toBe(q2.periodEnd);
     expect(firstHalf.researchAndDevelopment).toBe(
       q1.researchAndDevelopment! + q2.researchAndDevelopment!,
     );
     expect(firstHalf.derived).toBe(true);
+  });
+
+  it('does not turn missing operating profit into zero or a partial half-year total', () => {
+    const record = companyFundamentalsDataset.companies.find(company => company.id === 'chinaMobile')!;
+    const [q1, q2] = record.quarterly;
+    for (const points of [
+      [{ ...q1, operatingProfit: null }, q2],
+      [q1, { ...q2, operatingProfit: null }],
+      [{ ...q1, operatingProfit: null }, { ...q2, operatingProfit: null }],
+    ]) {
+      expect(deriveHalfYear(points)[0]).toMatchObject({ revenue: q1.revenue + q2.revenue, operatingProfit: null });
+    }
   });
 
   it('derives research spending only when both source quarters disclose it', () => {

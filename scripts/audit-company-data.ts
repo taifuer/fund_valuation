@@ -1,5 +1,6 @@
 import {
   COMPANIES_WITHOUT_COMPARABLE_RESEARCH_DISCLOSURE,
+  PARTIAL_OPERATING_PROFIT_DISCLOSURE_PERIODS,
   PARTIAL_RESEARCH_DISCLOSURE_PERIODS,
   companyFundamentalsDataset,
 } from '../src/data/companyFundamentals';
@@ -18,7 +19,7 @@ const rows = companyFundamentalsDataset.companies.map((company) => {
     (point) => point.researchAndDevelopment != null,
   ).length;
   const annualEmployees = company.annual.filter((point) => point.employees != null).length;
-  const directHalfYears = company.halfYear.length;
+  const directHalfYears = company.halfYear.filter(point => !point.derived).length;
   const quarterlyResearch = company.quarterly.filter(
     (point) => point.researchAndDevelopment != null,
   ).length;
@@ -28,6 +29,12 @@ const rows = companyFundamentalsDataset.companies.map((company) => {
     .map((point) => point.period);
   const allowedPartialPeriods = new Set(PARTIAL_RESEARCH_DISCLOSURE_PERIODS[company.id] ?? []);
   const disclosurePoints = [...company.annual, ...company.halfYear, ...company.quarterly];
+  const allowedProfitGaps = new Set(PARTIAL_OPERATING_PROFIT_DISCLOSURE_PERIODS[company.id] ?? []);
+  disclosurePoints.forEach(point => {
+    if (point.operatingProfit == null ? !allowedProfitGaps.has(point.period) : !Number.isFinite(point.operatingProfit)) {
+      sourceReferenceErrors.push(`${company.id} ${point.period}: unexpected missing or invalid operating profit`);
+    }
+  });
   const disclosurePeriods = new Set(disclosurePoints.map((point) => point.period));
   const disclosureDates = new Set(disclosurePoints.map(point => point.periodEnd));
   const marketCaps = companyMarketCaps[company.id] ?? [];
@@ -103,6 +110,7 @@ const rows = companyFundamentalsDataset.companies.map((company) => {
     firstQuarter: company.quarterly[0]?.period ?? '-',
     latestQuarter: company.quarterly.at(-1)?.period ?? '-',
     annualResearch: `${annualResearch}/${company.annual.length}`,
+    annualProfit: `${company.annual.filter(point => point.operatingProfit != null).length}/${company.annual.length}`,
     quarterlyResearch,
     annualEmployees: `${annualEmployees}/${company.annual.length}`,
     quarterlyEmployees,

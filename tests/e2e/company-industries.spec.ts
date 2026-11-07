@@ -46,7 +46,7 @@ test('company industries combine with regions and search without fetching new da
   await page.getByRole('button', { name: '清除筛选' }).click();
   await expect(industry).toHaveValue('all');
   await expect(search).toHaveValue('');
-  await expect(page.getByRole('group', { name: '全部公司' }).getByRole('button')).toHaveCount(52);
+  await expect(page.getByRole('group', { name: '全部公司' }).getByRole('button')).toHaveCount(53);
   await page.screenshot({ path: testInfo.outputPath('company-industry-reset.png') });
   expect(errors).toEqual([]);
   expect(companyRequests).toEqual([]);

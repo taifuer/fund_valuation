@@ -53,6 +53,8 @@ describe('non-US company release checks', () => {
     expect(expectedPeriodSearchTerms('FY2026 Q2')).toContain('second quarter 2026');
     expect(sourceMentionsExpectedPeriod('2026 Half-Year Results', 'FY2026 H1')).toBe(true);
     expect(sourceMentionsExpectedPeriod('Full Year 2026 Results', 'FY2026')).toBe(true);
+    expect(sourceMentionsExpectedPeriod('中国移动：2025年年度报告', 'FY2025')).toBe(true);
+    expect(sourceMentionsExpectedPeriod('2025年年度報告', 'FY2025')).toBe(true);
     expect(sourceMentionsExpectedPeriod('2026年第二季度报告', 'FY2026 Q2')).toBe(true);
     expect(sourceMentionsExpectedPeriod('2026 2분기 실적', 'FY2026 Q2')).toBe(true);
     expect(sourceMentionsExpectedPeriod('Q1 2026 results', 'FY2026 Q2')).toBe(false);
@@ -161,5 +163,28 @@ describe('non-US company release checks', () => {
       async () => new Response('not JSON', { headers: { 'content-type': 'text/html' } }), '2026-11-05');
     expect(result.status).toBe('来源异常');
     expect(result.error).toContain('CNINFO');
+  });
+
+  it('checks China Mobile with its verified SSE identity and rejects other stocks and customer updates', async () => {
+    let calls = 0;
+    const fetchImpl = async (_url: string | URL | Request, init?: RequestInit) => {
+      if (++calls === 1) return new Response('', { status: 403 });
+      const params = new URLSearchParams(String(init?.body));
+      expect(params.get('stock')).toBe('600941,gshk0000941');
+      expect(params.get('column')).toBe('sse');
+      expect(params.get('seDate')).toBe('2026-01-01~2026-11-05');
+      return new Response(JSON.stringify({ totalAnnouncement: 3, hasMore: false, announcements: [
+        { secCode: '600941', announcementTitle: ' 中国移动：2026年第三季度报告', adjunctUrl: 'finalpage/2026-10-21/1225613028.PDF' },
+        { secCode: '600941', announcementTitle: '中国移动：2026年第三季度客户数据公告', adjunctUrl: 'finalpage/2026-10-21/1225613029.PDF' },
+        { secCode: '002594', announcementTitle: '2026年第三季度报告', adjunctUrl: 'finalpage/2026-10-30/1225641442.PDF' },
+      ] }));
+    };
+    const result = await probeCompanyReleaseSource({ ...sampleCompany, id: 'chinaMobile' },
+      { ...freshness, expectedPeriod: 'FY2026 Q3' }, fetchImpl, '2026-11-05');
+    expect(calls).toBe(2);
+    expect(result).toMatchObject({ provider: '巨潮资讯', status: '命中报告候选' });
+    expect(result.candidateLinks).toEqual([
+      expect.objectContaining({ period: 'FY2026 Q3', url: 'https://static.cninfo.com.cn/finalpage/2026-10-21/1225613028.PDF' }),
+    ]);
   });
 });

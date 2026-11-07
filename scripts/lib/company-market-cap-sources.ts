@@ -1,4 +1,5 @@
 export const marketCapListingPaths: Record<string, string> = {
+  chinaMobile: 'quote/hkg/0941',
   alibaba: 'stocks/baba', jd: 'stocks/jd', pdd: 'stocks/pdd', baidu: 'stocks/bidu',
   tencent: 'quote/hkg/0700', meituan: 'quote/hkg/3690', xiaomi: 'quote/hkg/1810',
   tsmc: 'quote/tpe/2330', mediatek: 'quote/tpe/2454', foxconn: 'quote/tpe/2317',
@@ -8,6 +9,7 @@ export const marketCapListingPaths: Record<string, string> = {
 };
 
 export const marketCapHistorySlugs: Record<string, string> = {
+  chinaMobile: 'china-mobile',
   alibaba: 'alibaba', jd: 'jingdong-mall', pdd: 'pinduoduo', baidu: 'baidu',
   tencent: 'tencent', meituan: 'meituan-dianping', xiaomi: 'xiaomi',
   netflix: 'netflix', visa: 'visa', walmart: 'walmart', ibm: 'ibm',

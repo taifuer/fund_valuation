@@ -59,6 +59,14 @@ describe('historical market cap backfill', () => {
     expect(alignMarketCapHistory(['2024-12-31'], [point('2024-12-30')], false)).toEqual([]);
   });
 
+  it('retains the actual Hong Kong session date when a reporting period ends on a weekend', () => {
+    const observations = [point('2019-06-28'), point('2019-07-02', 110)];
+    expect(alignMarketCapHistory(['2019-06-30'], observations, true)[0]).toMatchObject({
+      periodEnd: '2019-06-30', observationDate: '2019-06-28',
+    });
+    expect(alignMarketCapHistory(['2019-07-01'], observations, true)).toEqual([]);
+  });
+
   it('requires overlapping reference periods and preserves primary values rather than replacing them', () => {
     const old = [point('2024-03-31'), point('2024-06-30'), point('2024-09-30')];
     const candidates = [...old.map(row => ({ ...row, value: 101 })), point('2023-12-31')];

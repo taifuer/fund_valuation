@@ -29,7 +29,7 @@ describe('October 2026 reviewed company disclosures', () => {
     const record = company('catl');
     const h1 = companySeries(record, 'half').find(point => point.period === 'FY2026 H1')!;
     const q3 = record.quarterly.find(point => point.period === 'FY2026 Q3')!;
-    expect(h1.operatingProfit + q3.operatingProfit).toBeCloseTo(80933059 * 1000, 0);
+    expect(h1.operatingProfit! + q3.operatingProfit!).toBeCloseTo(80933059 * 1000, 0);
     expect(h1.researchAndDevelopment! + q3.researchAndDevelopment!).toBeCloseTo(18516986 * 1000, 0);
     expect(h1.revenue + q3.revenue).toBeCloseTo(442137424 * 1000, 0);
   });

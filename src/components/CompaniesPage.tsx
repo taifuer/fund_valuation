@@ -6,7 +6,7 @@ import { useChartWidth } from '../hooks/useChartWidth';
 import { companyFundamentalsDataset, companySeries } from '../data/companyFundamentals';
 import { COMPANY_INDUSTRIES, companyIndustry, type CompanyIndustry } from '../data/companyIndustries';
 import { resolveCompanyReportReference } from '../data/companyReportSources';
-import { companyMarketCaps, companyMarketCapCurrency, marketCapUnavailable, marketCapNotes, marketCapSourceName } from '../data/companyMarketCaps';
+import { companyMarketCaps, companyMarketCapCurrency, marketCapUnavailable, marketCapNotes, marketCapSourceName, marketCapQuoteBasis } from '../data/companyMarketCaps';
 import { choiceFromSearch, replaceSearchParams } from '../routing';
 import type {
   CompanyFrequency,
@@ -161,7 +161,7 @@ function changeValue(
 }
 
 function operatingMargin(point: CompanyFundamentalPoint | undefined) {
-  if (!point || point.revenue === 0) return null;
+  if (!point || point.operatingProfit == null || point.revenue === 0) return null;
   return (point.operatingProfit / point.revenue) * 100;
 }
 
@@ -285,7 +285,7 @@ function TrendChart({ company, points, frequency, metric, mode }: TrendChartProp
   const plot = { left: axisLabelWidth(axis.ticks.map(value => trendDisplay(value, metric, company, mode))), right: 18, top: 28, bottom: 42 };
   const innerWidth = width - plot.left - plot.right;
   const innerHeight = height - plot.top - plot.bottom;
-  const series = companyPlotSeries(points, pointValues, frequency, plot.left, width - plot.right);
+  const series = companyPlotSeries(points, pointValues, frequency, plot.left, width - plot.right, metric === 'employees');
   const x = (index: number) => series.x(points[index].periodEnd);
   const y = (value: number) => plot.top + axis.ratio(value) * innerHeight;
   const coordinates = series.coordinates.map(point => ({ ...point, y: y(point.value) }));
@@ -299,6 +299,8 @@ function TrendChart({ company, points, frequency, metric, mode }: TrendChartProp
     anchor: point.index === firstPlotIndex ? 'start' as const : point.index === lastPlotIndex ? 'end' as const : 'middle' as const,
   })));
   const path = coordinates.map(point => `${point.breakBefore ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+  const gapPath = coordinates.flatMap((point, index) => point.bridgeBefore
+    ? [`M ${coordinates[index - 1].x} ${coordinates[index - 1].y} L ${point.x} ${point.y}`] : []).join(' ');
   const ticks = axis.ticks.map(value => ({ value, y: y(value) }));
   const active = coordinates[Math.min(selectedIndex ?? coordinates.length - 1, coordinates.length - 1)];
   const activeIndex = active?.index;
@@ -323,6 +325,16 @@ function TrendChart({ company, points, frequency, metric, mode }: TrendChartProp
       || (fiscalYear != null && point.period === fiscalYear)
     ));
     return index >= firstPlotIndex && index <= lastPlotIndex ? [{ ...marker, index, x: x(index) }] : [];
+  });
+  const methodologyLabels = new Map<string, number>();
+  let lastMarkerRight = -Infinity;
+  // Dense histories retain every boundary and note; labels appear only where they fit.
+  [...methodologyMarkers].sort((a, b) => a.x - b.x).forEach(marker => {
+    const labelWidth = axisLabelWidth([marker.label]) - 18;
+    const labelX = Math.min(width - plot.right - labelWidth / 2, Math.max(plot.left + labelWidth / 2, marker.x));
+    if (labelX - labelWidth / 2 < lastMarkerRight + 8) return;
+    methodologyLabels.set(`${marker.period}-${marker.label}`, labelX);
+    lastMarkerRight = labelX + labelWidth / 2;
   });
 
   useEffect(() => {
@@ -350,6 +362,9 @@ function TrendChart({ company, points, frequency, metric, mode }: TrendChartProp
         <em className={changeClass(activeChange.value)}>
           {mode === 'yoy' ? '较上年同期' : `同比 ${activeChange.label}`}
         </em>
+        {metric === 'marketCap' && marketCapQuoteBasis[company.id] && (
+          <small>{marketCapQuoteBasis[company.id]} · {companyMarketCapCurrency(company.id)}</small>
+        )}
         {mode === 'value' && metric === 'researchAndDevelopment' && activeResearchIntensity != null && (
           <small className={styles.researchIntensity}>
             占营收 {formatPercent(activeResearchIntensity)}
@@ -391,9 +406,10 @@ function TrendChart({ company, points, frequency, metric, mode }: TrendChartProp
             />
           )}
           {methodologyMarkers.map((marker) => {
-            const placeLeft = marker.x > width - plot.right - 82;
+            const labelX = methodologyLabels.get(`${marker.period}-${marker.label}`);
             return (
               <g key={`${marker.period}-${marker.label}`}>
+                <title>{`${marker.period} · ${marker.label}`}</title>
                 <line
                   className={styles.methodologyLine}
                   x1={marker.x}
@@ -401,18 +417,19 @@ function TrendChart({ company, points, frequency, metric, mode }: TrendChartProp
                   y1={plot.top}
                   y2={plot.top + innerHeight}
                 />
-                <text
+                {labelX != null && <text
                   className={styles.methodologyLabel}
-                  x={marker.x + (placeLeft ? -6 : 6)}
+                  x={labelX}
                   y={plot.top - 10}
-                  textAnchor={placeLeft ? 'end' : 'start'}
+                  textAnchor="middle"
                 >
                   {marker.label}
-                </text>
+                </text>}
               </g>
             );
           })}
           <path className={styles.trendLine} d={path} />
+          {gapPath && <path className={styles.disclosureBridge} d={gapPath} data-testid="company-disclosure-bridges" />}
           {active && selectedIndex != null && <g data-testid="company-crosshair">
             <line className={styles.crosshair} x1={active.x} x2={active.x} y1={plot.top} y2={height - plot.bottom} />
             <line className={styles.crosshair} x1={plot.left} x2={width - plot.right} y1={active.y} y2={active.y} />
@@ -439,6 +456,7 @@ function TrendChart({ company, points, frequency, metric, mode }: TrendChartProp
           {metric === 'marketCap' && (
             <p><strong>*</strong><span>
               市值币种：{companyMarketCapCurrency(company.id)}。按财报截止日匹配历史期末市值，非财报披露日；不以当前股本倒推，缺失期间不补值。
+              {marketCapNotes[company.id]}
               {activePoint.marketCap && <> 来源：<a href={activePoint.marketCap.sourceUrl} target="_blank" rel="noreferrer">{marketCapSourceName(activePoint.marketCap.sourceUrl)}</a>。
                 {activePoint.marketCap.calculation && <> {activePoint.marketCap.calculation.sharesBasis === 'exchange-issued' ? '同日发行股数' : '期末在外股数'} × <a href={activePoint.marketCap.calculation.priceSourceUrl}
                   target="_blank" rel="noreferrer">历史收盘价</a>，使用当时未复权价格。</>}
@@ -451,7 +469,9 @@ function TrendChart({ company, points, frequency, metric, mode }: TrendChartProp
             <p><strong>*</strong><span>同比按上一财年相同季度、半年或年度计算，不使用相邻期间环比。</span></p>
           )}
           {metric === 'employees' ? (
-            <p><strong>*</strong><span>{company.employeeScope}；仅展示公司明确披露的期间。</span></p>
+            <p><strong>*</strong><span>{company.employeeScope}；仅展示公司明确披露的期间。
+              {gapPath && '虚线连接相邻披露点，期间未披露季度不补值。'}
+            </span></p>
           ) : metric === 'researchAndDevelopment' ? (
             <p><strong>*</strong><span>{metricLabel(company, 'researchAndDevelopment')}按公司单列披露口径；研发强度为该指标占营业收入比例，缺失期间不推算。</span></p>
           ) : null}
@@ -844,7 +864,7 @@ export default function CompaniesPage() {
                 <strong>披露明细</strong>
                 <small>{effectiveFrequency === 'half'
                   ? trendPoints.some((point) => !point.derived)
-                    ? '公司直接披露口径'
+                    ? trendPoints.some((point) => point.derived) ? '公司披露与区间汇总' : '公司直接披露口径'
                     : effectiveMetric === 'employees' ? '取半年度末披露值' : '由完整季度汇总'
                   : '公司原始披露口径'}</small>
               </span>
@@ -958,7 +978,7 @@ export default function CompaniesPage() {
             * 期末市值{companyMarketCaps[selectedCompany.id]?.length
               ? <>来源：{[...new Map(companyMarketCaps[selectedCompany.id].map(point => [marketCapSourceName(point.sourceUrl), point.sourceUrl])).entries()].map(([name, url], index) => (
                 <span key={name}>{index > 0 && '、'}<a href={url} target="_blank" rel="noreferrer">{name}</a></span>
-              ))}（{companyMarketCapCurrency(selectedCompany.id)}）。年度、半年均取期末值，不相加；缺失不补值。不同来源的股本统计及汇率口径可能有小幅差异。{marketCapNotes[selectedCompany.id]}</>
+              ))}（{companyMarketCapCurrency(selectedCompany.id)}）。年度、半年均取期末值，不相加；缺失不补值。不同来源的股本统计及汇率口径可能有小幅差异。{effectiveMetric !== 'marketCap' && marketCapNotes[selectedCompany.id]}</>
               : `：${marketCapUnavailable[selectedCompany.id] ?? '暂无可核验数据，不推算。'}`}
           </p>
 

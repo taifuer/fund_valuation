@@ -15,7 +15,7 @@ export const COMPANY_INDUSTRIES = [
   },
   {
     key: 'electronics', label: '电子与通信',
-    companyIds: ['apple', 'xiaomi', 'huawei', 'foxconn', 'cisco', 'samsung'],
+    companyIds: ['apple', 'xiaomi', 'huawei', 'chinaMobile', 'foxconn', 'cisco', 'samsung'],
   },
   {
     key: 'auto', label: '汽车与电池',

@@ -1,7 +1,7 @@
 import type { CompanyFrequency, CompanyFundamentalPoint } from './types';
 
 export function companyPlotSeries(points: CompanyFundamentalPoint[], values: Array<number | null>,
-  frequency: CompanyFrequency, left: number, right: number) {
+  frequency: CompanyFrequency, left: number, right: number, connectSparse = false) {
   const available = points.flatMap((point, index) => {
     const value = values[index];
     return value != null && Number.isFinite(value) ? [{ point, index, value }] : [];
@@ -17,7 +17,10 @@ export function companyPlotSeries(points: CompanyFundamentalPoint[], values: Arr
     // Missing metrics or skipped reports must not look like a continuous disclosure.
     const breakBefore = !previous || entry.index !== previous.index + 1
       || month(entry.point.periodEnd) - month(previous.point.periodEnd) > maxMonths;
-    return { ...entry, x: x(entry.point.periodEnd), breakBefore };
+    // Employee counts can be disclosed only semiannually or annually; bridge with a dashed line, not synthetic points.
+    const bridgeBefore = connectSparse && !!previous && breakBefore
+      && month(entry.point.periodEnd) - month(previous.point.periodEnd) <= 13;
+    return { ...entry, x: x(entry.point.periodEnd), breakBefore, bridgeBefore };
   });
   return { coordinates, x };
 }
